@@ -1,0 +1,122 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: intelli-sso-auth
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/intellisso}
+    username: ${SPRING_DATASOURCE_USERNAME:intellisso}
+    password: ${SPRING_DATASOURCE_PASSWORD:intellisso123}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    fail-on-missing-locations: true
+    # Allow Flyway to work with newer PostgreSQL versions (like 18)
+    postgresql:
+      transactional-lock: false
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid,email,profile
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          facebook:
+            client-id: ${FACEBOOK_CLIENT_ID}
+            client-secret: ${FACEBOOK_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+#          azure:
+#            client-id: ${AZURE_CLIENT_ID}
+#            client-secret: ${AZURE_CLIENT_SECRET}
+#            scope: openid,profile,email,User.Read
+#            authorization-grant-type: authorization_code
+#            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          apple:
+            client-id: ${APPLE_CLIENT_ID}
+            client-secret: ${APPLE_CLIENT_SECRET}
+            scope: openid,name,email
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          twitter:
+            client-id: ${TWITTER_CLIENT_ID}
+            client-secret: ${TWITTER_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          linkedin:
+            client-id: ${LINKEDIN_CLIENT_ID}
+            client-secret: ${LINKEDIN_CLIENT_SECRET}
+            scope: r_liteprofile,r_emailaddress
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          amazon:
+            client-id: ${AMAZON_CLIENT_ID}
+            client-secret: ${AMAZON_CLIENT_SECRET}
+            scope: profile
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          instagram:
+            client-id: ${INSTAGRAM_CLIENT_ID}
+            client-secret: ${INSTAGRAM_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          tiktok:
+            client-id: ${TIKTOK_CLIENT_ID}
+            client-secret: ${TIKTOK_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+#          azure:
+#            issuer-uri: https://login.microsoftonline.com/${AZURE_TENANT_ID}/v2.0
+          apple:
+            issuer-uri: https://appleid.apple.com
+            user-name-attribute: sub
+          twitter:
+            authorization-uri: https://twitter.com/i/oauth2/authorize
+            token-uri: https://api.twitter.com/2/oauth2/token
+            user-info-uri: https://api.twitter.com/2/users/me
+            user-name-attribute: data.username
+          linkedin:
+            authorization-uri: https://www.linkedin.com/oauth/v2/authorization
+            token-uri: https://www.linkedin.com/oauth/v2/accessToken
+            user-info-uri: https://api.linkedin.com/v2/me
+            user-name-attribute: id
+          amazon:
+            authorization-uri: https://www.amazon.com/ap/oa
+            token-uri: https://api.amazon.com/auth/o2/token
+            user-info-uri: https://api.amazon.com/user/profile
+            user-name-attribute: user_id
+          instagram:
+            authorization-uri: https://api.instagram.com/oauth/authorize
+            token-uri: https://api.instagram.com/oauth/access_token
+            user-info-uri: https://graph.instagram.com/me
+            user-name-attribute: id
+          tiktok:
+            authorization-uri: https://www.tiktok.com/auth/authorize/
+            token-uri: https://open-api.tiktok.com/oauth/access_token/
+            user-info-uri: https://open-api.tiktok.com/user/info/
+            user-name-attribute: open_id
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:2dqSJTLVG5z0Im0APLXYgj9QB19HVfYSfGJnEbXRM8vp+93tw7sRn3+f9JvcUkA2dL0x6sbEEWOqf0IEzEsUBA==}
+    access-token-expiration-ms: ${JWT_EXPIRATION_MS:300000} # 5 minutes
+    refresh-token-expiration-ms: ${REFRESH_TOKEN_EXPIRATION_MS:604800000} # 7 days
+
+twilio:
+  account-sid: ${TWILIO_ACCOUNT_SID}
+  auth-token: ${TWILIO_AUTH_TOKEN}
+  phone-number: ${TWILIO_PHONE_NUMBER}

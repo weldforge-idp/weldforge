@@ -1,0 +1,4 @@
+ALTER TABLE users
+ADD COLUMN cell_phone_number VARCHAR(20),
+ADD COLUMN email_verified BOOLEAN DEFAULT FALSE,
+ADD COLUMN cell_phone_verified BOOLEAN DEFAULT FALSE;
