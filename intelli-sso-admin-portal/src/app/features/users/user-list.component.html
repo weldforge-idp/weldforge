@@ -1,0 +1,32 @@
+<div class="container">
+  <h1>Users</h1>
+  <button (click)="addUser()">Add User</button>
+
+  <table *ngIf="users$ | async as users; else loading">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Name</th>
+        <th>Enabled</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let user of users">
+        <td>{{ user.username }}</td>
+        <td>{{ user.email }}</td>
+        <td>{{ user.firstName }} {{ user.lastName }}</td>
+        <td>{{ user.enabled ? 'Yes' : 'No' }}</td>
+        <td>
+          <button (click)="editUser(user.id)">Edit</button>
+          <button (click)="deleteUser(user.id)">Delete</button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <ng-template #loading>
+    <p>Loading users...</p>
+  </ng-template>
+</div>
