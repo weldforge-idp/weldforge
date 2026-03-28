@@ -21,9 +21,7 @@ import { of } from 'rxjs';
   ],
   template: `
     <mat-card class="login-card">
-      <mat-card-header>
-        <mat-card-title>Admin Login</mat-card-title>
-      </mat-card-header>
+      <mat-card-title>ForgeID Login</mat-card-title>
 
       <mat-card-content>
         <form (ngSubmit)="login()">
