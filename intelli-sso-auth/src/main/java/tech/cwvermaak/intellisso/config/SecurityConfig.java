@@ -79,7 +79,7 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
-                        .requestMatchers("/", "/login/**", "/oauth2/**", "/error", "/webjars/**", "/api/auth/**").permitAll()
+                        .requestMatchers("/", "/login/**", "/oauth2/**", "/error", "/webjars/**", "/api/auth/**", "/actuator/health").permitAll()
 
                         // Admin endpoints – require role or valid x-app-auth / JWT
                         .requestMatchers("/api/admin/**").authenticated()   // can be tightened to hasRole("ADMIN")
