@@ -25,7 +25,7 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // Skip filter for public OAuth paths and login
-        if (path.startsWith("/login") || path.startsWith("/oauth2") || path.equals("/error")) {
+        if (path.startsWith("/login") || path.startsWith("/oauth2") || path.equals("/error") || path.startsWith("/actuator/")) {
             filterChain.doFilter(request, response);
             return;
         }
