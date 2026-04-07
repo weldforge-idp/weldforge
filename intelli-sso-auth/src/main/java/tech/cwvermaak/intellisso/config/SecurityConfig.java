@@ -1,6 +1,7 @@
 package tech.cwvermaak.intellisso.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -14,6 +15,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import tech.cwvermaak.intellisso.repository.UserRepository;
@@ -27,6 +29,9 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final AppAuthorizationFilter appAuthorizationFilter;
     private final UserRepository userRepository;
+
+    @Autowired(required = false)
+    private ClientRegistrationRepository clientRegistrationRepository;
 
     @Bean
     public UserDetailsService userDetailsService() {
@@ -86,14 +91,17 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
 
-                // OAuth2 login configuration
-                .oauth2Login(oauth2 -> oauth2
-                                .userInfoEndpoint(userInfo -> userInfo
-                                        .userService(customOAuth2UserService)
-                                )
-                        // Optional: custom success handler to issue JWT and redirect or return JSON
-                        // .successHandler(customSuccessHandler)
-                )
+                // OAuth2 login configuration (only if providers are configured)
+                ;
+        if (clientRegistrationRepository != null) {
+            http.oauth2Login(oauth2 -> oauth2
+                            .userInfoEndpoint(userInfo -> userInfo
+                                    .userService(customOAuth2UserService)
+                            )
+                    );
+        }
+
+        http
 
                 .logout(logout -> logout
                         .logoutSuccessUrl("/")
