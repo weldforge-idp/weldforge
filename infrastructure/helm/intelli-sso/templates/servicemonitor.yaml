@@ -1,0 +1,22 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sso-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: sso-api
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: sso-api
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.global.namespace }}
+{{- end }}

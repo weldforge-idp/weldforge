@@ -1,0 +1,28 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: intelli-sso
+  region: af-south-1
+  version: "1.31"
+
+vpc:
+  cidr: 10.1.0.0/16
+  nat:
+    gateway: Single
+
+managedNodeGroups:
+  - name: intelli-sso-nodes
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 4
+    privateNetworking: true
+    iam:
+      withAddonPolicies:
+        ebs: true
+        imageBuilder: true
+
+addons:
+  - name: aws-ebs-csi-driver
+    version: latest

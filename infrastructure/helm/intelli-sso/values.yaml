@@ -1,0 +1,85 @@
+# ============================================================
+# Default values for intelli-sso.
+# Override per environment with values-staging.yaml, values-prod.yaml, etc.
+# ============================================================
+
+global:
+  namespace: sso
+
+# --- API (Spring Boot backend) ---
+api:
+  image:
+    repository: 650539477525.dkr.ecr.af-south-1.amazonaws.com/intelli-sso-auth
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  env:
+    SPRING_DATASOURCE_URL: "jdbc:postgresql://sso-postgres:5432/intelli_sso"
+    SPRING_DATASOURCE_USERNAME: "postgres-admin"
+    JWT_EXPIRATION_MS: "300000"
+    REFRESH_TOKEN_EXPIRATION_MS: "604800000"
+    APP_KEY_ROTATION_ENABLED: "true"
+    APP_KEY_ROTATION_MAX_AGE_DAYS: "90"
+    SHUTDOWN_TIMEOUT: "30s"
+  secrets:
+    SPRING_DATASOURCE_PASSWORD: "changeme-sso-db-password"
+    JWT_SECRET: "changeme-generate-a-256-bit-secret-key-here"
+    APP_CRYPTO_SECRET: "changeme-source-from-kms-or-hsm"
+
+# --- Frontend (Angular + nginx) ---
+frontend:
+  image:
+    repository: 650539477525.dkr.ecr.af-south-1.amazonaws.com/intelli-sso-admin-portal
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+
+# --- PostgreSQL ---
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  storage: 10Gi
+  storageClass: gp2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# --- Monitoring ---
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+  prometheusRules:
+    enabled: true
+
+# --- CORS ---
+cors:
+  allowedOrigins: "https://sso.cwvermaak.tech"

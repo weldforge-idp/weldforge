@@ -1,5 +1,9 @@
 package tech.cwvermaak.intellisso.model;
 
 public enum AuthProvider {
-    GOOGLE, GITHUB, FACEBOOK, AZURE, LOCAL, APPLE, TWITTER, LINKEDIN, AMAZON, INSTAGRAM, TIKTOK
+    LOCAL,
+    // OAuth2 / social
+    GOOGLE, GITHUB, FACEBOOK, AZURE, MICROSOFT, APPLE, TWITTER, LINKEDIN, AMAZON, INSTAGRAM, TIKTOK,
+    // Federated
+    SAML
 }

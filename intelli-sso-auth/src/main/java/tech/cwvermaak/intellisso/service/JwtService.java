@@ -8,9 +8,21 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 public class JwtService {
+
+    public static final String CLAIM_TENANT_ID    = "tid";
+    public static final String CLAIM_TENANT_SLUG  = "tenant";
+    public static final String CLAIM_SUPER_ADMIN  = "sa";
+    public static final String CLAIM_PURPOSE      = "purpose";
+    public static final String CLAIM_TOKEN_VERSION = "ver";
+    public static final String PURPOSE_MFA_CHALLENGE = "mfa_challenge";
+    public static final String PURPOSE_ACCESS       = "access";
+
+    private static final long MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000L;
 
     @Value("${app.jwt.secret}")
     private String secret;
@@ -18,7 +30,7 @@ public class JwtService {
     @Value("${app.jwt.access-token-expiration-ms}")
     private long accessExpirationMs;
 
-    @Value("${app.jwt.refresh-token-expiration-ms:604800000}") // default 7 days if not set
+    @Value("${app.jwt.refresh-token-expiration-ms:604800000}")
     private long refreshExpirationMs;
 
     private SecretKey getSigningKey() {
@@ -26,54 +38,94 @@ public class JwtService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    // Generate Access Token (short-lived)
-    public String generateAccessToken(String email) {
+    public String generateAccessToken(String email, Long tenantId, String tenantSlug,
+                                      boolean superAdmin, int tokenVersion) {
+        Map<String, Object> claims = new LinkedHashMap<>();
+        claims.put(CLAIM_TENANT_ID, tenantId);
+        claims.put(CLAIM_TENANT_SLUG, tenantSlug == null ? "" : tenantSlug);
+        claims.put(CLAIM_SUPER_ADMIN, superAdmin);
+        claims.put(CLAIM_PURPOSE, PURPOSE_ACCESS);
+        claims.put(CLAIM_TOKEN_VERSION, tokenVersion);
         return Jwts.builder()
                 .subject(email)
+                .claims(claims)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + accessExpirationMs))
                 .signWith(getSigningKey())
                 .compact();
     }
 
-    // Generate Refresh Token (long-lived, no extra claims needed for basic impl)
-    public String generateRefreshToken(String email) {
+    /** Back-compat overload used in tests that don't care about version. */
+    public String generateAccessToken(String email, Long tenantId, String tenantSlug, boolean superAdmin) {
+        return generateAccessToken(email, tenantId, tenantSlug, superAdmin, 0);
+    }
+
+    public Integer extractTokenVersion(io.jsonwebtoken.Claims claims) {
+        Object v = claims.get(CLAIM_TOKEN_VERSION);
+        if (v instanceof Number n) return n.intValue();
+        if (v instanceof String s && !s.isBlank()) {
+            try { return Integer.valueOf(s); } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
+    /**
+     * Short-lived token issued after password auth succeeds but before MFA
+     * has been satisfied. Carries just enough identity to look up the user
+     * on the second step, and a {@code purpose=mfa_challenge} claim so it
+     * cannot be substituted for an access token.
+     */
+    public String generateMfaChallengeToken(Long userId, Long tenantId, String tenantSlug) {
+        Map<String, Object> claims = new LinkedHashMap<>();
+        claims.put(CLAIM_TENANT_ID, tenantId);
+        claims.put(CLAIM_TENANT_SLUG, tenantSlug == null ? "" : tenantSlug);
+        claims.put(CLAIM_PURPOSE, PURPOSE_MFA_CHALLENGE);
+        return Jwts.builder()
+                .subject(String.valueOf(userId))
+                .claims(claims)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + MFA_CHALLENGE_TTL_MS))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public boolean isMfaChallenge(io.jsonwebtoken.Claims claims) {
+        Object p = claims.get(CLAIM_PURPOSE);
+        return PURPOSE_MFA_CHALLENGE.equals(p == null ? null : p.toString());
+    }
+
+    public String generateRefreshToken(String email, Long tenantId) {
         return Jwts.builder()
                 .subject(email)
+                .claim(CLAIM_TENANT_ID, tenantId)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + refreshExpirationMs))
                 .signWith(getSigningKey())
                 .compact();
     }
 
-    public String extractEmail(String token) {
+    public Claims parse(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()
                 .parseSignedClaims(token)
-                .getPayload()
-                .getSubject();
+                .getPayload();
+    }
+
+    public String extractEmail(String token) { return parse(token).getSubject(); }
+
+    public Long extractTenantId(String token) {
+        Object v = parse(token).get(CLAIM_TENANT_ID);
+        if (v instanceof Number n) return n.longValue();
+        if (v instanceof String s && !s.isBlank()) return Long.valueOf(s);
+        return null;
     }
 
     public boolean isTokenValid(String token) {
-        try {
-            Jwts.parser()
-                    .verifyWith(getSigningKey())
-                    .build()
-                    .parseSignedClaims(token);
-            return true;
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
-        }
+        try { parse(token); return true; }
+        catch (JwtException | IllegalArgumentException e) { return false; }
     }
 
-    // Getter for access expiration (in seconds, commonly used in responses)
-    public long getExpirationTime() {
-        return accessExpirationMs / 1000;  // convert ms → seconds
-    }
-
-    // Getter for refresh expiration
-    public long getRefreshTokenExpirationTime() {
-        return refreshExpirationMs / 1000;
-    }
+    public long getExpirationTime() { return accessExpirationMs / 1000; }
+    public long getRefreshTokenExpirationTime() { return refreshExpirationMs / 1000; }
 }

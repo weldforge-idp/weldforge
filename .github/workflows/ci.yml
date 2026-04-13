@@ -1,0 +1,106 @@
+name: CI
+
+# Runs on every PR and every push to main. The release pipeline (a
+# separate workflow) depends on this workflow succeeding, so any failing
+# unit test or Cucumber scenario blocks a deploy.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — JUnit + Cucumber
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: intelli-sso-auth
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Maven verify (compile + unit tests + Cucumber features + Postgres integration)
+        # Docker is available on ubuntu-latest runners, so the
+        # Testcontainers integration tests can opt in here. Locally a
+        # `mvn verify` without -Dtests.integration=true skips them.
+        run: ./mvnw -B -ntp verify -Dtests.integration=true
+        env:
+          APP_CRYPTO_SECRET: ci-only-crypto-secret-0123456789abcdef
+
+      - name: Upload Surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: intelli-sso-auth/target/surefire-reports
+
+      - name: Upload Cucumber HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cucumber-report
+          path: intelli-sso-auth/target/cucumber-reports
+
+      - name: Upload JaCoCo coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-coverage
+          path: intelli-sso-auth/target/site/jacoco
+
+  frontend:
+    name: Frontend — Vitest + ng build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: intelli-sso-admin-portal
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: intelli-sso-admin-portal/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Unit tests (Vitest via ng test)
+        run: npx ng test --watch=false
+
+      - name: Production build
+        run: npx ng build --configuration production
+
+  # Aggregate job that the branch protection rule can require —
+  # succeeds only when every test job above succeeds. This is what
+  # the release / deploy workflow should wait on.
+  gate:
+    name: CI gate
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs passed
+        run: echo "Backend and frontend test suites green — release may proceed."

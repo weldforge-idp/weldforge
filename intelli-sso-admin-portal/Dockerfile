@@ -1,13 +1,35 @@
-# Build
-FROM node:20 AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
+# ============================================================
+# Multi-stage build: Node 20 compile → nginx:alpine runtime.
+# Non-root nginx, security headers, health check.
+# ============================================================
 
-# Runtime
+# --- Build stage ---
+FROM node:20-alpine AS build
+WORKDIR /app
+
+# Cache dependencies before copying source
+COPY package*.json ./
+RUN npm ci --legacy-peer-deps
+
+# Copy source and build
+COPY . .
+RUN npx ng build --configuration production
+
+# --- Runtime stage ---
 FROM nginx:alpine
+
+# Remove default nginx config
+RUN rm -rf /etc/nginx/conf.d/default.conf
+
+# Copy built Angular app and custom nginx config
 COPY --from=build /app/dist/intelli-sso-admin-portal/browser /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Security: ensure files are readable but not writable by nginx worker
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chmod -R 555 /usr/share/nginx/html
+
 EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:80/ || exit 1

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sso-frontend
+  namespace: {{ .Values.global.namespace }}
+  {{- if .Values.frontend.service.annotations }}
+  annotations:
+    {{- toYaml .Values.frontend.service.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    app: sso-frontend
+  ports:
+    - name: https
+      port: 443
+      targetPort: 80
+  type: {{ .Values.frontend.service.type }}

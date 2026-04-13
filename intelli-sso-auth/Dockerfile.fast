@@ -1,0 +1,24 @@
+# ============================================================
+# Fast variant: assumes the JAR has been built locally with
+# `mvn package -DskipTests`. Use this for iteration; the
+# main Dockerfile is the canonical reproducible build.
+# ============================================================
+FROM bellsoft/liberica-openjre-debian:21
+
+RUN groupadd -r sso && useradd -r -g sso -d /app -s /sbin/nologin sso
+WORKDIR /app
+
+COPY target/intelli-sso-auth-*.jar app.jar
+RUN chown -R sso:sso /app
+
+USER sso
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -sf http://localhost:8080/actuator/health/liveness || exit 1
+
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-jar", "app.jar"]

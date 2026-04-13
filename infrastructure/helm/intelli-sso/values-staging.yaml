@@ -1,0 +1,26 @@
+# Staging environment overrides
+global:
+  namespace: sso-staging
+
+api:
+  image:
+    tag: staging
+  replicas: 1
+  autoscaling:
+    enabled: false
+  env:
+    APP_KEY_ROTATION_ENABLED: "false"
+
+frontend:
+  image:
+    tag: staging
+  replicas: 1
+  service:
+    type: ClusterIP
+    annotations: {}
+
+postgres:
+  storage: 5Gi
+
+cors:
+  allowedOrigins: "https://staging-sso.cwvermaak.tech"

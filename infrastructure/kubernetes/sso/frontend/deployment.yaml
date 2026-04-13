@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sso-frontend
+  namespace: sso
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sso-frontend
+  template:
+    metadata:
+      labels:
+        app: sso-frontend
+    spec:
+      containers:
+        - name: sso-frontend
+          image: 650539477525.dkr.ecr.af-south-1.amazonaws.com/intelli-sso-admin-portal:latest
+          ports:
+            - containerPort: 80
+              name: https-tgt
+            - containerPort: 8081
+              name: http-tgt
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: frontend-nginx-config

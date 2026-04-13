@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-nginx-config
+  namespace: sso
+data:
+  default.conf: |
+    # =====================================================================
+    # Common proxy settings — forwards the original scheme as HTTPS because
+    # the NLB terminates TLS, so every request reaching nginx was HTTPS from
+    # the client's perspective regardless of the raw port.
+    # =====================================================================
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header X-Forwarded-Port  443;
+    proxy_read_timeout 60s;
+
+    # =====================================================================
+    # Port 8081 — HTTP redirect. NLB port 80 → this port 8081 → 301 to HTTPS.
+    # =====================================================================
+    server {
+        listen 8081 default_server;
+        server_name _;
+        return 301 https://$host$request_uri;
+    }
+
+    # =====================================================================
+    # SSO API vhost — sso.weldforge.org (TLS-terminated at NLB, reaches on :80)
+    # =====================================================================
+    server {
+        listen 80;
+        server_name sso.weldforge.org;
+
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options    "nosniff"                              always;
+        add_header X-Frame-Options           "DENY"                                 always;
+        add_header X-XSS-Protection          "1; mode=block"                        always;
+        add_header Referrer-Policy           "strict-origin-when-cross-origin"      always;
+        add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;
+
+        gzip on;
+        gzip_types text/plain text/css application/json application/javascript application/xml text/xml;
+        gzip_min_length 256;
+
+        location /                      { return 404; }
+        location /api/                  { proxy_pass http://sso-api:8080; }
+        location /t/                    { proxy_pass http://sso-api:8080; }
+        location /saml2/                { proxy_pass http://sso-api:8080; }
+        location /scim/                 { proxy_pass http://sso-api:8080; }
+        location /oauth2/               { proxy_pass http://sso-api:8080; }
+        location /login/                { proxy_pass http://sso-api:8080; }
+        location /actuator/health       { proxy_pass http://sso-api:8080; }
+        location /actuator/health/      { proxy_pass http://sso-api:8080; }
+        location /v3/api-docs           { proxy_pass http://sso-api:8080; }
+        location /v3/api-docs/          { proxy_pass http://sso-api:8080; }
+        location /swagger-ui            { proxy_pass http://sso-api:8080; }
+        location /swagger-ui.html       { proxy_pass http://sso-api:8080; }
+        location /swagger-ui/           { proxy_pass http://sso-api:8080; }
+        location = /                    { return 302 /swagger-ui/index.html; }
+    }
+
+    # =====================================================================
+    # Admin portal vhost — admin.weldforge.org
+    # =====================================================================
+    server {
+        listen 80 default_server;
+        server_name admin.weldforge.org _;
+
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options    "nosniff"                              always;
+        add_header X-Frame-Options           "DENY"                                 always;
+        add_header X-XSS-Protection          "1; mode=block"                        always;
+        add_header Referrer-Policy           "strict-origin-when-cross-origin"      always;
+        add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;
+
+        gzip on;
+        gzip_types text/plain text/css application/json application/javascript application/xml text/xml;
+        gzip_min_length 256;
+
+        location / {
+            root /usr/share/nginx/html;
+            index index.html index.htm;
+            try_files $uri $uri/ /index.html;
+
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+        }
+
+        location /api/            { proxy_pass http://sso-api:8080; }
+        location /t/              { proxy_pass http://sso-api:8080; }
+        location /saml2/          { proxy_pass http://sso-api:8080; }
+        location /scim/           { proxy_pass http://sso-api:8080; }
+        location /oauth2/         { proxy_pass http://sso-api:8080; }
+        location /login/          { proxy_pass http://sso-api:8080; }
+        location /actuator/health { proxy_pass http://sso-api:8080; }
+    }

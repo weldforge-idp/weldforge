@@ -1,24 +1,25 @@
 package tech.cwvermaak.intellisso.config;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.AuthenticationProvider;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import tech.cwvermaak.intellisso.repository.UserRepository;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import tech.cwvermaak.intellisso.config.logging.MdcEnrichmentFilter;
+import tech.cwvermaak.intellisso.config.oauth.DatabaseClientRegistrationRepository;
+import tech.cwvermaak.intellisso.config.scim.ScimAuthenticationFilter;
+import tech.cwvermaak.intellisso.config.saml.DatabaseRelyingPartyRegistrationRepository;
+import tech.cwvermaak.intellisso.config.saml.SamlUserProvisioningSuccessHandler;
+import tech.cwvermaak.intellisso.config.tenant.TenantResolverFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -28,29 +29,13 @@ public class SecurityConfig {
     private final CustomOAuth2UserService customOAuth2UserService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final AppAuthorizationFilter appAuthorizationFilter;
-    private final UserRepository userRepository;
-
-    @Autowired(required = false)
-    private ClientRegistrationRepository clientRegistrationRepository;
-
-    @Bean
-    public UserDetailsService userDetailsService() {
-        return username -> userRepository.findByEmail(username)
-                .map(user -> org.springframework.security.core.userdetails.User.builder()
-                        .username(user.getEmail())
-                        .password(user.getPassword() != null ? user.getPassword() : "")
-                        .roles(user.getRole() != null ? user.getRole().getName() : "USER")
-                        .build())
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-    }
-
-    @Bean
-    public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService());
-        authProvider.setPasswordEncoder(passwordEncoder());
-        return authProvider;
-    }
+    private final TenantResolverFilter tenantResolverFilter;
+    private final MdcEnrichmentFilter mdcEnrichmentFilter;
+    private final ScimAuthenticationFilter scimAuthenticationFilter;
+    private final DatabaseClientRegistrationRepository clientRegistrationRepository;
+    private final DatabaseRelyingPartyRegistrationRepository relyingPartyRegistrationRepository;
+    private final SamlUserProvisioningSuccessHandler samlSuccessHandler;
+    private final CorsProperties corsProperties;
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
@@ -64,44 +49,89 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-                // Disable CSRF for stateless API + JWT
-                .csrf(csrf -> csrf.disable())
+        UrlBasedCorsConfigurationSource corsSource = new UrlBasedCorsConfigurationSource();
+        CorsConfiguration corsConfig = new CorsConfiguration();
+        corsProperties.getAllowedOrigins().forEach(corsConfig::addAllowedOrigin);
+        corsProperties.getAllowedMethods().forEach(corsConfig::addAllowedMethod);
+        corsConfig.addAllowedHeader("*");
+        corsConfig.setAllowCredentials(true);
+        corsConfig.setMaxAge(corsProperties.getMaxAge());
+        corsSource.registerCorsConfiguration("/**", corsConfig);
 
-                // Stateless session (JWT based)
+        http
+                .cors(cors -> cors.configurationSource(corsSource))
+                .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                .authenticationProvider(authenticationProvider())
-
-                // Custom filters first
-                .addFilterBefore(appAuthorizationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(tenantResolverFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(appAuthorizationFilter, TenantResolverFilter.class)
+                .addFilterAfter(jwtAuthenticationFilter, AppAuthorizationFilter.class)
+                // SCIM has its own bearer-token scheme; the filter only
+                // fires on /scim/v2/** paths and authenticates against the
+                // app_clients table. Sits inside the chain so MDC enrichment
+                // sees the populated tenant context.
+                .addFilterAfter(scimAuthenticationFilter, JwtAuthenticationFilter.class)
+                // Runs after JWT + SCIM auth so MDC carries actor + tenant +
+                // super_admin on every downstream log line.
+                .addFilterAfter(mdcEnrichmentFilter, ScimAuthenticationFilter.class)
 
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
-                        .requestMatchers("/", "/login/**", "/oauth2/**", "/error", "/webjars/**", "/api/auth/**", "/actuator/health").permitAll()
-
-                        // Admin endpoints – require role or valid x-app-auth / JWT
-                        .requestMatchers("/api/admin/**").authenticated()   // can be tightened to hasRole("ADMIN")
-
-                        // Protected API endpoints
+                        .requestMatchers(
+                                "/",
+                                "/login/**",
+                                "/oauth2/**",
+                                "/saml2/**",
+                                "/error",
+                                "/webjars/**",
+                                "/api/auth/**",
+                                "/api/auth/mfa/verify",
+                                "/api/auth/mfa/webauthn/assertion/**",
+                                "/t/*/.well-known/openid-configuration",
+                                "/t/*/oauth2/jwks",
+                                "/t/*/oauth2/token",
+                                "/t/*/oauth2/userinfo",
+                                "/t/*/oauth2/introspect",
+                                "/t/*/oauth2/revoke",
+                                // /authorize is reachable both authenticated
+                                // (renders consent) and unauthenticated (302
+                                // to login). Permit so the controller's own
+                                // state machine decides.
+                                "/t/*/oauth2/authorize",
+                                "/t/*/oauth2/authorize/decide",
+                                // SAML IdP metadata — public like OIDC discovery
+                                "/t/*/oauth2/register",
+                                "/t/*/saml2/idp/metadata",
+                                // SCIM endpoints — authenticated by their own filter
+                                // (Bearer token against app_clients), so the Spring
+                                // Security chain just passes them through.
+                                "/scim/v2/**",
+                                "/actuator/health/**",
+                                "/actuator/prometheus",
+                                // OpenAPI / Swagger UI
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html"
+                        ).permitAll()
+                        .requestMatchers("/api/admin/**").authenticated()
                         .requestMatchers("/api/**").authenticated()
-
-                        // Everything else requires authentication
                         .anyRequest().authenticated()
                 )
 
-                // OAuth2 login configuration (only if providers are configured)
-                ;
-        if (clientRegistrationRepository != null) {
-            http.oauth2Login(oauth2 -> oauth2
-                            .userInfoEndpoint(userInfo -> userInfo
-                                    .userService(customOAuth2UserService)
-                            )
-                    );
-        }
+                // OAuth2 / social login — dynamic, per-tenant registrations.
+                .oauth2Login(oauth2 -> oauth2
+                        .clientRegistrationRepository(clientRegistrationRepository)
+                        .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+                )
 
-        http
+                // SAML 2.0 Service Provider — dynamic, per-tenant upstream IdPs.
+                //   SP-initiated login:   /saml2/authenticate/{slug}-saml-{key}
+                //   Assertion consumer:   /login/saml2/sso/{slug}-saml-{key}
+                //   SP metadata endpoint: /saml2/service-provider-metadata/{slug}-saml-{key}
+                .saml2Login(saml2 -> saml2
+                        .relyingPartyRegistrationRepository(relyingPartyRegistrationRepository)
+                        .successHandler(samlSuccessHandler)
+                )
+                .saml2Metadata(org.springframework.security.config.Customizer.withDefaults())
 
                 .logout(logout -> logout
                         .logoutSuccessUrl("/")

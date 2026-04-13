@@ -3,11 +3,25 @@ package tech.cwvermaak.intellisso.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import tech.cwvermaak.intellisso.model.User;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByEmail(String email);
-    Optional<User> findByUsername(String username);
-    Optional<User> findByUsernameOrEmail(String username, String email);
-    Optional<User> findByProviderAndProviderId(String provider, String providerId);
+
+    List<User> findByTenantId(Long tenantId);
+
+    Optional<User> findByIdAndTenantId(Long id, Long tenantId);
+
+    Optional<User> findByTenantIdAndEmailIgnoreCase(Long tenantId, String email);
+
+    Optional<User> findByTenantIdAndUsernameIgnoreCase(Long tenantId, String username);
+
+    Optional<User> findByTenant_SlugAndEmailIgnoreCase(String tenantSlug, String email);
+
+    Optional<User> findFirstByEmailIgnoreCase(String email);
+
+    default Optional<User> findByTenantAndIdentifier(Long tenantId, String identifier) {
+        return findByTenantIdAndEmailIgnoreCase(tenantId, identifier)
+                .or(() -> findByTenantIdAndUsernameIgnoreCase(tenantId, identifier));
+    }
 }

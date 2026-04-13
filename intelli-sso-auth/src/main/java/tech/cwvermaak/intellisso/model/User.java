@@ -17,10 +17,15 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
+    /** Owning tenant — every user belongs to exactly one tenant. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    private Tenant tenant;
+
+    @Column(nullable = false)
     private String username;
 
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
     private String email;
 
     private String cellPhoneNumber;
@@ -45,6 +50,37 @@ public class User {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "role_id")
     private Role role;
+
+    @Column(name = "is_super_admin", nullable = false)
+    private boolean superAdmin;
+
+    /**
+     * SCIM-style deactivation flag. False means the row exists but the
+     * user cannot sign in — set by SCIM PATCH operations from upstream
+     * IdPs (Okta / Workday / Entra ID) when an employee leaves the org.
+     * Distinct from {@link #lockedUntil} which is a transient
+     * anti-brute-force lock.
+     */
+    @Column(nullable = false)
+    private boolean active = true;
+
+    // --- Account lockout -------------------------------------
+    @Column(name = "failed_login_attempts", nullable = false)
+    private int failedLoginAttempts;
+
+    @Column(name = "locked_until")
+    private LocalDateTime lockedUntil;
+
+    // --- Session revocation ----------------------------------
+    /**
+     * Monotonically increasing counter that is embedded in every access
+     * token as the {@code ver} claim. Bumping this value invalidates every
+     * outstanding access token for the user in one atomic operation — used
+     * by "log me out of all devices" and by security responses (e.g. after
+     * a password change or admin-triggered MFA reset).
+     */
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();

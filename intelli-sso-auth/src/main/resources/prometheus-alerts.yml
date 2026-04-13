@@ -1,0 +1,130 @@
+# ============================================================
+# Prometheus alerting rules for intelli-sso.
+#
+# Add to your Prometheus config:
+#   rule_files:
+#     - "prometheus-alerts.yml"
+#
+# Or mount into the Prometheus container alongside the main config.
+# ============================================================
+
+groups:
+  - name: intelli-sso
+    rules:
+
+      # ---------- Authentication -----------------------------------
+
+      - alert: HighLoginFailureRate
+        expr: |
+          sum(rate(sso_auth_login_total{outcome="failure"}[5m])) /
+          (sum(rate(sso_auth_login_total[5m])) > 0)
+          > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Login failure rate exceeds 50%"
+          description: >-
+            More than half of login attempts in the last 5 minutes are
+            failing. This may indicate a credential-stuffing attack or
+            a misconfigured upstream IdP.
+
+      - alert: LoginFailureSpike
+        expr: |
+          sum(rate(sso_auth_login_total{outcome="failure"}[5m])) > 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Login failure rate exceeds 10/sec"
+          description: >-
+            Sustained login failure rate above 10 per second. Likely a
+            brute-force or credential-stuffing attack. Check rate-limit
+            effectiveness and consider temporary IP bans.
+
+      # ---------- Token issuance -----------------------------------
+
+      - alert: NoTokensIssued
+        expr: |
+          sum(rate(sso_token_issued_total[15m])) == 0
+          and sum(sso_token_issued_total) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No OIDC tokens issued in 15 minutes"
+          description: >-
+            The OIDC token endpoint has not issued any tokens in the
+            last 15 minutes despite having issued tokens before. The
+            authorization server may be unhealthy.
+
+      # ---------- SCIM provisioning --------------------------------
+
+      - alert: ScimOperationErrors
+        expr: |
+          sum(rate(http_server_requests_seconds_count{uri=~"/scim/v2/.*", status=~"5.."}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SCIM endpoint returning 5xx errors"
+          description: >-
+            The SCIM provisioning API is returning server errors at a
+            rate above 1/sec. Upstream provisioners (Okta/Workday/Entra)
+            may be failing to sync users and groups.
+
+      # ---------- Health -------------------------------------------
+
+      - alert: HealthCheckDown
+        expr: up{job="intelli-sso"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "intelli-sso instance is down"
+          description: >-
+            Prometheus cannot reach the intelli-sso health endpoint.
+            The service may have crashed or the network path is broken.
+
+      - alert: ReadinessProbeDown
+        expr: |
+          probe_success{job="intelli-sso-readiness"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "intelli-sso readiness probe failing"
+          description: >-
+            The /actuator/health/readiness endpoint is returning non-200.
+            The database connection or disk space check may be failing.
+
+      # ---------- JVM / infrastructure -----------------------------
+
+      - alert: HighHeapUsage
+        expr: |
+          jvm_memory_used_bytes{area="heap"} /
+          jvm_memory_max_bytes{area="heap"}
+          > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM heap usage above 90%"
+          description: >-
+            The JVM heap is over 90% full for 5+ minutes. The service
+            is at risk of OOM. Consider scaling up or investigating
+            memory leaks.
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) /
+          sum(rate(http_server_requests_seconds_count[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP 5xx error rate above 5%"
+          description: >-
+            More than 5% of HTTP requests are returning 5xx errors.
+            Check application logs for stack traces.

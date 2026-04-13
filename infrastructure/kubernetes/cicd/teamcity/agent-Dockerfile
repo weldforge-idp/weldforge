@@ -1,0 +1,41 @@
+FROM jetbrains/teamcity-agent:latest
+
+USER root
+
+# Ensure sudo is available (needed for DinD startup)
+RUN apt-get update && apt-get install -y sudo && \
+    echo "buildagent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/buildagent
+
+# Install Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g npm@latest
+
+# Install Java 21 (Amazon Corretto)
+RUN curl -fsSL https://apt.corretto.aws/corretto.key | gpg --dearmor -o /usr/share/keyrings/corretto-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/corretto-keyring.gpg] https://apt.corretto.aws stable main" > /etc/apt/sources.list.d/corretto.list && \
+    apt-get update && \
+    apt-get install -y java-21-amazon-corretto-jdk && \
+    update-alternatives --set java /usr/lib/jvm/java-21-amazon-corretto/bin/java
+
+# Install Maven
+ARG MAVEN_VERSION=3.9.9
+RUN curl -fsSL https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar xz -C /opt && \
+    ln -s /opt/apache-maven-${MAVEN_VERSION}/bin/mvn /usr/local/bin/mvn
+
+# Install AWS CLI v2
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip && \
+    unzip -q /tmp/awscliv2.zip -d /tmp && \
+    /tmp/aws/install && \
+    rm -rf /tmp/aws /tmp/awscliv2.zip
+
+# Install kubectl
+RUN curl -fsSL "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl
+
+# Set JAVA_HOME
+ENV JAVA_HOME=/usr/lib/jvm/java-21-amazon-corretto
+ENV JDK_21=/usr/lib/jvm/java-21-amazon-corretto
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+USER buildagent

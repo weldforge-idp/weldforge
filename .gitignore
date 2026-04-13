@@ -15,3 +15,46 @@ buildNumber.properties
 .project
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code session data
+.claude/
+
+# Local junk that should never be committed
+*.pkg
+files.zip
+AWSCLIV2.pkg
+*.swp
+*~
+
+# Local dev env files — only .env.example should be committed
+.env
+intelli-sso-auth/.env
+intelli-sso-admin-portal/.env
+
+# Test output
+test-output/
+
+# Terraform — .terraform/ contains downloaded provider binaries (can be 100s of MB)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+# .terraform.lock.hcl should be committed
+crash.log
+crash.*.log

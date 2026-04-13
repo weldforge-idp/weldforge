@@ -2,18 +2,135 @@
 
 @include mat.core();
 
-$my-theme-primary: mat.m2-define-palette(mat.$m2-indigo-palette);
-$my-theme-accent: mat.m2-define-palette(mat.$m2-pink-palette, A200, A100, A400);
-$my-theme-warn: mat.m2-define-palette(mat.$m2-red-palette);
-
-$my-theme: mat.m2-define-light-theme((
-  color: (
-    primary: $my-theme-primary,
-    accent: $my-theme-accent,
-    warn: $my-theme-warn,
+// WeldForge brand palette — dark forge, amber weld, blue steel
+// Primary: blue steel (#4A8FF5). Accent: amber weld (#E8921F).
+$wf-blue-palette: (
+  50:  #EAF1FE,
+  100: #C7DAFC,
+  200: #9FBEFA,
+  300: #76A2F8,
+  400: #598DF7,
+  500: #4A8FF5,
+  600: #3D7EF5,
+  700: #2D5FA8,
+  800: #1F4278,
+  900: #112448,
+  contrast: (
+    50:  #070B17, 100: #070B17, 200: #070B17, 300: #070B17, 400: #FFFFFF,
+    500: #FFFFFF, 600: #FFFFFF, 700: #FFFFFF, 800: #FFFFFF, 900: #FFFFFF,
   )
+);
+
+$wf-amber-palette: (
+  50:  #FDF3E4,
+  100: #FBE0BC,
+  200: #F8CC90,
+  300: #F4B764,
+  400: #F0A742,
+  500: #E8921F,
+  600: #D3821B,
+  700: #9A5E0F,
+  800: #6E430A,
+  900: #3A2405,
+  contrast: (
+    50:  #070B17, 100: #070B17, 200: #070B17, 300: #070B17, 400: #070B17,
+    500: #070B17, 600: #FFFFFF, 700: #FFFFFF, 800: #FFFFFF, 900: #FFFFFF,
+  )
+);
+
+$wf-primary: mat.m2-define-palette($wf-blue-palette, 500, 300, 700);
+$wf-accent:  mat.m2-define-palette($wf-amber-palette, 500, 300, 700);
+$wf-warn:    mat.m2-define-palette(mat.$m2-red-palette);
+
+$wf-theme: mat.m2-define-dark-theme((
+  color: (primary: $wf-primary, accent: $wf-accent, warn: $wf-warn),
 ));
 
-@include mat.all-component-themes($my-theme);
+@include mat.all-component-themes($wf-theme);
 
-body {margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif;}
+:root {
+  --wf-bg:         #070B17;
+  --wf-bg-2:       #0C1020;
+  --wf-bg-3:       #111628;
+  --wf-border:     #1C2646;
+  --wf-border-2:   #243058;
+  --wf-blue:       #4A8FF5;
+  --wf-blue-dim:   #2D5FA8;
+  --wf-blue-glow:  rgba(74, 143, 245, 0.18);
+  --wf-amber:      #E8921F;
+  --wf-amber-dim:  #9A5E0F;
+  --wf-amber-glow: rgba(232, 146, 31, 0.15);
+  --wf-text:       #EEF2FF;
+  --wf-text-2:     #8899CC;
+  --wf-text-3:     #4A5A80;
+  --wf-mono:       'Space Mono', monospace;
+  --wf-sans:       'DM Sans', sans-serif;
+  --wf-display:    'Syne', sans-serif;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--wf-bg);
+  color: var(--wf-text);
+  font-family: var(--wf-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+}
+
+// Dot grid background — signature WeldForge texture
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, #1A2446 1px, transparent 1px);
+  background-size: 36px 36px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+}
+
+app-root {
+  position: relative;
+  z-index: 1;
+  display: block;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--wf-display);
+  letter-spacing: 0.02em;
+  color: var(--wf-text);
+}
+
+code, pre, .mono { font-family: var(--wf-mono); }
+
+// Material overrides to fit the forge aesthetic
+.mat-toolbar.mat-primary {
+  background: rgba(7, 11, 23, 0.88);
+  color: var(--wf-text);
+  border-bottom: 1px solid var(--wf-border);
+  backdrop-filter: blur(8px);
+}
+
+.mat-mdc-card {
+  background: var(--wf-bg-2) !important;
+  color: var(--wf-text) !important;
+  border: 1px solid var(--wf-border);
+  border-radius: 4px !important;
+}
+
+.mat-mdc-raised-button.mat-primary {
+  background-color: var(--wf-blue) !important;
+  color: #fff !important;
+}
+
+.mat-mdc-raised-button.mat-accent {
+  background-color: var(--wf-amber) !important;
+  color: #070B17 !important;
+}

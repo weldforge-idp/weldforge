@@ -15,8 +15,12 @@ public class Environment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    private Tenant tenant;
+
     @Column(nullable = false)
-    private String name;          // e.g. dev, staging, prod
+    private String name;
 
     @Column(name = "project_name")
     private String projectName;

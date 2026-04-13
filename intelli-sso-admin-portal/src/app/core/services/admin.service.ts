@@ -80,4 +80,12 @@ export class AdminService {
   createAppClient(client: Partial<AppClient>): Observable<AppClient> {
     return this.http.post<AppClient>(`${this.apiUrl}/app-clients`, client);
   }
+
+  deleteUser(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/users/${id}`);
+  }
+
+  resetUserMfa(id: number): Observable<{ removed: number }> {
+    return this.http.post<{ removed: number }>(`${this.apiUrl}/users/${id}/reset-mfa`, {});
+  }
 }

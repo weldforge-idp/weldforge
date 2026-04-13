@@ -1,0 +1,9 @@
+apiVersion: v2
+name: intelli-sso
+description: Multi-tenant SSO / IAM platform — authentication, OIDC, SAML, SCIM, MFA
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: CW Vermaak
+    url: https://cwvermaak.tech

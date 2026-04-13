@@ -1,0 +1,26 @@
+# Production environment overrides
+global:
+  namespace: sso
+
+api:
+  image:
+    tag: latest
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+  env:
+    APP_KEY_ROTATION_ENABLED: "true"
+    APP_KEY_ROTATION_MAX_AGE_DAYS: "90"
+
+frontend:
+  image:
+    tag: latest
+  replicas: 2
+
+postgres:
+  storage: 10Gi
+
+cors:
+  allowedOrigins: "https://sso.cwvermaak.tech"

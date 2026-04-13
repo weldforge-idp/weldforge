@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WeldForge logging configuration.
+
+  Two output formats depending on the active Spring profile:
+  - default / dev / local: human-readable console with MDC inline
+  - prod / json: single-line JSON for ingestion into ELK / Datadog /
+    CloudWatch / any SIEM that parses structured logs
+
+  Every log line carries MDC keys populated by MdcEnrichmentFilter:
+    request_id   — per-request correlation id
+    tenant       — current tenant slug (post-auth or resolver default)
+    actor        — authenticated user email, if any
+    super_admin  — "true" for super-admin calls
+
+  Auth-related events (auth.*, mfa.*) are tagged with logger name
+  "security.audit" so downstream pipelines can split them from noisy
+  HTTP access logs.
+-->
+<configuration>
+
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="intelli-sso-auth"/>
+
+    <!-- ==== Pretty console (dev) ============================== -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) [%thread] %cyan(%logger{36}) [req=%X{request_id:-} tenant=%X{tenant:-} actor=%X{actor:-}] %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ==== JSON (prod / SIEM) ================================ -->
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp>
+                    <fieldName>@timestamp</fieldName>
+                </timestamp>
+                <version/>
+                <logLevel/>
+                <loggerName/>
+                <threadName/>
+                <message/>
+                <mdc/>
+                <stackTrace>
+                    <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                        <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                        <maxLength>4096</maxLength>
+                        <shortenedClassNameLength>40</shortenedClassNameLength>
+                        <rootCauseFirst>true</rootCauseFirst>
+                    </throwableConverter>
+                </stackTrace>
+                <pattern>
+                    <pattern>
+                        {
+                          "app": "${appName}",
+                          "request_id": "%X{request_id}",
+                          "tenant": "%X{tenant}",
+                          "actor": "%X{actor}",
+                          "super_admin": "%X{super_admin}"
+                        }
+                    </pattern>
+                </pattern>
+            </providers>
+        </encoder>
+    </appender>
+
+    <!-- Sensible defaults -->
+    <logger name="org.springframework.security" level="INFO"/>
+    <logger name="org.hibernate.SQL" level="WARN"/>
+    <logger name="tech.cwvermaak.intellisso" level="DEBUG"/>
+    <logger name="security.audit" level="INFO"/>
+
+    <!-- Profile-scoped root: JSON in prod, console everywhere else. -->
+    <springProfile name="prod,json">
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+    <springProfile name="!prod &amp; !json">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+</configuration>
