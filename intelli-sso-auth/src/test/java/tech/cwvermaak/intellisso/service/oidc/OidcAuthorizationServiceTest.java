@@ -48,7 +48,15 @@ class OidcAuthorizationServiceTest {
         clientRepo = mock(OidcClientRepository.class);
         codeRepo = mock(OAuthAuthorizationCodeRepository.class);
         auditService = mock(AuditService.class);
-        service = new OidcAuthorizationService(clientRepo, codeRepo, auditService);
+        var mfaFactorRepo = mock(tech.cwvermaak.intellisso.repository.MfaFactorRepository.class);
+        var mfaPolicyService = mock(tech.cwvermaak.intellisso.service.TenantMfaPolicyService.class);
+        when(mfaPolicyService.effectivePolicy(org.mockito.ArgumentMatchers.anyLong())).thenReturn(
+                tech.cwvermaak.intellisso.model.TenantMfaPolicy.builder()
+                        .enforcement(tech.cwvermaak.intellisso.model.TenantMfaPolicy.Enforcement.OPTIONAL)
+                        .defaultStepupMaxAge(0)
+                        .build());
+        service = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
+                mfaFactorRepo, mfaPolicyService);
 
         tenant = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         user = User.builder().id(42L).tenant(tenant).email("alice@acme.test").build();

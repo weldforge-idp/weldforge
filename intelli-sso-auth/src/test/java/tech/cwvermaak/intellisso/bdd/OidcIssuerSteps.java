@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 public class OidcIssuerSteps {
@@ -127,7 +128,16 @@ public class OidcIssuerSteps {
                 Optional.ofNullable(codeStore.get((String) inv.getArgument(0))));
 
         signingKeyService = new TenantSigningKeyService(signingKeyRepo);
-        authorizationService = new OidcAuthorizationService(clientRepo, codeRepo, auditService);
+        var mfaFactorRepo = mock(tech.cwvermaak.intellisso.repository.MfaFactorRepository.class);
+        var mfaPolicyService = mock(tech.cwvermaak.intellisso.service.TenantMfaPolicyService.class);
+        // Default: no policy, no verified factors — step-up only fires if require_mfa is set.
+        when(mfaPolicyService.effectivePolicy(anyLong())).thenReturn(
+                tech.cwvermaak.intellisso.model.TenantMfaPolicy.builder()
+                        .enforcement(tech.cwvermaak.intellisso.model.TenantMfaPolicy.Enforcement.OPTIONAL)
+                        .defaultStepupMaxAge(0)
+                        .build());
+        authorizationService = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
+                mfaFactorRepo, mfaPolicyService);
         tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
         // Set @Value-injected lifetimes since we constructed the bean by hand.
         ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);

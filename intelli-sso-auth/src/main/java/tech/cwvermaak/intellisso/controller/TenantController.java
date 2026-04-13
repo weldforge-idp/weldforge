@@ -7,7 +7,9 @@ import tech.cwvermaak.intellisso.model.SocialProviderType;
 import tech.cwvermaak.intellisso.model.dto.SamlProviderDto;
 import tech.cwvermaak.intellisso.model.dto.SocialProviderDto;
 import tech.cwvermaak.intellisso.model.dto.TenantDto;
+import tech.cwvermaak.intellisso.model.dto.MfaPolicyDto;
 import tech.cwvermaak.intellisso.model.dto.TwilioProviderDto;
+import tech.cwvermaak.intellisso.service.TenantMfaPolicyService;
 import tech.cwvermaak.intellisso.service.TenantSamlService;
 import tech.cwvermaak.intellisso.service.TenantService;
 import tech.cwvermaak.intellisso.service.TenantTwilioService;
@@ -27,6 +29,7 @@ public class TenantController {
     private final TenantService tenantService;
     private final TenantSamlService tenantSamlService;
     private final TenantTwilioService tenantTwilioService;
+    private final TenantMfaPolicyService tenantMfaPolicyService;
 
     @GetMapping
     public ResponseEntity<List<TenantDto>> list() {
@@ -129,5 +132,26 @@ public class TenantController {
     public ResponseEntity<Void> deleteTwilio(@PathVariable Long id) {
         tenantTwilioService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // -- MFA policy (MFA-03 / MFA-04 / SSO-05) ------------------------
+
+    @GetMapping("/{id}/mfa-policy")
+    public ResponseEntity<MfaPolicyDto> getMfaPolicy(@PathVariable Long id) {
+        return ResponseEntity.ok(tenantMfaPolicyService.get(id));
+    }
+
+    @PostMapping("/{id}/mfa-policy")
+    public ResponseEntity<MfaPolicyDto> upsertMfaPolicy(
+            @PathVariable Long id,
+            @RequestBody MfaPolicyDto dto) {
+        return ResponseEntity.ok(tenantMfaPolicyService.upsert(id, dto));
+    }
+
+    @PutMapping("/{id}/mfa-policy")
+    public ResponseEntity<MfaPolicyDto> updateMfaPolicy(
+            @PathVariable Long id,
+            @RequestBody MfaPolicyDto dto) {
+        return ResponseEntity.ok(tenantMfaPolicyService.upsert(id, dto));
     }
 }

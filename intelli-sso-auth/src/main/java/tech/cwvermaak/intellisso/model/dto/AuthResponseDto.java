@@ -29,4 +29,12 @@ public class AuthResponseDto {
 
     /** Factor types the user has enrolled — drives which prompts to show. */
     private List<MfaFactorType> availableFactors;
+
+    /**
+     * True when the tenant's MFA policy is REQUIRED, the grace period has
+     * elapsed, and the user has no verified factor. The client should
+     * redirect to the MFA enrollment flow instead of issuing a token.
+     */
+    @Builder.Default
+    private boolean mustEnrollMfa = false;
 }

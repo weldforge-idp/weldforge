@@ -24,6 +24,7 @@ import {
 import { OidcClient, OidcClientService } from '../../core/services/oidc-client.service';
 import { SamlIdpServiceProvider, SamlIdpService } from '../../core/services/saml-idp.service';
 import { TenantTwilioService, TwilioProvider } from '../../core/services/tenant-twilio.service';
+import { TenantMfaPolicyService, MfaPolicy, MfaEnforcement } from '../../core/services/tenant-mfa-policy.service';
 import { environment } from '../../../environments/environment';
 
 interface TenantRow extends Tenant {
@@ -35,6 +36,7 @@ interface TenantRow extends Tenant {
   samlDraft?: SamlProvider;
   twilio?: TwilioProvider | null;
   twilioDraft?: TwilioProvider;
+  mfaPolicy?: MfaPolicy;
 }
 
 @Component({
@@ -321,6 +323,37 @@ interface TenantRow extends Tenant {
               </div>
             </section>
 
+            <!-- ==================== MFA enforcement policy ==================== -->
+            <section class="wf-section">
+              <h4>MFA enforcement policy</h4>
+              <p class="sub">Control whether users must enroll a second factor. <strong>REQUIRED</strong> blocks login for users with no verified factor after the grace period expires. Step-up age forces re-authentication on high-assurance OIDC clients even within an active SSO session.</p>
+
+              <div *ngIf="t.mfaPolicy" class="wf-add-provider">
+                <div class="wf-grid">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Enforcement</mat-label>
+                    <mat-select [(ngModel)]="t.mfaPolicy!.enforcement">
+                      <mat-option value="OPTIONAL">Optional — users may enroll</mat-option>
+                      <mat-option value="REQUIRED">Required — block login without a factor</mat-option>
+                      <mat-option value="RISK_ADAPTIVE">Risk-adaptive (reserved)</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Grace period (days)</mat-label>
+                    <input matInput type="number" min="0" [(ngModel)]="t.mfaPolicy!.gracePeriodDays">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Default step-up age (seconds)</mat-label>
+                    <input matInput type="number" min="0" [(ngModel)]="t.mfaPolicy!.defaultStepupMaxAge">
+                  </mat-form-field>
+                </div>
+                <div class="wf-actions">
+                  <span class="spacer"></span>
+                  <button mat-raised-button color="primary" (click)="saveMfaPolicy(t)">Save Policy</button>
+                </div>
+              </div>
+            </section>
+
             <!-- ==================== OIDC clients ==================== -->
             <section class="wf-section">
               <h4>OIDC relying parties</h4>
@@ -373,9 +406,14 @@ interface TenantRow extends Tenant {
                     <mat-label>Grant types</mat-label>
                     <input matInput [(ngModel)]="newOidcGrants" placeholder="authorization_code">
                   </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Max authentication age (seconds)</mat-label>
+                    <input matInput type="number" min="0" [(ngModel)]="newOidcMaxAge" placeholder="0 = tenant default">
+                  </mat-form-field>
                 </div>
                 <div class="wf-actions">
                   <mat-slide-toggle [(ngModel)]="newOidcRequirePkce">Require PKCE</mat-slide-toggle>
+                  <mat-slide-toggle [(ngModel)]="newOidcRequireMfa">Require MFA</mat-slide-toggle>
                   <span class="spacer"></span>
                   <button mat-raised-button color="primary" (click)="createOidcClient(t)">Create Client</button>
                 </div>
@@ -647,6 +685,8 @@ export class TenantsComponent implements OnInit {
   newOidcScopes = 'openid profile email';
   newOidcGrants = 'authorization_code';
   newOidcRequirePkce = true;
+  newOidcRequireMfa = false;
+  newOidcMaxAge = 0;
 
   // SAML IdP SP draft
   samlIdpDraft: SamlIdpServiceProvider = this.freshSamlIdpDraft();
@@ -656,6 +696,7 @@ export class TenantsComponent implements OnInit {
     private oidcApi: OidcClientService,
     private samlIdpApi: SamlIdpService,
     private twilioApi: TenantTwilioService,
+    private mfaPolicyApi: TenantMfaPolicyService,
     private snack: MatSnackBar) {}
 
   ngOnInit() {
@@ -764,7 +805,25 @@ export class TenantsComponent implements OnInit {
         error: err => this.err('Failed to load Twilio config', err),
       });
     }
+    if (t.mfaPolicy === undefined) {
+      this.mfaPolicyApi.get(t.id).subscribe({
+        next: p => t.mfaPolicy = p ?? this.freshMfaPolicy(),
+        error: err => this.err('Failed to load MFA policy', err),
+      });
+    }
     this.refreshSamlIdpSps();
+  }
+
+  private freshMfaPolicy(): MfaPolicy {
+    return { enforcement: 'OPTIONAL' as MfaEnforcement, gracePeriodDays: 7, defaultStepupMaxAge: 0 };
+  }
+
+  saveMfaPolicy(t: TenantRow) {
+    if (!t.mfaPolicy) return;
+    this.mfaPolicyApi.upsert(t.id, t.mfaPolicy).subscribe({
+      next: saved => { t.mfaPolicy = saved; this.ok('MFA policy saved'); },
+      error: err => this.err('Save failed', err),
+    });
   }
 
   // ---- Twilio (SMS MFA) ---------------------------------------------
@@ -900,6 +959,8 @@ export class TenantsComponent implements OnInit {
       scopes:       this.splitWords(this.newOidcScopes),
       grantTypes:   this.splitWords(this.newOidcGrants),
       requirePkce:  this.newOidcRequirePkce,
+      requireMfa:   this.newOidcRequireMfa,
+      maxAuthenticationAgeSeconds: this.newOidcMaxAge,
     };
     if (!dto.redirectUris.length) { this.err('At least one redirect URI is required', null); return; }
     this.oidcApi.create(dto).subscribe({
@@ -907,6 +968,8 @@ export class TenantsComponent implements OnInit {
         this.oidcClients.update(cs => [...cs, created]);
         this.newOidcClient = { name: '' };
         this.newOidcRedirects = '';
+        this.newOidcRequireMfa = false;
+        this.newOidcMaxAge = 0;
         // Show the secret in a modal-style alert so the admin captures it once.
         const message = `OIDC client created.\n\n`
           + `client_id:     ${created.clientId}\n`

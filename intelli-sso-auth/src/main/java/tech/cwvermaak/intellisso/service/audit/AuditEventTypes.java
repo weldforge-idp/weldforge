@@ -43,6 +43,11 @@ public final class AuditEventTypes {
     // SMS MFA
     public static final String MFA_SMS_CODE_SENT     = "mfa.sms.code_sent";
 
+    // MFA policy + step-up
+    public static final String MFA_POLICY_UPSERT        = "mfa.policy.upsert";
+    public static final String MFA_ENROLLMENT_REQUIRED  = "mfa.enrollment_required";
+    public static final String MFA_STEPUP_REQUIRED      = "mfa.stepup_required";
+
     // SAML IdP
     public static final String SAML_IDP_ASSERTION_ISSUED = "saml_idp.assertion.issued";
     public static final String SAML_SP_CREATE            = "saml_idp.sp.create";
@@ -81,4 +86,5 @@ public final class AuditEventTypes {
     public static final String TARGET_GROUP_ROLE_MAPPING = "group_role_mapping";
     public static final String TARGET_OIDC_CLIENT        = "oidc_client";
     public static final String TARGET_TWILIO_PROVIDER    = "twilio_provider";
+    public static final String TARGET_MFA_POLICY         = "mfa_policy";
 }

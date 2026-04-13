@@ -59,6 +59,8 @@ public class OidcAuthorizationService {
     private final OidcClientRepository clientRepository;
     private final OAuthAuthorizationCodeRepository codeRepository;
     private final AuditService auditService;
+    private final tech.cwvermaak.intellisso.repository.MfaFactorRepository mfaFactorRepository;
+    private final tech.cwvermaak.intellisso.service.TenantMfaPolicyService mfaPolicyService;
 
     // ---- Authorize endpoint ------------------------------------------
 
@@ -69,7 +71,18 @@ public class OidcAuthorizationService {
             String state,
             String nonce,
             String codeChallenge,
-            String codeChallengeMethod) {}
+            String codeChallengeMethod,
+            /** OIDC max_age param — overrides client.max_authentication_age_s when smaller. */
+            Integer maxAge) {
+
+        // Backwards-compatible constructor for callers that don't know about max_age.
+        public AuthorizeRequest(String clientId, String redirectUri, List<String> scopes,
+                                String state, String nonce,
+                                String codeChallenge, String codeChallengeMethod) {
+            this(clientId, redirectUri, scopes, state, nonce,
+                    codeChallenge, codeChallengeMethod, null);
+        }
+    }
 
     @Transactional
     public String issueAuthorizationCode(Tenant tenant, User user, AuthorizeRequest request) {
@@ -92,6 +105,13 @@ public class OidcAuthorizationService {
                         "Only S256 code_challenge_method is supported");
             }
         }
+
+        // PRD MFA-04 / SSO-05: step-up check. If the client requires MFA
+        // the user must have at least one verified factor; if the client
+        // sets max_authentication_age_s then the most recent factor use
+        // must be within that window. Otherwise we reject with a dedicated
+        // exception the controller turns into a step-up challenge.
+        enforceStepUp(client, user, request.maxAge());
 
         String rawCode = generateCode();
         OAuthAuthorizationCode row = OAuthAuthorizationCode.builder()
@@ -197,6 +217,63 @@ public class OidcAuthorizationService {
     }
 
     // ---- Helpers -----------------------------------------------------
+
+    /**
+     * Enforce MFA step-up for a client-driven high-assurance flow.
+     * Throws a {@link StepUpRequiredException} when the user needs to
+     * complete a fresh factor challenge. The controller catches this and
+     * redirects to the MFA challenge page instead of issuing a code.
+     */
+    private void enforceStepUp(OidcClient client, User user, Integer requestedMaxAge) {
+        // Determine the effective max_age: OIDC max_age (request) overrides
+        // client.max_authentication_age_s when smaller; the tenant default
+        // applies when the client hasn't set one.
+        int clientMax = client.getMaxAuthenticationAgeSeconds() != null
+                ? client.getMaxAuthenticationAgeSeconds() : 0;
+        int tenantDefault = 0;
+        if (user.getTenant() != null) {
+            var policy = mfaPolicyService.effectivePolicy(user.getTenant().getId());
+            tenantDefault = policy.getDefaultStepupMaxAge() != null ? policy.getDefaultStepupMaxAge() : 0;
+        }
+        int effectiveMax = Math.min(
+                clientMax > 0 ? clientMax : Integer.MAX_VALUE,
+                tenantDefault > 0 ? tenantDefault : Integer.MAX_VALUE
+        );
+        if (requestedMaxAge != null && requestedMaxAge > 0) {
+            effectiveMax = Math.min(effectiveMax, requestedMaxAge);
+        }
+
+        boolean clientRequiresMfa = Boolean.TRUE.equals(client.getRequireMfa());
+
+        // Fast path — no MFA required anywhere.
+        if (!clientRequiresMfa && effectiveMax == Integer.MAX_VALUE) return;
+
+        // Find the user's verified factors.
+        var factors = mfaFactorRepository.findByUserIdAndEnabledTrueAndVerifiedTrue(user.getId());
+        if (factors.isEmpty()) {
+            auditService.recordUserAction(AuditEventTypes.MFA_STEPUP_REQUIRED, user,
+                    AuditEventTypes.TARGET_OIDC_CLIENT, client.getClientId(),
+                    AuditService.meta("reason", "no_verified_factor"));
+            throw new StepUpRequiredException(client.getClientId(),
+                    "This application requires multi-factor authentication");
+        }
+
+        // If effectiveMax is set, the most recent factor use must be within the window.
+        if (effectiveMax != Integer.MAX_VALUE) {
+            LocalDateTime cutoff = LocalDateTime.now().minusSeconds(effectiveMax);
+            boolean fresh = factors.stream()
+                    .map(f -> f.getLastUsedAt())
+                    .filter(java.util.Objects::nonNull)
+                    .anyMatch(t -> t.isAfter(cutoff));
+            if (!fresh) {
+                auditService.recordUserAction(AuditEventTypes.MFA_STEPUP_REQUIRED, user,
+                        AuditEventTypes.TARGET_OIDC_CLIENT, client.getClientId(),
+                        AuditService.meta("reason", "stale_factor", "max_age", effectiveMax));
+                throw new StepUpRequiredException(client.getClientId(),
+                        "Re-authentication required for this application");
+            }
+        }
+    }
 
     private OidcAuthorizationException reject(String code, String message) {
         log.warn("OIDC reject code={} reason={}", code, message);

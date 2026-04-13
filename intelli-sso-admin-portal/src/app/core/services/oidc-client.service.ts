@@ -14,6 +14,10 @@ export interface OidcClient {
   scopes: string[];
   grantTypes: string[];
   requirePkce?: boolean;
+  /** PRD MFA-04: force MFA for every /authorize against this client. */
+  requireMfa?: boolean;
+  /** PRD SSO-05: step-up threshold in seconds. 0 = use tenant default. */
+  maxAuthenticationAgeSeconds?: number;
 }
 
 @Injectable({ providedIn: 'root' })

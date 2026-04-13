@@ -20,4 +20,13 @@ public class OidcClientDto {
     private List<String> scopes;
     private List<String> grantTypes;
     private Boolean requirePkce;
+
+    /** PRD MFA-04: force a verified MFA factor for every authorize. */
+    private Boolean requireMfa;
+
+    /**
+     * PRD SSO-05: maximum age (seconds) of the user's last verified factor
+     * use before step-up is required. 0 = use tenant default.
+     */
+    private Integer maxAuthenticationAgeSeconds;
 }

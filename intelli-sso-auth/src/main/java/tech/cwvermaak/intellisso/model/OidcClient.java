@@ -55,6 +55,20 @@ public class OidcClient {
     @Builder.Default
     private Boolean requirePkce = true;
 
+    /** PRD MFA-04 / SSO-05: force a verified factor for every authorize. */
+    @Column(name = "require_mfa", nullable = false)
+    @Builder.Default
+    private Boolean requireMfa = false;
+
+    /**
+     * PRD SSO-05: maximum age of the SSO session in seconds before a step-up
+     * challenge is required. 0 = no step-up beyond whatever the tenant
+     * policy dictates.
+     */
+    @Column(name = "max_authentication_age_s", nullable = false)
+    @Builder.Default
+    private Integer maxAuthenticationAgeSeconds = 0;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -67,6 +81,8 @@ public class OidcClient {
         if (createdAt == null) createdAt = now;
         updatedAt = now;
         if (requirePkce == null) requirePkce = true;
+        if (requireMfa == null) requireMfa = false;
+        if (maxAuthenticationAgeSeconds == null) maxAuthenticationAgeSeconds = 0;
     }
 
     @PreUpdate

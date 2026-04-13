@@ -47,6 +47,7 @@ public class AuthService {
     private final PasswordPolicyService passwordPolicyService;
     private final RefreshTokenService refreshTokenService;
     private final EmailVerificationService emailVerificationService;
+    private final TenantMfaPolicyService mfaPolicyService;
     private final MeterRegistry meterRegistry;
 
     @Transactional
@@ -145,6 +146,21 @@ public class AuthService {
                     .mfaRequired(true)
                     .mfaChallengeToken(challengeToken)
                     .availableFactors(mfaService.availableFactors(user))
+                    .build();
+        }
+
+        // PRD MFA-03: if the tenant policy is REQUIRED and the user has no
+        // verified factor (and grace period has elapsed), force enrollment
+        // instead of issuing a token.
+        if (mfaPolicyService.mustEnroll(user)) {
+            String enrollmentToken = jwtService.generateMfaChallengeToken(
+                    user.getId(), tenant.getId(), tenant.getSlug());
+            auditService.recordUserAction(AuditEventTypes.MFA_ENROLLMENT_REQUIRED, user,
+                    AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                    AuditService.meta("reason", "tenant_policy_required"));
+            return AuthResponseDto.builder()
+                    .mustEnrollMfa(true)
+                    .mfaChallengeToken(enrollmentToken)
                     .build();
         }
 

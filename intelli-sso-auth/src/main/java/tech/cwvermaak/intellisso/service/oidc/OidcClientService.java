@@ -65,6 +65,9 @@ public class OidcClientService {
                 .scopes(String.join(" ", dto.getScopes()))
                 .grantTypes(String.join(" ", dto.getGrantTypes()))
                 .requirePkce(dto.getRequirePkce() == null ? true : dto.getRequirePkce())
+                .requireMfa(Boolean.TRUE.equals(dto.getRequireMfa()))
+                .maxAuthenticationAgeSeconds(dto.getMaxAuthenticationAgeSeconds() != null
+                        ? dto.getMaxAuthenticationAgeSeconds() : 0)
                 .build();
         OidcClient saved = repository.save(client);
 
@@ -105,6 +108,8 @@ public class OidcClientService {
                 .scopes(c.getScopeList())
                 .grantTypes(c.getGrantTypeList())
                 .requirePkce(c.getRequirePkce())
+                .requireMfa(c.getRequireMfa())
+                .maxAuthenticationAgeSeconds(c.getMaxAuthenticationAgeSeconds())
                 // clientSecret intentionally null unless caller overrides.
                 .build();
     }
