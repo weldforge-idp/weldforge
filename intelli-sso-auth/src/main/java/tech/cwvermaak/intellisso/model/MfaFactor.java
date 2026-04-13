@@ -65,6 +65,20 @@ public class MfaFactor {
     @Column(name = "user_handle", columnDefinition = "TEXT")
     private String userHandle;
 
+    // -- SMS OTP fields -------------------------------------------------
+
+    /** E.164 phone number the code is delivered to. Populated only for SMS rows. */
+    @Column(name = "phone_number", length = 32)
+    private String phoneNumber;
+
+    /** BCrypt hash of the pending OTP code. Cleared on verify. */
+    @Column(name = "sms_code_hash", length = 128)
+    private String smsCodeHash;
+
+    /** Expiry time for the pending OTP. */
+    @Column(name = "sms_code_expires_at")
+    private LocalDateTime smsCodeExpiresAt;
+
     // -- Lifecycle ------------------------------------------------------
 
     @Column(nullable = false)

@@ -62,8 +62,9 @@ public class MfaResetSteps {
         webAuthnService = mock(WebAuthnService.class);
         passwordEncoder = mock(PasswordEncoder.class);
         auditService = mock(AuditService.class);
+        var twilioService = mock(tech.cwvermaak.intellisso.service.TwilioService.class);
         mfa = new MfaService(factorRepo, backupRepo, userRepo, jwtService, totpService,
-                backupCodeService, webAuthnService, passwordEncoder, auditService);
+                backupCodeService, webAuthnService, passwordEncoder, auditService, twilioService);
 
         // Capture every audit write into world.auditLog for later assertions.
         doAnswer(inv -> {

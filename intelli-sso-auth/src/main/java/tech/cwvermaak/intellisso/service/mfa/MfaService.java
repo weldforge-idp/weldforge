@@ -21,8 +21,11 @@ import tech.cwvermaak.intellisso.repository.BackupCodeRepository;
 import tech.cwvermaak.intellisso.repository.MfaFactorRepository;
 import tech.cwvermaak.intellisso.repository.UserRepository;
 import tech.cwvermaak.intellisso.service.JwtService;
+import tech.cwvermaak.intellisso.service.TwilioService;
 import tech.cwvermaak.intellisso.service.audit.AuditEventTypes;
 import tech.cwvermaak.intellisso.service.audit.AuditService;
+
+import java.security.SecureRandom;
 
 import java.util.Map;
 
@@ -47,6 +50,10 @@ public class MfaService {
     private final WebAuthnService webAuthnService;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
+    private final TwilioService twilioService;
+
+    private static final SecureRandom SMS_CODE_RNG = new SecureRandom();
+    private static final long SMS_CODE_TTL_SECONDS = 300;
 
     // -- Enrollment / management ---------------------------------------
 
@@ -111,6 +118,104 @@ public class MfaService {
                 AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factor.getId()),
                 AuditService.meta("type", factor.getType().name()));
         return toDto(factor);
+    }
+
+    // -- SMS OTP --------------------------------------------------------
+
+    /**
+     * Enroll a new SMS factor. Creates the factor in unverified state with a
+     * pending OTP code, sends the code via the tenant's Twilio config. The
+     * user activates the factor by calling {@link #activateSms} with the code.
+     */
+    @Transactional
+    public MfaFactorDto enrollSms(User user, String phoneNumber, String label) {
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            throw new IllegalArgumentException("phoneNumber is required");
+        }
+        if (!phoneNumber.startsWith("+")) {
+            throw new IllegalArgumentException("phoneNumber must be in E.164 format (e.g. +27821234567)");
+        }
+        String normalised = phoneNumber.trim();
+
+        String code = generateSmsCode();
+        String codeHash = passwordEncoder.encode(code);
+        LocalDateTime expires = LocalDateTime.now().plusSeconds(SMS_CODE_TTL_SECONDS);
+
+        MfaFactor factor = MfaFactor.builder()
+                .user(user)
+                .type(MfaFactorType.SMS)
+                .label(label != null && !label.isBlank() ? label : "Phone " + maskPhone(normalised))
+                .phoneNumber(normalised)
+                .smsCodeHash(codeHash)
+                .smsCodeExpiresAt(expires)
+                .enabled(true)
+                .verified(false)
+                .build();
+        factor = mfaFactorRepository.save(factor);
+
+        twilioService.sendSms(user.getTenant(), normalised,
+                "Your WeldForge verification code is " + code
+                        + ". It expires in " + (SMS_CODE_TTL_SECONDS / 60) + " minutes.");
+
+        auditService.recordUserAction(AuditEventTypes.MFA_FACTOR_ENROLL, user,
+                AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factor.getId()),
+                AuditService.meta("type", "SMS", "phone", maskPhone(normalised)));
+        auditService.recordUserAction(AuditEventTypes.MFA_SMS_CODE_SENT, user,
+                AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factor.getId()),
+                AuditService.meta("phone", maskPhone(normalised)));
+
+        return toDto(factor);
+    }
+
+    /** Activate a freshly-enrolled SMS factor after the user types the first OTP. */
+    @Transactional
+    public MfaFactorDto activateSms(User user, Long factorId, String code) {
+        MfaFactor factor = mfaFactorRepository.findByIdAndUserId(factorId, user.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Factor " + factorId + " not found"));
+        if (factor.getType() != MfaFactorType.SMS) {
+            throw new IllegalArgumentException("Factor is not an SMS factor");
+        }
+        if (factor.getSmsCodeHash() == null || factor.getSmsCodeExpiresAt() == null
+                || factor.getSmsCodeExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BadCredentialsException("SMS code expired — resend and try again");
+        }
+        if (code == null || !passwordEncoder.matches(code, factor.getSmsCodeHash())) {
+            throw new BadCredentialsException("Invalid code");
+        }
+
+        factor.setVerified(true);
+        factor.setSmsCodeHash(null);
+        factor.setSmsCodeExpiresAt(null);
+        factor.setLastUsedAt(LocalDateTime.now());
+
+        auditService.recordUserAction(AuditEventTypes.MFA_FACTOR_ACTIVATE, user,
+                AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factor.getId()),
+                AuditService.meta("type", "SMS"));
+        return toDto(factor);
+    }
+
+    /**
+     * Send a fresh OTP code to an existing verified SMS factor. Used both
+     * during step-up auth and to recover from an expired enrollment code.
+     */
+    @Transactional
+    public void sendSmsChallenge(User user, Long factorId) {
+        MfaFactor factor = mfaFactorRepository.findByIdAndUserId(factorId, user.getId())
+                .orElseThrow(() -> new EntityNotFoundException("Factor " + factorId + " not found"));
+        if (factor.getType() != MfaFactorType.SMS) {
+            throw new IllegalArgumentException("Factor is not an SMS factor");
+        }
+
+        String code = generateSmsCode();
+        factor.setSmsCodeHash(passwordEncoder.encode(code));
+        factor.setSmsCodeExpiresAt(LocalDateTime.now().plusSeconds(SMS_CODE_TTL_SECONDS));
+
+        twilioService.sendSms(user.getTenant(), factor.getPhoneNumber(),
+                "Your WeldForge verification code is " + code + ".");
+
+        auditService.recordUserAction(AuditEventTypes.MFA_SMS_CODE_SENT, user,
+                AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factor.getId()),
+                AuditService.meta("phone", maskPhone(factor.getPhoneNumber())));
     }
 
     @Transactional
@@ -228,7 +333,25 @@ public class MfaService {
         return switch (type) {
             case TOTP -> verifyTotp(user, req.getCode());
             case WEBAUTHN -> verifyWebAuthn(user, req.getChallengeToken(), req.getWebauthnResponse());
+            case SMS -> verifySms(user, req.getCode());
         };
+    }
+
+    private boolean verifySms(User user, String code) {
+        if (code == null || code.isBlank()) return false;
+        for (MfaFactor f : mfaFactorRepository.findByUserIdAndType(user.getId(), MfaFactorType.SMS)) {
+            if (!Boolean.TRUE.equals(f.getEnabled()) || !Boolean.TRUE.equals(f.getVerified())) continue;
+            if (f.getSmsCodeHash() == null || f.getSmsCodeExpiresAt() == null) continue;
+            if (f.getSmsCodeExpiresAt().isBefore(LocalDateTime.now())) continue;
+            if (passwordEncoder.matches(code, f.getSmsCodeHash())) {
+                // Single-use — clear the code on success.
+                f.setSmsCodeHash(null);
+                f.setSmsCodeExpiresAt(null);
+                f.setLastUsedAt(LocalDateTime.now());
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean verifyTotp(User user, String code) {
@@ -256,6 +379,18 @@ public class MfaService {
         }
     }
 
+    // -- SMS helpers ---------------------------------------------------
+
+    private static String generateSmsCode() {
+        int n = SMS_CODE_RNG.nextInt(1_000_000);
+        return String.format("%06d", n);
+    }
+
+    private static String maskPhone(String phone) {
+        if (phone == null || phone.length() < 4) return "***";
+        return "*".repeat(Math.max(0, phone.length() - 4)) + phone.substring(phone.length() - 4);
+    }
+
     // -- Mapping -------------------------------------------------------
 
     private static MfaFactorDto toDto(MfaFactor f) {
@@ -267,6 +402,7 @@ public class MfaService {
                 .verified(f.getVerified())
                 .createdAt(f.getCreatedAt())
                 .lastUsedAt(f.getLastUsedAt())
+                .phoneMasked(f.getType() == MfaFactorType.SMS ? maskPhone(f.getPhoneNumber()) : null)
                 .build();
     }
 }

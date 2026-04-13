@@ -51,9 +51,11 @@ class MfaServiceTest {
         webAuthnService = mock(WebAuthnService.class);
         passwordEncoder = mock(PasswordEncoder.class);
         auditService = mock(AuditService.class);
+        var twilioService = mock(tech.cwvermaak.intellisso.service.TwilioService.class);
 
         mfa = new MfaService(factorRepo, backupRepo, userRepo, jwtService,
-                totpService, backupCodeService, webAuthnService, passwordEncoder, auditService);
+                totpService, backupCodeService, webAuthnService, passwordEncoder, auditService,
+                twilioService);
 
         Tenant t = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         user = User.builder()

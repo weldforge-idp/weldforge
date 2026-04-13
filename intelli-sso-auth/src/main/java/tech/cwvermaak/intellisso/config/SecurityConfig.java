@@ -44,7 +44,10 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        // SEC-06: bcrypt cost factor 12. BCrypt encodes the cost into the
+        // hash itself, so existing hashes at lower costs still verify
+        // correctly — only new passwords are hashed at cost 12.
+        return new BCryptPasswordEncoder(12);
     }
 
     @Bean

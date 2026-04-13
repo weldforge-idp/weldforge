@@ -7,8 +7,10 @@ import tech.cwvermaak.intellisso.model.SocialProviderType;
 import tech.cwvermaak.intellisso.model.dto.SamlProviderDto;
 import tech.cwvermaak.intellisso.model.dto.SocialProviderDto;
 import tech.cwvermaak.intellisso.model.dto.TenantDto;
+import tech.cwvermaak.intellisso.model.dto.TwilioProviderDto;
 import tech.cwvermaak.intellisso.service.TenantSamlService;
 import tech.cwvermaak.intellisso.service.TenantService;
+import tech.cwvermaak.intellisso.service.TenantTwilioService;
 
 import java.util.List;
 
@@ -24,6 +26,7 @@ public class TenantController {
 
     private final TenantService tenantService;
     private final TenantSamlService tenantSamlService;
+    private final TenantTwilioService tenantTwilioService;
 
     @GetMapping
     public ResponseEntity<List<TenantDto>> list() {
@@ -97,6 +100,34 @@ public class TenantController {
             @PathVariable Long id,
             @PathVariable String providerKey) {
         tenantSamlService.delete(id, providerKey);
+        return ResponseEntity.noContent().build();
+    }
+
+    // -- Twilio provider ----------------------------------------------
+
+    @GetMapping("/{id}/twilio")
+    public ResponseEntity<TwilioProviderDto> getTwilio(@PathVariable Long id) {
+        TwilioProviderDto dto = tenantTwilioService.get(id);
+        return dto == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(dto);
+    }
+
+    @PostMapping("/{id}/twilio")
+    public ResponseEntity<TwilioProviderDto> upsertTwilio(
+            @PathVariable Long id,
+            @RequestBody TwilioProviderDto dto) {
+        return ResponseEntity.ok(tenantTwilioService.upsert(id, dto));
+    }
+
+    @PutMapping("/{id}/twilio")
+    public ResponseEntity<TwilioProviderDto> updateTwilio(
+            @PathVariable Long id,
+            @RequestBody TwilioProviderDto dto) {
+        return ResponseEntity.ok(tenantTwilioService.upsert(id, dto));
+    }
+
+    @DeleteMapping("/{id}/twilio")
+    public ResponseEntity<Void> deleteTwilio(@PathVariable Long id) {
+        tenantTwilioService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }

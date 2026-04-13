@@ -36,6 +36,13 @@ public final class AuditEventTypes {
     public static final String SAML_PROVIDER_UPSERT   = "saml_provider.upsert";
     public static final String SAML_PROVIDER_DELETE   = "saml_provider.delete";
 
+    // Twilio per-tenant config
+    public static final String TWILIO_PROVIDER_UPSERT = "twilio_provider.upsert";
+    public static final String TWILIO_PROVIDER_DELETE = "twilio_provider.delete";
+
+    // SMS MFA
+    public static final String MFA_SMS_CODE_SENT     = "mfa.sms.code_sent";
+
     // SAML IdP
     public static final String SAML_IDP_ASSERTION_ISSUED = "saml_idp.assertion.issued";
     public static final String SAML_SP_CREATE            = "saml_idp.sp.create";
@@ -73,4 +80,5 @@ public final class AuditEventTypes {
     public static final String TARGET_SAML_SP            = "saml_service_provider";
     public static final String TARGET_GROUP_ROLE_MAPPING = "group_role_mapping";
     public static final String TARGET_OIDC_CLIENT        = "oidc_client";
+    public static final String TARGET_TWILIO_PROVIDER    = "twilio_provider";
 }

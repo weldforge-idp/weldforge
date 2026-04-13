@@ -18,4 +18,7 @@ public class MfaFactorDto {
     private Boolean verified;
     private LocalDateTime createdAt;
     private LocalDateTime lastUsedAt;
+
+    /** Masked phone for SMS factors, null otherwise. */
+    private String phoneMasked;
 }

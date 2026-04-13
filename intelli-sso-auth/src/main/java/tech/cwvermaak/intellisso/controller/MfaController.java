@@ -88,6 +88,35 @@ public class MfaController {
         return ResponseEntity.ok(mfaService.activateTotp(user, factorId, code));
     }
 
+    // SMS --------------------------------------------------------------
+
+    @PostMapping("/sms/enroll")
+    public ResponseEntity<MfaFactorDto> enrollSms(@AuthenticationPrincipal String email,
+                                                   @RequestBody Map<String, String> body) {
+        User user = requireUser(email);
+        String phone = body != null ? body.get("phoneNumber") : null;
+        String label = body != null ? body.get("label") : null;
+        return ResponseEntity.ok(mfaService.enrollSms(user, phone, label));
+    }
+
+    @PostMapping("/sms/activate")
+    public ResponseEntity<MfaFactorDto> activateSms(@AuthenticationPrincipal String email,
+                                                     @RequestBody Map<String, Object> body) {
+        User user = requireUser(email);
+        Long factorId = ((Number) body.get("factorId")).longValue();
+        String code = (String) body.get("code");
+        return ResponseEntity.ok(mfaService.activateSms(user, factorId, code));
+    }
+
+    @PostMapping("/sms/send")
+    public ResponseEntity<Void> sendSmsChallenge(@AuthenticationPrincipal String email,
+                                                  @RequestBody Map<String, Object> body) {
+        User user = requireUser(email);
+        Long factorId = ((Number) body.get("factorId")).longValue();
+        mfaService.sendSmsChallenge(user, factorId);
+        return ResponseEntity.noContent().build();
+    }
+
     // Self-service reset -----------------------------------------------
 
     @PostMapping("/reset")

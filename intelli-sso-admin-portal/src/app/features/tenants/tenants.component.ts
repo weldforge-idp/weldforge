@@ -23,6 +23,7 @@ import {
 } from '../../core/services/tenant.service';
 import { OidcClient, OidcClientService } from '../../core/services/oidc-client.service';
 import { SamlIdpServiceProvider, SamlIdpService } from '../../core/services/saml-idp.service';
+import { TenantTwilioService, TwilioProvider } from '../../core/services/tenant-twilio.service';
 import { environment } from '../../../environments/environment';
 
 interface TenantRow extends Tenant {
@@ -32,6 +33,8 @@ interface TenantRow extends Tenant {
   expanded?: boolean;
   draft?: SocialProvider;
   samlDraft?: SamlProvider;
+  twilio?: TwilioProvider | null;
+  twilioDraft?: TwilioProvider;
 }
 
 @Component({
@@ -247,6 +250,73 @@ interface TenantRow extends Tenant {
                   <mat-slide-toggle [(ngModel)]="t.samlDraft!.enabled">Enabled</mat-slide-toggle>
                   <span class="spacer"></span>
                   <button mat-raised-button color="primary" (click)="saveSamlProvider(t)">Save SAML Provider</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- ==================== Twilio (SMS MFA) ==================== -->
+            <section class="wf-section">
+              <h4>Twilio — SMS MFA provider</h4>
+              <p class="sub">Per-tenant Twilio credentials used for SMS OTP second-factor authentication. Each tenant uses its own Twilio subaccount and caller-id. The auth token is AES-GCM encrypted at rest and never returned via the API.</p>
+
+              <div *ngIf="t.twilio" class="wf-twilio-status">
+                <div>
+                  <strong>Account SID:</strong> <code class="mono">{{ t.twilio.accountSid }}</code>
+                </div>
+                <div>
+                  <strong>From:</strong> <code class="mono">{{ t.twilio.fromPhone }}</code>
+                </div>
+                <div *ngIf="t.twilio.messagingServiceSid">
+                  <strong>Messaging Service:</strong> <code class="mono">{{ t.twilio.messagingServiceSid }}</code>
+                </div>
+                <div>
+                  <strong>Status:</strong>
+                  <mat-slide-toggle [checked]="!!t.twilio.enabled"
+                                    (change)="toggleTwilio(t, $event.checked)">
+                    {{ t.twilio.enabled ? 'enabled' : 'disabled' }}
+                  </mat-slide-toggle>
+                </div>
+                <div>
+                  <strong>Auth token:</strong>
+                  <span *ngIf="t.twilio.authTokenSet" class="mono">(set)</span>
+                  <span *ngIf="!t.twilio.authTokenSet" class="mono">(missing)</span>
+                </div>
+              </div>
+
+              <div *ngIf="!t.twilio" class="empty mono">
+                // no Twilio configured yet
+              </div>
+
+              <div class="wf-add-provider">
+                <h5>{{ t.twilio ? 'Update Twilio config' : 'Configure Twilio' }}</h5>
+                <div class="wf-grid">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Account SID</mat-label>
+                    <input matInput [(ngModel)]="t.twilioDraft!.accountSid" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Auth Token</mat-label>
+                    <input matInput type="password" [(ngModel)]="t.twilioDraft!.authToken"
+                           placeholder="leave blank to keep existing">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>From phone (E.164)</mat-label>
+                    <input matInput [(ngModel)]="t.twilioDraft!.fromPhone" placeholder="+27821234567">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Messaging Service SID (optional)</mat-label>
+                    <input matInput [(ngModel)]="t.twilioDraft!.messagingServiceSid" placeholder="MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                  </mat-form-field>
+                </div>
+                <div class="wf-actions">
+                  <mat-slide-toggle [(ngModel)]="t.twilioDraft!.enabled">Enabled</mat-slide-toggle>
+                  <span class="spacer"></span>
+                  <button *ngIf="t.twilio" mat-stroked-button color="warn" (click)="deleteTwilio(t)">
+                    <mat-icon>delete</mat-icon> Remove
+                  </button>
+                  <button mat-raised-button color="primary" (click)="saveTwilio(t)">
+                    {{ t.twilio ? 'Update' : 'Save' }}
+                  </button>
                 </div>
               </div>
             </section>
@@ -546,6 +616,20 @@ interface TenantRow extends Tenant {
       font-family: 'Space Mono', monospace;
       font-size: 11px;
     }
+
+    .wf-twilio-status {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      padding: 12px;
+      margin: 12px 0;
+      background: rgba(74, 143, 245, 0.04);
+      border: 1px solid var(--wf-border);
+      border-radius: 3px;
+      font-size: 13px;
+    }
+    .wf-twilio-status code { font-size: 11px; }
+    .wf-twilio-status mat-slide-toggle { margin-left: 8px; }
   `]
 })
 export class TenantsComponent implements OnInit {
@@ -571,6 +655,7 @@ export class TenantsComponent implements OnInit {
     private api: TenantService,
     private oidcApi: OidcClientService,
     private samlIdpApi: SamlIdpService,
+    private twilioApi: TenantTwilioService,
     private snack: MatSnackBar) {}
 
   ngOnInit() {
@@ -606,6 +691,10 @@ export class TenantsComponent implements OnInit {
 
   private freshDraft(): SocialProvider {
     return { provider: 'GOOGLE', clientId: '', clientSecret: '', scopes: '', enabled: true };
+  }
+
+  private freshTwilioDraft(): TwilioProvider {
+    return { accountSid: '', authToken: '', fromPhone: '', messagingServiceSid: '', enabled: true };
   }
 
   private freshSamlDraft(): SamlProvider {
@@ -664,7 +753,55 @@ export class TenantsComponent implements OnInit {
         error: err => this.err('Failed to load SAML providers', err),
       });
     }
+    if (t.twilio === undefined) {
+      this.twilioApi.get(t.id).subscribe({
+        next: cfg => {
+          t.twilio = cfg;
+          t.twilioDraft = cfg
+            ? { ...cfg, authToken: '' }
+            : this.freshTwilioDraft();
+        },
+        error: err => this.err('Failed to load Twilio config', err),
+      });
+    }
     this.refreshSamlIdpSps();
+  }
+
+  // ---- Twilio (SMS MFA) ---------------------------------------------
+
+  saveTwilio(t: TenantRow) {
+    const draft = t.twilioDraft!;
+    this.twilioApi.upsert(t.id, draft).subscribe({
+      next: saved => {
+        t.twilio = saved;
+        t.twilioDraft = { ...saved, authToken: '' };
+        this.ok('Twilio config saved');
+      },
+      error: err => this.err('Twilio save failed', err),
+    });
+  }
+
+  deleteTwilio(t: TenantRow) {
+    if (!confirm(`Remove Twilio config from ${t.slug}? SMS MFA will stop working for this tenant.`)) return;
+    this.twilioApi.delete(t.id).subscribe({
+      next: () => {
+        t.twilio = null;
+        t.twilioDraft = this.freshTwilioDraft();
+        this.ok('Twilio config removed');
+      },
+      error: err => this.err('Twilio delete failed', err),
+    });
+  }
+
+  toggleTwilio(t: TenantRow, enabled: boolean) {
+    if (!t.twilio) return;
+    this.twilioApi.upsert(t.id, { ...t.twilio, enabled, authToken: '' }).subscribe({
+      next: saved => {
+        t.twilio = saved;
+        if (t.twilioDraft) t.twilioDraft.enabled = saved.enabled;
+      },
+      error: err => this.err('Toggle failed', err),
+    });
   }
 
   // ---- SAML providers ---------------------------------------------
