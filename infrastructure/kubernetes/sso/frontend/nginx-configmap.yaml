@@ -54,6 +54,7 @@ data:
         location /login/                { proxy_pass http://sso-api:8080; }
         location /actuator/health       { proxy_pass http://sso-api:8080; }
         location /actuator/health/      { proxy_pass http://sso-api:8080; }
+        location /actuator/prometheus   { proxy_pass http://sso-api:8080; }
         location /v3/api-docs           { proxy_pass http://sso-api:8080; }
         location /v3/api-docs/          { proxy_pass http://sso-api:8080; }
         location /swagger-ui            { proxy_pass http://sso-api:8080; }
