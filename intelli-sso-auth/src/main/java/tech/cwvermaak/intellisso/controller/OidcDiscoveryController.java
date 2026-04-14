@@ -46,6 +46,7 @@ public class OidcDiscoveryController {
         doc.put("jwks_uri",               issuer + "/oauth2/jwks");
         doc.put("introspection_endpoint", issuer + "/oauth2/introspect");
         doc.put("revocation_endpoint",    issuer + "/oauth2/revoke");
+        doc.put("end_session_endpoint",   issuer + "/oauth2/logout");
         doc.put("response_types_supported",  List.of("code"));
         doc.put("grant_types_supported",     List.of("authorization_code", "client_credentials"));
         doc.put("subject_types_supported",   List.of("public"));

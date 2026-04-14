@@ -40,19 +40,53 @@ public class JwtService {
 
     public String generateAccessToken(String email, Long tenantId, String tenantSlug,
                                       boolean superAdmin, int tokenVersion) {
+        return generateAccessToken(email, tenantId, tenantSlug, superAdmin, tokenVersion, null, null);
+    }
+
+    /**
+     * Extended overload — PRD SSO-03 + OA2-07.
+     *
+     * @param tenantTtlMs  per-tenant TTL override in milliseconds, or null
+     *                     to use the application default
+     * @param customClaims per-tenant custom claims to inject (OA2-07); null
+     *                     or empty means none. Any collision with a reserved
+     *                     claim name is ignored.
+     */
+    public String generateAccessToken(String email, Long tenantId, String tenantSlug,
+                                      boolean superAdmin, int tokenVersion,
+                                      Long tenantTtlMs, Map<String, Object> customClaims) {
         Map<String, Object> claims = new LinkedHashMap<>();
+        // Custom claims go first so reserved claims below always win on collision.
+        if (customClaims != null) {
+            for (Map.Entry<String, Object> e : customClaims.entrySet()) {
+                if (!isReservedClaim(e.getKey())) {
+                    claims.put(e.getKey(), e.getValue());
+                }
+            }
+        }
         claims.put(CLAIM_TENANT_ID, tenantId);
         claims.put(CLAIM_TENANT_SLUG, tenantSlug == null ? "" : tenantSlug);
         claims.put(CLAIM_SUPER_ADMIN, superAdmin);
         claims.put(CLAIM_PURPOSE, PURPOSE_ACCESS);
         claims.put(CLAIM_TOKEN_VERSION, tokenVersion);
+
+        long ttl = tenantTtlMs != null && tenantTtlMs > 0 ? tenantTtlMs : accessExpirationMs;
         return Jwts.builder()
                 .subject(email)
                 .claims(claims)
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + accessExpirationMs))
+                .expiration(new Date(System.currentTimeMillis() + ttl))
                 .signWith(getSigningKey())
                 .compact();
+    }
+
+    private static boolean isReservedClaim(String name) {
+        return switch (name) {
+            case "sub", "iss", "aud", "exp", "iat", "nbf", "jti",
+                 CLAIM_TENANT_ID, CLAIM_TENANT_SLUG, CLAIM_SUPER_ADMIN,
+                 CLAIM_PURPOSE, CLAIM_TOKEN_VERSION -> true;
+            default -> false;
+        };
     }
 
     /** Back-compat overload used in tests that don't care about version. */

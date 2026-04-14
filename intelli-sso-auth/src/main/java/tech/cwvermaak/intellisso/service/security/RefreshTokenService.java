@@ -124,13 +124,21 @@ public class RefreshTokenService {
 
     private Issued persist(User user, UUID familyId, String ipAddress, String userAgent) {
         String raw = randomToken();
+        // PRD SSO-03: per-tenant refresh TTL overrides the application default.
+        LocalDateTime expiresAt;
+        Long tenantRefreshMs = user.getTenant() != null ? user.getTenant().getRefreshTtlMs() : null;
+        if (tenantRefreshMs != null && tenantRefreshMs > 0) {
+            expiresAt = LocalDateTime.now().plusSeconds(tenantRefreshMs / 1000);
+        } else {
+            expiresAt = LocalDateTime.now().plusDays(properties.getLifetimeDays());
+        }
         RefreshToken row = RefreshToken.builder()
                 .user(user)
                 .tenant(user.getTenant())
                 .familyId(familyId)
                 .tokenHash(hash(raw))
                 .issuedAt(LocalDateTime.now())
-                .expiresAt(LocalDateTime.now().plusDays(properties.getLifetimeDays()))
+                .expiresAt(expiresAt)
                 .ipAddress(ipAddress)
                 .userAgent(userAgent)
                 .build();

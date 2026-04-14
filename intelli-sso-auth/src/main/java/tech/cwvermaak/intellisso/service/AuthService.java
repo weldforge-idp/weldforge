@@ -186,17 +186,23 @@ public class AuthService {
         String raw = readRefreshCookie(request);
         Issued issued = refreshTokenService.rotate(raw, clientIp(request), userAgent(request));
         User user = issued.row().getUser();
-        writeRefreshCookie(response, issued.rawToken());
+        Tenant tenant = user.getTenant();
+        writeRefreshCookie(response, issued.rawToken(), tenant.getRefreshTtlMs());
 
         String accessToken = jwtService.generateAccessToken(
                 user.getEmail(),
-                user.getTenant().getId(),
-                user.getTenant().getSlug(),
+                tenant.getId(),
+                tenant.getSlug(),
                 user.isSuperAdmin(),
-                user.getTokenVersion());
+                user.getTokenVersion(),
+                tenant.getAccessTtlMs(),
+                tenant.getCustomClaims());
+        long effectiveTtl = tenant.getAccessTtlMs() != null
+                ? tenant.getAccessTtlMs() / 1000
+                : jwtService.getExpirationTime();
         return AuthResponseDto.builder()
                 .token(accessToken)
-                .expiresIn(jwtService.getExpirationTime())
+                .expiresIn(effectiveTtl)
                 .build();
     }
 
@@ -233,39 +239,57 @@ public class AuthService {
 
     private AuthResponseDto issueTokens(User user, HttpServletRequest httpRequest,
                                         HttpServletResponse response) {
+        Tenant tenant = user.getTenant();
+        // PRD SSO-03 + OA2-07: honor per-tenant TTL and custom claims.
         String accessToken = jwtService.generateAccessToken(
                 user.getEmail(),
-                user.getTenant().getId(),
-                user.getTenant().getSlug(),
+                tenant.getId(),
+                tenant.getSlug(),
                 user.isSuperAdmin(),
-                user.getTokenVersion());
+                user.getTokenVersion(),
+                tenant.getAccessTtlMs(),
+                tenant.getCustomClaims());
 
         Issued refresh = refreshTokenService.issueNew(user, clientIp(httpRequest), userAgent(httpRequest));
-        writeRefreshCookie(response, refresh.rawToken());
+        writeRefreshCookie(response, refresh.rawToken(), tenant.getRefreshTtlMs());
 
         // Also set the access token as an HttpOnly cookie so server-side
         // browser-redirect flows (like OIDC /authorize) can authenticate
         // the caller without the SPA needing to forward the JWT manually.
         // The Angular code still gets the token in the response body.
-        writeSessionCookie(response, accessToken);
+        writeSessionCookie(response, accessToken, tenant.getAccessTtlMs());
 
+        long effectiveTtl = tenant.getAccessTtlMs() != null
+                ? tenant.getAccessTtlMs() / 1000
+                : jwtService.getExpirationTime();
         return AuthResponseDto.builder()
                 .token(accessToken)
-                .expiresIn(jwtService.getExpirationTime())
+                .expiresIn(effectiveTtl)
                 .mfaRequired(false)
                 .build();
     }
 
     private void writeRefreshCookie(HttpServletResponse response, String rawToken) {
+        writeRefreshCookie(response, rawToken, null);
+    }
+
+    private void writeRefreshCookie(HttpServletResponse response, String rawToken, Long tenantRefreshTtlMs) {
         Cookie cookie = new Cookie(REFRESH_COOKIE, rawToken);
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/api/auth");
-        cookie.setMaxAge((int) jwtService.getRefreshTokenExpirationTime());
+        long ttlSeconds = tenantRefreshTtlMs != null && tenantRefreshTtlMs > 0
+                ? tenantRefreshTtlMs / 1000
+                : jwtService.getRefreshTokenExpirationTime();
+        cookie.setMaxAge((int) ttlSeconds);
         response.addCookie(cookie);
     }
 
     private void writeSessionCookie(HttpServletResponse response, String accessToken) {
+        writeSessionCookie(response, accessToken, null);
+    }
+
+    private void writeSessionCookie(HttpServletResponse response, String accessToken, Long tenantAccessTtlMs) {
         Cookie cookie = new Cookie(
                 tech.cwvermaak.intellisso.config.JwtAuthenticationFilter.SESSION_COOKIE,
                 accessToken);
@@ -276,7 +300,10 @@ public class AuthService {
         // would block legitimate cross-site browser navigation.
         cookie.setAttribute("SameSite", "Lax");
         cookie.setPath("/");
-        cookie.setMaxAge((int) jwtService.getExpirationTime());
+        long ttlSeconds = tenantAccessTtlMs != null && tenantAccessTtlMs > 0
+                ? tenantAccessTtlMs / 1000
+                : jwtService.getExpirationTime();
+        cookie.setMaxAge((int) ttlSeconds);
         response.addCookie(cookie);
     }
 

@@ -10,10 +10,11 @@ public final class AuditEventTypes {
     private AuditEventTypes() {}
 
     // Authentication
-    public static final String AUTH_LOGIN_SUCCESS     = "auth.login.success";
-    public static final String AUTH_LOGIN_FAILED      = "auth.login.failed";
-    public static final String AUTH_LOGIN_MFA_REQUIRED = "auth.login.mfa_required";
-    public static final String AUTH_REGISTER          = "auth.register";
+    public static final String AUTH_LOGIN_SUCCESS       = "auth.login.success";
+    public static final String AUTH_LOGIN_FAILED        = "auth.login.failed";
+    public static final String AUTH_LOGIN_MFA_REQUIRED  = "auth.login.mfa_required";
+    public static final String AUTH_REGISTER            = "auth.register";
+    public static final String AUTH_LOGOUT_RP_INITIATED = "auth.logout.rp_initiated";
 
     // MFA
     public static final String MFA_FACTOR_ENROLL      = "mfa.factor.enroll";

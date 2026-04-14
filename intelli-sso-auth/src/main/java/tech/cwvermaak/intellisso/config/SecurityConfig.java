@@ -95,6 +95,7 @@ public class SecurityConfig {
                                 "/t/*/oauth2/userinfo",
                                 "/t/*/oauth2/introspect",
                                 "/t/*/oauth2/revoke",
+                                "/t/*/oauth2/logout",
                                 // /authorize is reachable both authenticated
                                 // (renders consent) and unauthenticated (302
                                 // to login). Permit so the controller's own

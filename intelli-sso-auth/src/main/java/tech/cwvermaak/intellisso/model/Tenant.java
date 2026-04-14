@@ -2,8 +2,11 @@ package tech.cwvermaak.intellisso.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Entity
 @Table(name = "tenants")
@@ -30,6 +33,25 @@ public class Tenant {
     @Column(nullable = false)
     @Builder.Default
     private Boolean enabled = true;
+
+    /**
+     * Per-tenant access token TTL in milliseconds. Null = use the
+     * application default. PRD SSO-03: range 1 min – 30 days.
+     */
+    @Column(name = "access_ttl_ms")
+    private Long accessTtlMs;
+
+    /** Per-tenant refresh token TTL in milliseconds. Null = default. */
+    @Column(name = "refresh_ttl_ms")
+    private Long refreshTtlMs;
+
+    /**
+     * Per-tenant custom JWT claims injected into every access + ID token.
+     * PRD OA2-07. Stored as JSONB.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "custom_claims", columnDefinition = "jsonb")
+    private Map<String, Object> customClaims;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

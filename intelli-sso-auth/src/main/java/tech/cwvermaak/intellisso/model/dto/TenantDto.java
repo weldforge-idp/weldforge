@@ -2,6 +2,8 @@ package tech.cwvermaak.intellisso.model.dto;
 
 import lombok.*;
 
+import java.util.Map;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -13,4 +15,13 @@ public class TenantDto {
     private String name;
     private String displayName;
     private Boolean enabled;
+
+    /** PRD SSO-03: access token TTL (ms). Null = application default. */
+    private Long accessTtlMs;
+
+    /** PRD SSO-03: refresh token TTL (ms). Null = application default. */
+    private Long refreshTtlMs;
+
+    /** PRD OA2-07: custom claims injected into every access + ID token. */
+    private Map<String, Object> customClaims;
 }

@@ -83,6 +83,9 @@ public class TenantService {
                 .name(dto.getName() != null ? dto.getName() : slug)
                 .displayName(dto.getDisplayName())
                 .enabled(dto.getEnabled() == null ? true : dto.getEnabled())
+                .accessTtlMs(validateTtl(dto.getAccessTtlMs(), "accessTtlMs"))
+                .refreshTtlMs(validateTtl(dto.getRefreshTtlMs(), "refreshTtlMs"))
+                .customClaims(dto.getCustomClaims())
                 .build();
         Tenant saved = tenantRepository.save(t);
         auditService.recordAdmin(AuditEventTypes.TENANT_CREATE, currentActor(),
@@ -106,6 +109,9 @@ public class TenantService {
             }
             t.setEnabled(dto.getEnabled());
         }
+        if (dto.getAccessTtlMs() != null)  t.setAccessTtlMs(validateTtl(dto.getAccessTtlMs(), "accessTtlMs"));
+        if (dto.getRefreshTtlMs() != null) t.setRefreshTtlMs(validateTtl(dto.getRefreshTtlMs(), "refreshTtlMs"));
+        if (dto.getCustomClaims() != null) t.setCustomClaims(dto.getCustomClaims());
         // slug is immutable — changing it would break OAuth2 registration IDs.
         auditService.recordAdmin(AuditEventTypes.TENANT_UPDATE, currentActor(),
                 AuditEventTypes.TARGET_TENANT, String.valueOf(t.getId()),
@@ -234,7 +240,24 @@ public class TenantService {
                 .name(t.getName())
                 .displayName(t.getDisplayName())
                 .enabled(t.getEnabled())
+                .accessTtlMs(t.getAccessTtlMs())
+                .refreshTtlMs(t.getRefreshTtlMs())
+                .customClaims(t.getCustomClaims())
                 .build();
+    }
+
+    /**
+     * PRD SSO-03: enforce 1 minute - 30 days range on configurable session
+     * lifetimes. Null passes through unchanged (caller will use defaults).
+     */
+    private static Long validateTtl(Long ms, String field) {
+        if (ms == null) return null;
+        long MIN = 60_000L;             // 1 minute
+        long MAX = 30L * 24 * 3600 * 1000; // 30 days
+        if (ms < MIN || ms > MAX) {
+            throw new IllegalArgumentException(field + " must be between 60_000 and 2_592_000_000 ms");
+        }
+        return ms;
     }
 
     private static SocialProviderDto toDto(TenantSocialProvider p, String tenantSlug) {

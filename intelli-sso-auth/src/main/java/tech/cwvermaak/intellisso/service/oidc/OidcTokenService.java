@@ -54,12 +54,16 @@ public class OidcTokenService {
         RSAPrivateKey privateKey = signingKeyService.loadPrivateKey(key);
         Instant now = Instant.now();
 
-        String accessToken = buildAccessToken(client, user, scopes, issuer, key.getKid(), privateKey, now);
-        String idToken     = buildIdToken(client, user, nonce, issuer, key.getKid(), privateKey, now);
+        long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
+        Map<String, Object> tenantClaims = tenant.getCustomClaims();
+        String accessToken = buildAccessToken(client, user, scopes, issuer, key.getKid(), privateKey, now,
+                tenantTtlSeconds, tenantClaims);
+        String idToken     = buildIdToken(client, user, nonce, issuer, key.getKid(), privateKey, now,
+                tenantTtlSeconds, tenantClaims);
 
         meterRegistry.counter("sso.token.issued", "grant_type", "authorization_code",
                 "tenant", tenant.getSlug()).increment();
-        return new IssuedTokens(accessToken, idToken, accessTokenSeconds);
+        return new IssuedTokens(accessToken, idToken, tenantTtlSeconds);
     }
 
     public String issueForClientCredentials(Tenant tenant, OidcClient client, List<String> scopes, String issuer) {
@@ -68,12 +72,32 @@ public class OidcTokenService {
         Instant now = Instant.now();
         meterRegistry.counter("sso.token.issued", "grant_type", "client_credentials",
                 "tenant", tenant.getSlug()).increment();
-        return buildAccessToken(client, null, scopes, issuer, key.getKid(), privateKey, now);
+        long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
+        return buildAccessToken(client, null, scopes, issuer, key.getKid(), privateKey, now,
+                tenantTtlSeconds, tenant.getCustomClaims());
+    }
+
+    /** PRD SSO-03: per-tenant access TTL takes precedence over the OIDC default. */
+    private long resolveAccessTtlSeconds(Tenant tenant) {
+        if (tenant.getAccessTtlMs() != null && tenant.getAccessTtlMs() > 0) {
+            return tenant.getAccessTtlMs() / 1000;
+        }
+        return accessTokenSeconds;
     }
 
     private String buildAccessToken(OidcClient client, User user, List<String> scopes,
-                                    String issuer, String kid, RSAPrivateKey privateKey, Instant now) {
+                                    String issuer, String kid, RSAPrivateKey privateKey, Instant now,
+                                    long ttlSeconds, Map<String, Object> tenantCustomClaims) {
         Map<String, Object> claims = new LinkedHashMap<>();
+        // Per-tenant custom claims go in first so the reserved claims below
+        // always win on collision (OA2-07).
+        if (tenantCustomClaims != null) {
+            for (Map.Entry<String, Object> e : tenantCustomClaims.entrySet()) {
+                if (!isReservedOidcClaim(e.getKey())) {
+                    claims.put(e.getKey(), e.getValue());
+                }
+            }
+        }
         claims.put("iss", issuer);
         claims.put("aud", client.getClientId());
         claims.put("client_id", client.getClientId());
@@ -91,14 +115,22 @@ public class OidcTokenService {
                 .header().keyId(kid).and()
                 .claims(claims)
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(accessTokenSeconds)))
+                .expiration(Date.from(now.plusSeconds(ttlSeconds)))
                 .signWith(privateKey, Jwts.SIG.RS256)
                 .compact();
     }
 
     private String buildIdToken(OidcClient client, User user, String nonce,
-                                String issuer, String kid, RSAPrivateKey privateKey, Instant now) {
+                                String issuer, String kid, RSAPrivateKey privateKey, Instant now,
+                                long ttlSeconds, Map<String, Object> tenantCustomClaims) {
         Map<String, Object> claims = new LinkedHashMap<>();
+        if (tenantCustomClaims != null) {
+            for (Map.Entry<String, Object> e : tenantCustomClaims.entrySet()) {
+                if (!isReservedOidcClaim(e.getKey())) {
+                    claims.put(e.getKey(), e.getValue());
+                }
+            }
+        }
         claims.put("iss", issuer);
         claims.put("aud", client.getClientId());
         claims.put("sub", String.valueOf(user.getId()));
@@ -109,9 +141,17 @@ public class OidcTokenService {
                 .header().keyId(kid).and()
                 .claims(claims)
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(idTokenSeconds)))
+                .expiration(Date.from(now.plusSeconds(Math.min(ttlSeconds, idTokenSeconds))))
                 .signWith(privateKey, Jwts.SIG.RS256)
                 .compact();
+    }
+
+    private static boolean isReservedOidcClaim(String name) {
+        return switch (name) {
+            case "iss", "aud", "sub", "exp", "iat", "nbf", "jti",
+                 "client_id", "scope", "token_type", "email", "name", "nonce" -> true;
+            default -> false;
+        };
     }
 
     public record IssuedTokens(String accessToken, String idToken, long expiresIn) {}
