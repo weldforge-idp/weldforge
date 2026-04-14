@@ -13,8 +13,10 @@ import tech.cwvermaak.intellisso.service.TenantMfaPolicyService;
 import tech.cwvermaak.intellisso.service.TenantSamlService;
 import tech.cwvermaak.intellisso.service.TenantService;
 import tech.cwvermaak.intellisso.service.TenantTwilioService;
+import tech.cwvermaak.intellisso.service.saml.SamlMetadataParser;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Administration of tenants and their per-tenant social provider config.
@@ -30,6 +32,7 @@ public class TenantController {
     private final TenantSamlService tenantSamlService;
     private final TenantTwilioService tenantTwilioService;
     private final TenantMfaPolicyService tenantMfaPolicyService;
+    private final SamlMetadataParser samlMetadataParser;
 
     @GetMapping
     public ResponseEntity<List<TenantDto>> list() {
@@ -104,6 +107,39 @@ public class TenantController {
             @PathVariable String providerKey) {
         tenantSamlService.delete(id, providerKey);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * PRD SAM-05: import an upstream IdP's metadata by pasted XML or URL.
+     * Returns a populated {@link SamlProviderDto} with idpEntityId,
+     * idpSsoUrl, idpSloUrl, and the signing certificate extracted. The
+     * admin reviews and submits the create form as usual.
+     */
+    @PostMapping("/{id}/saml-providers/import-metadata")
+    public ResponseEntity<SamlProviderDto> importSamlProviderMetadata(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body) {
+        String xml = body != null ? body.get("metadataXml") : null;
+        String url = body != null ? body.get("metadataUrl") : null;
+
+        SamlMetadataParser.ParsedMetadata parsed;
+        if (xml != null && !xml.isBlank()) {
+            parsed = samlMetadataParser.parseXml(xml);
+        } else if (url != null && !url.isBlank()) {
+            parsed = samlMetadataParser.importFromUrl(url);
+        } else {
+            throw new IllegalArgumentException("Provide metadataXml or metadataUrl");
+        }
+
+        if (parsed.kind() != SamlMetadataParser.ParsedKind.IDP) {
+            throw new IllegalArgumentException(
+                    "Metadata describes an SP, not an IdP — use /api/admin/saml/service-providers/import-metadata");
+        }
+        // tenantId is set at persistence time; the DTO returned here is a
+        // pre-fill for the form, not yet bound to a specific tenant row.
+        SamlProviderDto dto = parsed.idpDto();
+        dto.setTenantId(id);
+        return ResponseEntity.ok(dto);
     }
 
     // -- Twilio provider ----------------------------------------------

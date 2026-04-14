@@ -173,8 +173,10 @@ public class SamlIdpService {
         xml.append("    </md:KeyDescriptor>\n");
 
         // NameID formats
-        xml.append("    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>\n");
-        xml.append("    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</md:NameIDFormat>\n");
+        xml.append("    <md:NameIDFormat>").append(NAMEID_EMAIL).append("</md:NameIDFormat>\n");
+        xml.append("    <md:NameIDFormat>").append(NAMEID_PERSISTENT).append("</md:NameIDFormat>\n");
+        xml.append("    <md:NameIDFormat>").append(NAMEID_TRANSIENT).append("</md:NameIDFormat>\n");
+        xml.append("    <md:NameIDFormat>").append(NAMEID_UNSPECIFIED).append("</md:NameIDFormat>\n");
 
         // SSO endpoints
         xml.append("    <md:SingleSignOnService Binding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\"");
@@ -257,9 +259,42 @@ public class SamlIdpService {
                 .collect(Collectors.toList());
     }
 
-    private static String resolveNameId(User user, String nameIdFormat) {
-        if (nameIdFormat != null && nameIdFormat.contains("persistent")) {
+    // ---- NameID format support (PRD SAM-07) --------------------------
+
+    public static final String NAMEID_EMAIL       = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";
+    public static final String NAMEID_PERSISTENT  = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent";
+    public static final String NAMEID_TRANSIENT   = "urn:oasis:names:tc:SAML:2.0:nameid-format:transient";
+    public static final String NAMEID_UNSPECIFIED = "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified";
+
+    /**
+     * Resolve the NameID value to place in the assertion. PRD SAM-07:
+     * supports all 4 standard NameID formats.
+     *
+     * <ul>
+     *   <li>{@code emailAddress} — user.email</li>
+     *   <li>{@code persistent}   — stable per-user identifier (user.id)</li>
+     *   <li>{@code transient}    — opaque random id regenerated per assertion</li>
+     *   <li>{@code unspecified}  — user.email (most compatible fallback)</li>
+     * </ul>
+     *
+     * Unknown formats default to email for backwards compatibility.
+     */
+    public static String resolveNameId(User user, String nameIdFormat) {
+        if (nameIdFormat == null || nameIdFormat.isBlank()) {
+            return user.getEmail();
+        }
+        if (nameIdFormat.equals(NAMEID_PERSISTENT) || nameIdFormat.contains("persistent")) {
             return String.valueOf(user.getId());
+        }
+        if (nameIdFormat.equals(NAMEID_TRANSIENT) || nameIdFormat.contains("transient")) {
+            // Transient: opaque session-scoped id, regenerated every time.
+            return "_" + java.util.UUID.randomUUID();
+        }
+        if (nameIdFormat.equals(NAMEID_UNSPECIFIED) || nameIdFormat.contains("unspecified")) {
+            return user.getEmail();
+        }
+        if (nameIdFormat.equals(NAMEID_EMAIL) || nameIdFormat.contains("emailAddress")) {
+            return user.getEmail();
         }
         return user.getEmail();
     }
@@ -277,6 +312,13 @@ public class SamlIdpService {
         String nameAttr = mapAttr("name", attrMappings);
         String groupsAttr = mapAttr("groups", attrMappings);
         String roleAttr = mapAttr("role", attrMappings);
+        String subAttr = mapAttr("sub", attrMappings);
+
+        // PRD SAM-08: per-SP attribute release policy. If attributeMappings
+        // contains a "_release" key with a list of attribute names, only
+        // those attributes are emitted in the assertion. Absent = release
+        // all (backwards compatible).
+        java.util.Set<String> released = attributeReleaseSet(attrMappings);
 
         StringBuilder xml = new StringBuilder();
         xml.append("<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\"");
@@ -326,13 +368,22 @@ public class SamlIdpService {
         xml.append("      </saml:AuthnContext>\n");
         xml.append("    </saml:AuthnStatement>\n");
 
-        // AttributeStatement
+        // AttributeStatement — PRD SAM-08: gate each attribute through the
+        // release policy. When released is null, everything is emitted.
         xml.append("    <saml:AttributeStatement>\n");
-        appendAttribute(xml, emailAttr, user.getEmail());
-        if (user.getName() != null) appendAttribute(xml, nameAttr, user.getName());
-        appendAttribute(xml, "sub", String.valueOf(user.getId()));
-        if (roleName != null) appendAttribute(xml, roleAttr, roleName);
-        if (!groups.isEmpty()) {
+        if (isReleased(released, "email")) {
+            appendAttribute(xml, emailAttr, user.getEmail());
+        }
+        if (isReleased(released, "name") && user.getName() != null) {
+            appendAttribute(xml, nameAttr, user.getName());
+        }
+        if (isReleased(released, "sub")) {
+            appendAttribute(xml, subAttr, String.valueOf(user.getId()));
+        }
+        if (isReleased(released, "role") && roleName != null) {
+            appendAttribute(xml, roleAttr, roleName);
+        }
+        if (isReleased(released, "groups") && !groups.isEmpty()) {
             for (String g : groups) {
                 appendAttribute(xml, groupsAttr, g);
             }
@@ -356,6 +407,33 @@ public class SamlIdpService {
             return String.valueOf(mappings.get(standard));
         }
         return standard;
+    }
+
+    /**
+     * PRD SAM-08: build the set of standard attribute names released to an
+     * SP. Returns null when no policy is set (meaning "release all"), or a
+     * non-null set containing the allowed standard names.
+     *
+     * The policy is stored under the reserved {@code _release} key in
+     * {@code attributeMappings}, as a list of standard attribute names.
+     */
+    @SuppressWarnings("unchecked")
+    private static java.util.Set<String> attributeReleaseSet(Map<String, Object> mappings) {
+        if (mappings == null) return null;
+        Object raw = mappings.get("_release");
+        if (raw == null) return null;
+        if (raw instanceof java.util.List<?> list) {
+            java.util.Set<String> out = new java.util.HashSet<>();
+            for (Object o : list) {
+                if (o != null) out.add(o.toString());
+            }
+            return out;
+        }
+        return null;
+    }
+
+    private static boolean isReleased(java.util.Set<String> released, String attr) {
+        return released == null || released.contains(attr);
     }
 
     private String signXml(String xml, String assertionId,

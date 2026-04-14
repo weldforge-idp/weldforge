@@ -72,13 +72,15 @@ public class SamlIdpController {
     }
 
     /**
-     * IdP-initiated Single Logout. Builds LogoutRequests for every SP
-     * with a configured SLO URL and returns a JSON response listing
-     * each SP and its encoded LogoutRequest payload.
+     * IdP-initiated Single Logout (PRD SAM-06). Builds LogoutRequests for
+     * every SP with a configured SLO URL and returns a JSON response
+     * listing each SP and its encoded LogoutRequest payload. The binding
+     * query parameter selects POST (default) or REDIRECT encoding.
      */
     @PostMapping(value = "/t/{slug}/saml2/idp/slo",
                  produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> singleLogout(@PathVariable String slug,
+                                          @RequestParam(value = "binding", defaultValue = "POST") String bindingParam,
                                           Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()
                 || !(authentication.getPrincipal() instanceof String email)) {
@@ -92,7 +94,10 @@ public class SamlIdpController {
             return ResponseEntity.status(403).body(java.util.Map.of("error", "User not found in tenant"));
         }
 
-        java.util.List<SamlSloService.SloPayload> payloads = samlSloService.initiateLogout(tenant, user);
+        SamlSloService.Binding binding = "REDIRECT".equalsIgnoreCase(bindingParam)
+                ? SamlSloService.Binding.REDIRECT
+                : SamlSloService.Binding.POST;
+        java.util.List<SamlSloService.SloPayload> payloads = samlSloService.initiateLogout(tenant, user, binding);
 
         java.util.List<java.util.Map<String, Object>> spList = payloads.stream()
                 .map(p -> {
@@ -102,6 +107,7 @@ public class SamlIdpController {
                     entry.put("spName", p.spName());
                     entry.put("sloUrl", p.sloUrl());
                     entry.put("logoutRequest", p.logoutRequest());
+                    entry.put("binding", p.binding().name());
                     return entry;
                 })
                 .toList();
@@ -109,7 +115,49 @@ public class SamlIdpController {
         return ResponseEntity.ok(java.util.Map.of(
                 "status", "logout_initiated",
                 "spCount", payloads.size(),
+                "binding", binding.name(),
                 "serviceProviders", spList));
+    }
+
+    /**
+     * SP-initiated Single Logout (PRD SAM-06). Receives a SAML
+     * LogoutRequest from an SP and returns an encoded LogoutResponse.
+     * The caller picks POST or REDIRECT binding via query param.
+     */
+    @PostMapping(value = "/t/{slug}/saml2/sp-slo",
+                 produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> spInitiatedLogout(@PathVariable String slug,
+                                                @RequestParam("SAMLRequest") String samlRequest,
+                                                @RequestParam(value = "binding", defaultValue = "POST") String bindingParam) {
+        Tenant tenant = requireTenant(slug);
+
+        String xml;
+        try {
+            byte[] decoded = java.util.Base64.getDecoder().decode(samlRequest);
+            xml = new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "Invalid SAMLRequest: " + e.getMessage()));
+        }
+
+        String issuer = extractXmlElement(xml, "Issuer");
+        String inResponseTo = extractXmlAttribute(xml, "LogoutRequest", "ID");
+        if (issuer == null) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "Missing Issuer in LogoutRequest"));
+        }
+
+        SamlServiceProvider sp = samlIdpService.validateAuthnRequest(tenant, issuer);
+
+        SamlSloService.Binding binding = "REDIRECT".equalsIgnoreCase(bindingParam)
+                ? SamlSloService.Binding.REDIRECT
+                : SamlSloService.Binding.POST;
+        String response = samlSloService.buildLogoutResponse(tenant, sp, inResponseTo, binding);
+
+        return ResponseEntity.ok(java.util.Map.of(
+                "status", "logged_out",
+                "spEntityId", sp.getEntityId(),
+                "binding", binding.name(),
+                "logoutResponse", response,
+                "destination", sp.getSloUrl()));
     }
 
     private ResponseEntity<String> handleSso(String slug, String samlRequest, String relayState,
