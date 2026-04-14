@@ -5,6 +5,14 @@ metadata:
   namespace: sso
 spec:
   replicas: 2
+  # Rolling update: take one pod down before starting a new one so we
+  # don't need room for a third pod on the nodes. Cluster is running at
+  # ~90% capacity; maxSurge>0 causes rollouts to pend on FailedScheduling.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: sso-api
