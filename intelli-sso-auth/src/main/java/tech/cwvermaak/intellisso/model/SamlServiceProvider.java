@@ -59,6 +59,15 @@ public class SamlServiceProvider {
     @Builder.Default
     private Boolean enabled = true;
 
+    /**
+     * PRD SAM-04. When {@code true} and {@link #spCertificate} is set,
+     * the IdP wraps the signed assertion in an {@code <EncryptedAssertion>}
+     * element encrypted to the SP's public key.
+     */
+    @Column(name = "encrypt_assertions", nullable = false)
+    @Builder.Default
+    private Boolean encryptAssertions = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

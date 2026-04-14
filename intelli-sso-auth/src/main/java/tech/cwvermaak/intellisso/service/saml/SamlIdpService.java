@@ -95,6 +95,7 @@ public class SamlIdpService {
                         : "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress")
                 .attributeMappings(dto.getAttributeMappings())
                 .enabled(dto.getEnabled() != null ? dto.getEnabled() : true)
+                .encryptAssertions(Boolean.TRUE.equals(dto.getEncryptAssertions()))
                 .build();
         spRepository.save(sp);
 
@@ -119,6 +120,7 @@ public class SamlIdpService {
         if (dto.getNameIdFormat() != null) sp.setNameIdFormat(dto.getNameIdFormat());
         if (dto.getAttributeMappings() != null) sp.setAttributeMappings(dto.getAttributeMappings());
         if (dto.getEnabled() != null) sp.setEnabled(dto.getEnabled());
+        if (dto.getEncryptAssertions() != null) sp.setEncryptAssertions(dto.getEncryptAssertions());
 
         auditService.recordAdmin(AuditEventTypes.SAML_SP_UPDATE, null,
                 AuditEventTypes.TARGET_SAML_SP, String.valueOf(sp.getId()),
@@ -227,10 +229,20 @@ public class SamlIdpService {
             // Sign the response
             String signedXml = signXml(xml, assertionId, privateKey, publicKey);
 
+            // PRD SAM-04: optionally encrypt the signed assertion
+            // (AES-256-CBC + RSA-OAEP key wrap under the SP's public cert).
+            boolean encrypted = false;
+            if (Boolean.TRUE.equals(sp.getEncryptAssertions())
+                    && sp.getSpCertificate() != null && !sp.getSpCertificate().isBlank()) {
+                signedXml = encryptAssertionInResponse(signedXml, sp.getSpCertificate());
+                encrypted = true;
+            }
+
             auditService.recordUserAction(AuditEventTypes.SAML_IDP_ASSERTION_ISSUED, user,
                     AuditEventTypes.TARGET_SAML_SP, String.valueOf(sp.getId()),
                     AuditService.meta("sp_entity_id", sp.getEntityId(),
-                            "assertion_id", assertionId));
+                            "assertion_id", assertionId,
+                            "encrypted", encrypted));
 
             return Base64.getEncoder().encodeToString(signedXml.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
@@ -505,6 +517,57 @@ public class SamlIdpService {
         return sw.toString();
     }
 
+    /**
+     * PRD SAM-04. Takes a fully-signed Response XML, serialises the
+     * inner {@code <saml:Assertion>} element back to a string, encrypts
+     * it with {@link SamlAssertionEncrypter}, and substitutes the result
+     * into the Response DOM. Returns the re-serialised Response XML.
+     *
+     * <p>Encryption happens strictly after signing so the embedded
+     * signature is preserved inside the ciphertext — the SP decrypts,
+     * then verifies the signature on the recovered plaintext. That
+     * ordering matches the SAML 2.0 profile §2.3.2.
+     */
+    private static String encryptAssertionInResponse(String signedResponseXml, String spCertPem) {
+        try {
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setNamespaceAware(true);
+            Document doc = dbf.newDocumentBuilder()
+                    .parse(new ByteArrayInputStream(signedResponseXml.getBytes(StandardCharsets.UTF_8)));
+
+            org.w3c.dom.NodeList assertions = doc.getElementsByTagNameNS(
+                    "urn:oasis:names:tc:SAML:2.0:assertion", "Assertion");
+            if (assertions.getLength() == 0) return signedResponseXml;
+            Element assertionEl = (Element) assertions.item(0);
+
+            // Serialise the Assertion subtree so we have a standalone
+            // XML string to hand to the encrypter.
+            javax.xml.transform.TransformerFactory tf = javax.xml.transform.TransformerFactory.newInstance();
+            javax.xml.transform.Transformer t = tf.newTransformer();
+            t.setOutputProperty(javax.xml.transform.OutputKeys.OMIT_XML_DECLARATION, "yes");
+            java.io.StringWriter sw = new java.io.StringWriter();
+            t.transform(new javax.xml.transform.dom.DOMSource(assertionEl),
+                    new javax.xml.transform.stream.StreamResult(sw));
+            String assertionXml = sw.toString();
+
+            // Build the <EncryptedAssertion> block and parse it back into
+            // a node so we can swap it in place.
+            String encryptedXml = SamlAssertionEncrypter.encrypt(assertionXml, spCertPem);
+            Document encDoc = dbf.newDocumentBuilder()
+                    .parse(new ByteArrayInputStream(encryptedXml.getBytes(StandardCharsets.UTF_8)));
+            org.w3c.dom.Node encNode = doc.importNode(encDoc.getDocumentElement(), true);
+
+            assertionEl.getParentNode().replaceChild(encNode, assertionEl);
+
+            java.io.StringWriter out = new java.io.StringWriter();
+            t.transform(new javax.xml.transform.dom.DOMSource(doc),
+                    new javax.xml.transform.stream.StreamResult(out));
+            return out.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to encrypt assertion: " + e.getMessage(), e);
+        }
+    }
+
     static SamlServiceProviderDto toDto(SamlServiceProvider sp) {
         return SamlServiceProviderDto.builder()
                 .id(sp.getId())
@@ -516,6 +579,7 @@ public class SamlIdpService {
                 .nameIdFormat(sp.getNameIdFormat())
                 .attributeMappings(sp.getAttributeMappings())
                 .enabled(sp.getEnabled())
+                .encryptAssertions(sp.getEncryptAssertions())
                 .build();
     }
 

@@ -10,6 +10,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import tech.cwvermaak.intellisso.service.resilience.ProviderUnavailableException;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -56,6 +57,14 @@ public class GlobalExceptionHandler {
                 .reduce((a, b) -> a + "; " + b)
                 .orElse("Validation failed");
         return respond(HttpStatus.BAD_REQUEST, "validation_error", message, request);
+    }
+
+    @ExceptionHandler(ProviderUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleProviderUnavailable(ProviderUnavailableException ex,
+                                                                          HttpServletRequest request) {
+        log.warn("Provider {} unavailable on {} {}: {}", ex.getProvider(),
+                request.getMethod(), request.getRequestURI(), ex.getMessage());
+        return respond(HttpStatus.SERVICE_UNAVAILABLE, "provider_unavailable", ex.getMessage(), request);
     }
 
     @ExceptionHandler(Exception.class)

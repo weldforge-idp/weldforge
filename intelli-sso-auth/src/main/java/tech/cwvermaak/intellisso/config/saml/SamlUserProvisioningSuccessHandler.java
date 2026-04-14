@@ -19,9 +19,13 @@ import tech.cwvermaak.intellisso.repository.TenantRepository;
 import tech.cwvermaak.intellisso.repository.TenantSamlProviderRepository;
 import tech.cwvermaak.intellisso.repository.UserRepository;
 import tech.cwvermaak.intellisso.service.GroupRoleMappingService;
+import tech.cwvermaak.intellisso.service.federation.FederationRulesEngine;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -41,6 +45,7 @@ public class SamlUserProvisioningSuccessHandler
     private final UserRepository userRepository;
     private final ScimGroupRepository scimGroupRepository;
     private final GroupRoleMappingService groupRoleMappingService;
+    private final FederationRulesEngine federationRulesEngine;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
@@ -79,7 +84,13 @@ public class SamlUserProvisioningSuccessHandler
         String emailAttr = cfg != null ? cfg.getEmailAttribute() : "email";
         String nameAttr  = cfg != null ? cfg.getNameAttribute()  : "name";
 
-        String email = firstAttribute(principal, emailAttr);
+        // Build a claim bag from the SAML assertion so the federation
+        // engine (PRD FED-02/04) sees the same view the rules were
+        // authored against.
+        Map<String, Object> claims = principalToClaims(principal);
+        Map<String, Object> transformed = federationRulesEngine.transformClaims(tenant, claims);
+
+        String email = (String) transformed.getOrDefault("email", firstAttribute(principal, emailAttr));
         if (email == null) {
             // Fall back to the NameID — many IdPs put the email there.
             email = principal.getName();
@@ -89,10 +100,13 @@ public class SamlUserProvisioningSuccessHandler
                     tenantSlug, providerKey);
             return;
         }
-        String name = firstAttribute(principal, nameAttr);
+        String name = (String) transformed.getOrDefault("name", firstAttribute(principal, nameAttr));
 
+        // FED-02: prefer tenant-configured matching rules, fall back to
+        // email lookup if no rule matches (or none are configured).
         final String finalEmail = email;
-        User user = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)
+        User user = federationRulesEngine.matchUser(tenant, claims)
+                .or(() -> userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), finalEmail))
                 .orElseGet(() -> User.builder()
                         .tenant(tenant)
                         .email(finalEmail)
@@ -102,6 +116,7 @@ public class SamlUserProvisioningSuccessHandler
                         .build());
 
         if (name != null) user.setName(name);
+        if (user.getEmail() == null) user.setEmail(email);
         userRepository.save(user);
 
         // Extract group claims from the SAML assertion and sync memberships
@@ -130,6 +145,20 @@ public class SamlUserProvisioningSuccessHandler
                         }
                     });
         }
+    }
+
+    private static Map<String, Object> principalToClaims(Saml2AuthenticatedPrincipal principal) {
+        Map<String, Object> claims = new LinkedHashMap<>();
+        claims.put("nameId", principal.getName());
+        Map<String, List<Object>> attrs = principal.getAttributes();
+        if (attrs != null) {
+            for (Map.Entry<String, List<Object>> e : attrs.entrySet()) {
+                List<Object> v = e.getValue();
+                if (v == null || v.isEmpty()) continue;
+                claims.put(e.getKey(), v.size() == 1 ? v.get(0) : v);
+            }
+        }
+        return new HashMap<>(claims);
     }
 
     private static String firstAttribute(Saml2AuthenticatedPrincipal principal, String key) {

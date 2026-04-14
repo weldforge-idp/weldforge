@@ -29,6 +29,7 @@ import tech.cwvermaak.intellisso.service.security.PasswordPolicyService;
 import tech.cwvermaak.intellisso.service.security.RefreshTokenService;
 import tech.cwvermaak.intellisso.service.security.RefreshTokenService.Issued;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -49,6 +50,8 @@ public class AuthService {
     private final EmailVerificationService emailVerificationService;
     private final TenantMfaPolicyService mfaPolicyService;
     private final MeterRegistry meterRegistry;
+    private final tech.cwvermaak.intellisso.service.ldap.LdapUpstreamService ldapUpstreamService;
+    private final tech.cwvermaak.intellisso.service.crm.CrmProvisioningService crmProvisioningService;
 
     @Transactional
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
@@ -86,6 +89,18 @@ public class AuthService {
     public AuthResponseDto login(LoginRequestDto request, HttpServletRequest httpRequest,
                                  HttpServletResponse response) {
         Tenant tenant = currentTenant();
+
+        // PRD DIR-01 / DIR-02: if the tenant has an enabled LDAP/AD
+        // provider, try upstream authentication first. A success gets
+        // the user provisioned locally and short-circuits past the
+        // password compare. A failure (bad creds, user not in LDAP,
+        // directory unreachable) falls through to the local path, so
+        // break-glass admins always remain usable.
+        Optional<User> ldapUser = ldapUpstreamService.authenticate(
+                tenant, request.getIdentifier(), request.getPassword());
+        if (ldapUser.isPresent()) {
+            return completeLoginForUpstream(ldapUser.get(), tenant, httpRequest, response);
+        }
 
         User user = userRepository.findByTenantAndIdentifier(tenant.getId(), request.getIdentifier())
                 .orElse(null);
@@ -167,6 +182,66 @@ public class AuthService {
         meterRegistry.counter("sso.auth.login", "outcome", "success", "tenant", tenant.getSlug()).increment();
         auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_SUCCESS, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
+        // PRD CRM-01: push the identity into every configured CRM. Safe
+        // to run inline — the service catches all errors so a CRM outage
+        // never rolls back a successful login.
+        crmProvisioningService.provisionOnEvent(AuditEventTypes.AUTH_LOGIN_SUCCESS, user);
+        return issueTokens(user, httpRequest, response);
+    }
+
+    /**
+     * Shared completion path for upstream authentications (LDAP today,
+     * SAML / OAuth2 could reuse it later). The upstream source has
+     * already verified the credential so we skip the password compare
+     * but keep every other gate: lockout, MFA challenge, MFA enrollment,
+     * audit, metrics.
+     */
+    private AuthResponseDto completeLoginForUpstream(User user, Tenant tenant,
+                                                      HttpServletRequest httpRequest,
+                                                      HttpServletResponse response) {
+        if (!user.isActive()) {
+            meterRegistry.counter("sso.auth.login", "outcome", "failure", "tenant", tenant.getSlug()).increment();
+            auditService.recordAnonymous(AuditEventTypes.AUTH_LOGIN_FAILED,
+                    AuditEvent.Outcome.FAILURE, tenant.getId(),
+                    user.getEmail(), AuditEventTypes.TARGET_USER,
+                    String.valueOf(user.getId()),
+                    AuditService.meta("reason", "user_inactive", "source", "ldap"));
+            throw new BadCredentialsException("Invalid credentials");
+        }
+        try {
+            lockoutService.ensureNotLocked(user);
+        } catch (AccountLockedException locked) {
+            throw new BadCredentialsException("Invalid credentials");
+        }
+        lockoutService.recordSuccess(user);
+
+        if (mfaService.hasVerifiedFactor(user)) {
+            String challengeToken = jwtService.generateMfaChallengeToken(
+                    user.getId(), tenant.getId(), tenant.getSlug());
+            auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_MFA_REQUIRED, user,
+                    AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
+            return AuthResponseDto.builder()
+                    .mfaRequired(true)
+                    .mfaChallengeToken(challengeToken)
+                    .availableFactors(mfaService.availableFactors(user))
+                    .build();
+        }
+        if (mfaPolicyService.mustEnroll(user)) {
+            String enrollmentToken = jwtService.generateMfaChallengeToken(
+                    user.getId(), tenant.getId(), tenant.getSlug());
+            auditService.recordUserAction(AuditEventTypes.MFA_ENROLLMENT_REQUIRED, user,
+                    AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                    AuditService.meta("reason", "tenant_policy_required", "source", "ldap"));
+            return AuthResponseDto.builder()
+                    .mustEnrollMfa(true)
+                    .mfaChallengeToken(enrollmentToken)
+                    .build();
+        }
+        meterRegistry.counter("sso.auth.login", "outcome", "success", "tenant", tenant.getSlug()).increment();
+        auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_SUCCESS, user,
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                AuditService.meta("source", "ldap"));
+        crmProvisioningService.provisionOnEvent(AuditEventTypes.AUTH_LOGIN_SUCCESS, user);
         return issueTokens(user, httpRequest, response);
     }
 

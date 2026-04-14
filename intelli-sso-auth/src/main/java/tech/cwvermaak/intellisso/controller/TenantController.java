@@ -7,12 +7,18 @@ import tech.cwvermaak.intellisso.model.SocialProviderType;
 import tech.cwvermaak.intellisso.model.dto.SamlProviderDto;
 import tech.cwvermaak.intellisso.model.dto.SocialProviderDto;
 import tech.cwvermaak.intellisso.model.dto.TenantDto;
+import tech.cwvermaak.intellisso.model.dto.CrmProviderDto;
+import tech.cwvermaak.intellisso.model.dto.FederationRulesDto;
+import tech.cwvermaak.intellisso.model.dto.LdapProviderDto;
 import tech.cwvermaak.intellisso.model.dto.MfaPolicyDto;
 import tech.cwvermaak.intellisso.model.dto.TwilioProviderDto;
 import tech.cwvermaak.intellisso.service.TenantMfaPolicyService;
 import tech.cwvermaak.intellisso.service.TenantSamlService;
 import tech.cwvermaak.intellisso.service.TenantService;
 import tech.cwvermaak.intellisso.service.TenantTwilioService;
+import tech.cwvermaak.intellisso.service.crm.TenantCrmService;
+import tech.cwvermaak.intellisso.service.federation.TenantFederationRulesService;
+import tech.cwvermaak.intellisso.service.ldap.TenantLdapService;
 import tech.cwvermaak.intellisso.service.saml.SamlMetadataParser;
 
 import java.util.List;
@@ -32,6 +38,9 @@ public class TenantController {
     private final TenantSamlService tenantSamlService;
     private final TenantTwilioService tenantTwilioService;
     private final TenantMfaPolicyService tenantMfaPolicyService;
+    private final TenantFederationRulesService tenantFederationRulesService;
+    private final TenantLdapService tenantLdapService;
+    private final TenantCrmService tenantCrmService;
     private final SamlMetadataParser samlMetadataParser;
 
     @GetMapping
@@ -189,5 +198,87 @@ public class TenantController {
             @PathVariable Long id,
             @RequestBody MfaPolicyDto dto) {
         return ResponseEntity.ok(tenantMfaPolicyService.upsert(id, dto));
+    }
+
+    // -- Federation rules (PRD FED-02 / FED-04) -----------------------
+
+    @GetMapping("/{id}/federation-rules")
+    public ResponseEntity<FederationRulesDto> getFederationRules(@PathVariable Long id) {
+        return ResponseEntity.ok(tenantFederationRulesService.get(id));
+    }
+
+    @PostMapping("/{id}/federation-rules")
+    public ResponseEntity<FederationRulesDto> upsertFederationRules(
+            @PathVariable Long id,
+            @RequestBody FederationRulesDto dto) {
+        return ResponseEntity.ok(tenantFederationRulesService.upsert(id, dto));
+    }
+
+    @PutMapping("/{id}/federation-rules")
+    public ResponseEntity<FederationRulesDto> updateFederationRules(
+            @PathVariable Long id,
+            @RequestBody FederationRulesDto dto) {
+        return ResponseEntity.ok(tenantFederationRulesService.upsert(id, dto));
+    }
+
+    // -- LDAP / AD providers (PRD DIR-01 / DIR-02) --------------------
+
+    @GetMapping("/{id}/ldap-providers")
+    public ResponseEntity<List<LdapProviderDto>> listLdap(@PathVariable Long id) {
+        return ResponseEntity.ok(tenantLdapService.list(id));
+    }
+
+    @PostMapping("/{id}/ldap-providers")
+    public ResponseEntity<LdapProviderDto> createLdap(@PathVariable Long id,
+                                                       @RequestBody LdapProviderDto dto) {
+        return ResponseEntity.ok(tenantLdapService.create(id, dto));
+    }
+
+    @PutMapping("/{id}/ldap-providers/{providerId}")
+    public ResponseEntity<LdapProviderDto> updateLdap(@PathVariable Long id,
+                                                       @PathVariable Long providerId,
+                                                       @RequestBody LdapProviderDto dto) {
+        return ResponseEntity.ok(tenantLdapService.update(id, providerId, dto));
+    }
+
+    @DeleteMapping("/{id}/ldap-providers/{providerId}")
+    public ResponseEntity<Void> deleteLdap(@PathVariable Long id,
+                                            @PathVariable Long providerId) {
+        tenantLdapService.delete(id, providerId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/ldap-providers/{providerId}/test-connection")
+    public ResponseEntity<Map<String, Object>> testLdap(@PathVariable Long id,
+                                                         @PathVariable Long providerId) {
+        boolean ok = tenantLdapService.testConnection(id, providerId);
+        return ResponseEntity.ok(Map.of("success", ok));
+    }
+
+    // -- CRM providers (PRD §3.10 CRM-01..CRM-04) ---------------------
+
+    @GetMapping("/{id}/crm-providers")
+    public ResponseEntity<List<CrmProviderDto>> listCrm(@PathVariable Long id) {
+        return ResponseEntity.ok(tenantCrmService.list(id));
+    }
+
+    @PostMapping("/{id}/crm-providers")
+    public ResponseEntity<CrmProviderDto> createCrm(@PathVariable Long id,
+                                                     @RequestBody CrmProviderDto dto) {
+        return ResponseEntity.ok(tenantCrmService.create(id, dto));
+    }
+
+    @PutMapping("/{id}/crm-providers/{providerId}")
+    public ResponseEntity<CrmProviderDto> updateCrm(@PathVariable Long id,
+                                                     @PathVariable Long providerId,
+                                                     @RequestBody CrmProviderDto dto) {
+        return ResponseEntity.ok(tenantCrmService.update(id, providerId, dto));
+    }
+
+    @DeleteMapping("/{id}/crm-providers/{providerId}")
+    public ResponseEntity<Void> deleteCrm(@PathVariable Long id,
+                                           @PathVariable Long providerId) {
+        tenantCrmService.delete(id, providerId);
+        return ResponseEntity.noContent().build();
     }
 }

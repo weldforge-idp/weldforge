@@ -6,6 +6,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Entity
@@ -52,6 +53,22 @@ public class Tenant {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "custom_claims", columnDefinition = "jsonb")
     private Map<String, Object> customClaims;
+
+    /**
+     * Ordered list of identity-matching rules used when resolving a
+     * federated identity to a local user. PRD FED-02.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "matching_rules", columnDefinition = "jsonb")
+    private List<Map<String, Object>> matchingRules;
+
+    /**
+     * Ordered list of JSONPath-based claim transformation rules.
+     * PRD FED-04.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "claim_transforms", columnDefinition = "jsonb")
+    private List<Map<String, Object>> claimTransforms;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

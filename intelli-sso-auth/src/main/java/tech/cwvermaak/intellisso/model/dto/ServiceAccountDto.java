@@ -1,0 +1,27 @@
+package tech.cwvermaak.intellisso.model.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import tech.cwvermaak.intellisso.model.AdminRole;
+
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ServiceAccountDto {
+    private Long id;
+    private String name;
+    private String description;
+    /** Returned only on create/rotate. */
+    private String token;
+    private String tokenPrefix;
+    private AdminRole adminRole;
+    private Boolean enabled;
+    private LocalDateTime expiresAt;
+    private LocalDateTime createdAt;
+    private LocalDateTime lastUsedAt;
+}

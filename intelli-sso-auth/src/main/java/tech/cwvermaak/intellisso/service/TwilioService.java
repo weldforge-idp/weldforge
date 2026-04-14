@@ -3,13 +3,16 @@ package tech.cwvermaak.intellisso.service;
 import com.twilio.http.TwilioRestClient;
 import com.twilio.rest.api.v2010.account.Message;
 import com.twilio.type.PhoneNumber;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import jakarta.persistence.EntityNotFoundException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import tech.cwvermaak.intellisso.model.Tenant;
 import tech.cwvermaak.intellisso.model.TenantTwilioProvider;
 import tech.cwvermaak.intellisso.repository.TenantTwilioProviderRepository;
+import tech.cwvermaak.intellisso.service.resilience.ProviderUnavailableException;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,13 +30,21 @@ import java.util.concurrent.ConcurrentHashMap;
  * the cache entry automatically.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class TwilioService {
 
+    private static final String CB_NAME = "twilio";
+
     private final TenantTwilioProviderRepository repository;
+    private final CircuitBreaker circuitBreaker;
 
     private final Map<String, TwilioRestClient> clientCache = new ConcurrentHashMap<>();
+
+    public TwilioService(TenantTwilioProviderRepository repository,
+                         CircuitBreakerRegistry registry) {
+        this.repository = repository;
+        this.circuitBreaker = registry.circuitBreaker(CB_NAME);
+    }
 
     /**
      * Send an SMS to {@code to} using the calling tenant's Twilio config.
@@ -44,16 +55,12 @@ public class TwilioService {
         TenantTwilioProvider config = requireEnabledConfig(tenant);
         TwilioRestClient client = clientFor(tenant.getId(), config);
 
-        try {
-            Message.creator(
-                    new PhoneNumber(to),
-                    new PhoneNumber(config.getFromPhone()),
-                    messageBody
-            ).create(client);
-        } catch (Exception e) {
-            log.error("Twilio SMS send failed for tenant {}: {}", tenant.getSlug(), e.getMessage());
-            throw new IllegalStateException("Failed to send SMS via Twilio: " + e.getMessage(), e);
-        }
+        runInCircuitBreaker("SMS", tenant, () ->
+                Message.creator(
+                        new PhoneNumber(to),
+                        new PhoneNumber(config.getFromPhone()),
+                        messageBody
+                ).create(client));
     }
 
     /**
@@ -65,15 +72,31 @@ public class TwilioService {
         TenantTwilioProvider config = requireEnabledConfig(tenant);
         TwilioRestClient client = clientFor(tenant.getId(), config);
 
+        runInCircuitBreaker("WhatsApp", tenant, () ->
+                Message.creator(
+                        new PhoneNumber("whatsapp:" + to),
+                        new PhoneNumber("whatsapp:" + config.getFromPhone()),
+                        messageBody
+                ).create(client));
+    }
+
+    /**
+     * Execute the Twilio API call inside the {@code twilio} circuit
+     * breaker (PRD AVL-04). A CallNotPermittedException means the CB is
+     * open — we translate it into a tagged {@link ProviderUnavailableException}
+     * so callers and the global handler can return a clean
+     * "SMS temporarily unavailable" response instead of a 500.
+     */
+    private void runInCircuitBreaker(String channel, Tenant tenant, Runnable call) {
         try {
-            Message.creator(
-                    new PhoneNumber("whatsapp:" + to),
-                    new PhoneNumber("whatsapp:" + config.getFromPhone()),
-                    messageBody
-            ).create(client);
+            circuitBreaker.executeRunnable(call);
+        } catch (CallNotPermittedException cbOpen) {
+            log.warn("Twilio CB open — rejecting {} for tenant {}", channel, tenant.getSlug());
+            throw new ProviderUnavailableException(CB_NAME,
+                    "Twilio " + channel + " is temporarily unavailable, please retry shortly");
         } catch (Exception e) {
-            log.error("Twilio WhatsApp send failed for tenant {}: {}", tenant.getSlug(), e.getMessage());
-            throw new IllegalStateException("Failed to send WhatsApp via Twilio: " + e.getMessage(), e);
+            log.error("Twilio {} send failed for tenant {}: {}", channel, tenant.getSlug(), e.getMessage());
+            throw new IllegalStateException("Failed to send " + channel + " via Twilio: " + e.getMessage(), e);
         }
     }
 

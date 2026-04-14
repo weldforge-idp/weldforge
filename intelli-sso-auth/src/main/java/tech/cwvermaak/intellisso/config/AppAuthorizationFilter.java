@@ -5,20 +5,53 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tech.cwvermaak.intellisso.config.tenant.TenantContext;
+import tech.cwvermaak.intellisso.model.AdminRole;
 import tech.cwvermaak.intellisso.model.AppClient;
+import tech.cwvermaak.intellisso.model.ServiceAccount;
 import tech.cwvermaak.intellisso.repository.AppClientRepository;
+import tech.cwvermaak.intellisso.repository.ServiceAccountRepository;
+import tech.cwvermaak.intellisso.service.security.ApiKeyHasher;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
+/**
+ * Authenticates callers presenting an API key or service-account token in
+ * the {@code x-app-authorization} header (PRD TOK-01/02/03).
+ *
+ * <p>Two identity types live on the same header:
+ * <ul>
+ *   <li>{@code wf_live_*} — {@link AppClient} API key, hashed lookup, no
+ *       admin role, enforces optional {path, methods} scopes.
+ *   <li>{@code wf_svc_*} — {@link ServiceAccount} token, hashed lookup,
+ *       populates {@link AdminRole} in {@link TenantContext}, and fails if
+ *       expired.
+ * </ul>
+ *
+ * <p>Legacy plaintext keys from before V23 are still accepted via a
+ * fallback lookup against {@code api_key} so unrotated integrations keep
+ * working. Rotating the key swaps the row to hash-only storage.
+ */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class AppAuthorizationFilter extends OncePerRequestFilter {
 
     private final AppClientRepository appClientRepository;
+    private final ServiceAccountRepository serviceAccountRepository;
+
+    private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -28,8 +61,6 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // Public paths — skip the app-authorization header check.
-        // These are secured by Spring Security's permitAll rules and
-        // their own filter chains (SCIM bearer token, SAML flows, etc.).
         if (path.startsWith("/login")
                 || path.startsWith("/oauth2")
                 || path.equals("/error")
@@ -37,32 +68,105 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
                 || path.startsWith("/t/")          // per-tenant OIDC + SAML IdP
                 || path.startsWith("/saml2/")      // SAML SP login
                 || path.startsWith("/scim/v2/")    // SCIM (has its own auth filter)
-                || path.startsWith("/v3/api-docs") // OpenAPI spec
-                || path.startsWith("/swagger-ui")  // Swagger UI
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/swagger-ui")
                 || path.equals("/swagger-ui.html")
                 || path.startsWith("/webjars/")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String authHeader = request.getHeader("x-app-authorization");
-        if (authHeader != null) {
-            Optional<AppClient> client = appClientRepository.findByApiKeyAndEnabledTrue(authHeader);
-            if (client.isPresent()) {
-                // Bind the request to the api key's owning tenant so every
-                // downstream query is tenant-scoped. A JWT, if also present,
-                // will overwrite this in JwtAuthenticationFilter — that is
-                // fine because the JWT identifies the same caller.
-                AppClient c = client.get();
-                if (c.getTenant() != null) {
-                    TenantContext.set(c.getTenant().getSlug(), c.getTenant().getId(), false);
-                }
-                filterChain.doFilter(request, response);
-                return;
-            }
+        String header = request.getHeader("x-app-authorization");
+        if (header == null || header.isBlank()) {
+            deny(response, "Missing or invalid x-app-authorization header");
+            return;
         }
 
+        // Service-account path: wf_svc_* → carries admin role.
+        if (header.startsWith(ApiKeyHasher.SERVICE_ACCOUNT_PREFIX)) {
+            Optional<ServiceAccount> saOpt =
+                    serviceAccountRepository.findByTokenHashAndEnabledTrue(ApiKeyHasher.hash(header));
+            if (saOpt.isEmpty()) {
+                deny(response, "Invalid service account token");
+                return;
+            }
+            ServiceAccount sa = saOpt.get();
+            if (sa.getExpiresAt() != null && sa.getExpiresAt().isBefore(LocalDateTime.now())) {
+                deny(response, "Service account token expired");
+                return;
+            }
+            if (sa.getTenant() != null) {
+                TenantContext.set(sa.getTenant().getSlug(), sa.getTenant().getId(), sa.getAdminRole());
+            }
+            // Service accounts get a SecurityContext authentication so the
+            // controller layer's standard @PreAuthorize / tenantAccessor
+            // guards treat them as first-class admin callers.
+            var authn = new UsernamePasswordAuthenticationToken(
+                    "svc:" + sa.getId(),
+                    null,
+                    List.of(new SimpleGrantedAuthority("ROLE_SERVICE_ACCOUNT")));
+            SecurityContextHolder.getContext().setAuthentication(authn);
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // App-client path: wf_live_* — or legacy plaintext before TOK-01.
+        Optional<AppClient> clientOpt =
+                appClientRepository.findByApiKeyHashAndEnabledTrue(ApiKeyHasher.hash(header));
+        if (clientOpt.isEmpty()) {
+            // Fallback: legacy rows still stored the plaintext in api_key.
+            clientOpt = appClientRepository.findByApiKeyAndEnabledTrue(header);
+        }
+        if (clientOpt.isEmpty()) {
+            deny(response, "Missing or invalid x-app-authorization header");
+            return;
+        }
+
+        AppClient client = clientOpt.get();
+        if (!isWithinScope(client, request)) {
+            deny(response, "API key not authorised for this path/method");
+            return;
+        }
+        if (client.getTenant() != null) {
+            TenantContext.set(client.getTenant().getSlug(), client.getTenant().getId(), false);
+        }
+        filterChain.doFilter(request, response);
+    }
+
+    /**
+     * PRD TOK-02. When {@code scopes} is empty the key has no restriction
+     * (backward-compat default). Otherwise the request must match at least
+     * one {path, methods} entry.
+     */
+    @SuppressWarnings("unchecked")
+    private boolean isWithinScope(AppClient client, HttpServletRequest request) {
+        List<Map<String, Object>> scopes = client.getScopes();
+        if (scopes == null || scopes.isEmpty()) return true;
+
+        String reqPath = request.getRequestURI();
+        String reqMethod = request.getMethod().toUpperCase();
+
+        for (Map<String, Object> scope : scopes) {
+            Object pathPattern = scope.get("path");
+            if (!(pathPattern instanceof String p)) continue;
+            if (!PATH_MATCHER.match(p, reqPath)) continue;
+
+            Object methods = scope.get("methods");
+            if (methods == null) return true;
+            if (methods instanceof List<?> list) {
+                boolean any = list.stream()
+                        .filter(m -> m != null)
+                        .map(Object::toString)
+                        .map(String::toUpperCase)
+                        .anyMatch(m -> m.equals("*") || m.equals(reqMethod));
+                if (any) return true;
+            }
+        }
+        return false;
+    }
+
+    private static void deny(HttpServletResponse response, String msg) throws IOException {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.getWriter().write("Missing or invalid x-app-authorization header");
+        response.getWriter().write(msg);
     }
 }

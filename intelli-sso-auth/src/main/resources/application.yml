@@ -174,7 +174,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,prometheus
+        include: health,prometheus,circuitbreakers
   endpoint:
     health:
       show-details: when-authorized
@@ -189,3 +189,35 @@ management:
     metrics:
       export:
         enabled: true
+  health:
+    circuitbreakers:
+      enabled: true
+
+# Resilience4j circuit breakers (PRD AVL-04). One CB per distinct
+# downstream so a failure in Twilio doesn't quarantine webhook delivery.
+# Window 10 / threshold 50% is a deliberate low-latency default — we
+# prefer fast detection over smoothing, because the fallback is always
+# "fail fast and surface a clear provider-unavailable error".
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        registerHealthIndicator: true
+    instances:
+      webhook:
+        baseConfig: default
+      twilio:
+        baseConfig: default
+      smtp:
+        baseConfig: default
+      upstream-idp:
+        baseConfig: default
+      crm:
+        baseConfig: default

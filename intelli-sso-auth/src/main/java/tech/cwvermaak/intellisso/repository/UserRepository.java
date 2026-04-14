@@ -16,6 +16,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByTenantIdAndUsernameIgnoreCase(Long tenantId, String username);
 
+    Optional<User> findByTenantIdAndCellPhoneNumber(Long tenantId, String cellPhoneNumber);
+
+    Optional<User> findByTenantIdAndProviderId(Long tenantId, String providerId);
+
     Optional<User> findByTenant_SlugAndEmailIgnoreCase(String tenantSlug, String email);
 
     Optional<User> findFirstByEmailIgnoreCase(String email);

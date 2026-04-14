@@ -12,6 +12,7 @@ import tech.cwvermaak.intellisso.repository.*;
 import tech.cwvermaak.intellisso.service.audit.AuditEventTypes;
 import tech.cwvermaak.intellisso.service.audit.AuditService;
 import tech.cwvermaak.intellisso.service.mfa.MfaService;
+import tech.cwvermaak.intellisso.service.security.ApiKeyHasher;
 
 import java.security.SecureRandom;
 import java.util.HexFormat;
@@ -239,12 +240,17 @@ public class AdminService {
         if (dto.getClientName() == null || dto.getClientName().isBlank()) {
             throw new IllegalArgumentException("clientName is required");
         }
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantAccessor.requireTenant();
         String apiKey = generateApiKey();
         AppClient c = AppClient.builder()
                 .tenant(tenant)
                 .clientName(dto.getClientName().trim())
-                .apiKey(apiKey)
+                // Legacy plaintext column stays NULL — only hash+prefix persist.
+                .apiKey(null)
+                .apiKeyPrefix(ApiKeyHasher.displayPrefix(apiKey))
+                .apiKeyHash(ApiKeyHasher.hash(apiKey))
+                .scopes(dto.getScopes())
                 .enabled(dto.getEnabled() == null ? true : dto.getEnabled())
                 .build();
         AppClient saved = appClientRepository.save(c);
@@ -253,18 +259,47 @@ public class AdminService {
                 .id(saved.getId())
                 .clientName(saved.getClientName())
                 .apiKey(apiKey)
+                .apiKeyPrefix(saved.getApiKeyPrefix())
+                .scopes(saved.getScopes())
                 .enabled(saved.isEnabled())
                 .build();
     }
 
     @Transactional
     public AppClientDto updateAppClient(Long id, AppClientDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         AppClient c = appClientRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("App client " + id + " not found"));
         if (dto.getClientName() != null) c.setClientName(dto.getClientName());
         if (dto.getEnabled() != null) c.setEnabled(dto.getEnabled());
+        if (dto.getScopes() != null) c.setScopes(dto.getScopes());
         return toDtoMasked(c);
+    }
+
+    /**
+     * Rotate the secret on an existing app client. Invalidates the old key
+     * immediately and returns the new raw key once — same single-reveal
+     * contract as {@link #createAppClient}. PRD TOK-01.
+     */
+    @Transactional
+    public AppClientDto rotateAppClient(Long id) {
+        tenantAccessor.requireTenantAdmin();
+        Long tid = tenantAccessor.requireTenantId();
+        AppClient c = appClientRepository.findByIdAndTenantId(id, tid)
+                .orElseThrow(() -> new EntityNotFoundException("App client " + id + " not found"));
+        String newKey = generateApiKey();
+        c.setApiKey(null);
+        c.setApiKeyPrefix(ApiKeyHasher.displayPrefix(newKey));
+        c.setApiKeyHash(ApiKeyHasher.hash(newKey));
+        return AppClientDto.builder()
+                .id(c.getId())
+                .clientName(c.getClientName())
+                .apiKey(newKey)
+                .apiKeyPrefix(c.getApiKeyPrefix())
+                .scopes(c.getScopes())
+                .enabled(c.isEnabled())
+                .build();
     }
 
     @Transactional
@@ -309,14 +344,14 @@ public class AdminService {
     }
 
     private static AppClientDto toDtoMasked(AppClient c) {
-        String key = c.getApiKey();
-        String masked = key == null || key.length() < 8
-                ? "****"
-                : key.substring(0, 4) + "…" + key.substring(key.length() - 4);
+        // Never return the raw key here. The prefix is public-safe; the
+        // hash stays on the server. Keeps this method safe to call from
+        // any list/get endpoint.
         return AppClientDto.builder()
                 .id(c.getId())
                 .clientName(c.getClientName())
-                .apiKey(masked)
+                .apiKeyPrefix(c.getApiKeyPrefix())
+                .scopes(c.getScopes())
                 .enabled(c.isEnabled())
                 .build();
     }
@@ -324,6 +359,6 @@ public class AdminService {
     private static String generateApiKey() {
         byte[] buf = new byte[24];
         RNG.nextBytes(buf);
-        return "wf_live_" + HexFormat.of().formatHex(buf);
+        return ApiKeyHasher.LIVE_KEY_PREFIX + HexFormat.of().formatHex(buf);
     }
 }

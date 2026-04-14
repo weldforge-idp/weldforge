@@ -66,6 +66,30 @@ public final class AuditEventTypes {
     public static final String GROUP_ROLE_MAPPING_DELETE = "group_role.mapping.delete";
     public static final String GROUP_ROLE_APPLY          = "group_role.apply";
 
+    // Federation rules (PRD FED-02 / FED-04)
+    public static final String FEDERATION_RULES_UPDATE   = "federation.rules.update";
+
+    // Service accounts (PRD TOK-03)
+    public static final String SERVICE_ACCOUNT_CREATE = "service_account.create";
+    public static final String SERVICE_ACCOUNT_ROTATE = "service_account.rotate";
+    public static final String SERVICE_ACCOUNT_DELETE = "service_account.delete";
+
+    // LDAP / AD upstream (PRD DIR-01 / DIR-02)
+    public static final String LDAP_PROVIDER_UPSERT = "ldap_provider.upsert";
+    public static final String LDAP_PROVIDER_DELETE = "ldap_provider.delete";
+
+    // PKI (PRD §3.6 X50-01..X50-05)
+    public static final String PKI_CA_CREATE         = "pki.ca.create";
+    public static final String PKI_CERT_ISSUE        = "pki.cert.issue";
+    public static final String PKI_CERT_REVOKE       = "pki.cert.revoke";
+    public static final String PKI_CERT_EXPIRING     = "pki.cert.expiring";
+    public static final String PKI_CLIENT_CERT_LOGIN = "pki.client_cert.login";
+
+    // CRM provisioning (PRD §3.10 CRM-01..CRM-04)
+    public static final String CRM_PROVIDER_UPSERT = "crm_provider.upsert";
+    public static final String CRM_PROVIDER_DELETE = "crm_provider.delete";
+    public static final String CRM_PROVISIONED    = "crm.provisioned";
+
     // Email verification
     public static final String AUTH_EMAIL_VERIFICATION_SENT = "auth.email.verification_sent";
     public static final String AUTH_EMAIL_VERIFIED          = "auth.email.verified";
@@ -88,4 +112,9 @@ public final class AuditEventTypes {
     public static final String TARGET_OIDC_CLIENT        = "oidc_client";
     public static final String TARGET_TWILIO_PROVIDER    = "twilio_provider";
     public static final String TARGET_MFA_POLICY         = "mfa_policy";
+    public static final String TARGET_SERVICE_ACCOUNT    = "service_account";
+    public static final String TARGET_LDAP_PROVIDER      = "ldap_provider";
+    public static final String TARGET_CERTIFICATE_AUTHORITY = "certificate_authority";
+    public static final String TARGET_ISSUED_CERTIFICATE    = "issued_certificate";
+    public static final String TARGET_CRM_PROVIDER          = "crm_provider";
 }

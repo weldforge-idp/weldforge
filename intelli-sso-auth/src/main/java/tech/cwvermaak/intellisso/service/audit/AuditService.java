@@ -1,8 +1,8 @@
 package tech.cwvermaak.intellisso.service.audit;
 
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -30,20 +30,54 @@ import java.util.Map;
  * is a log line, not a user-facing outage.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class AuditService {
 
     private final AuditEventRepository repository;
     private final TenantRepository tenantRepository;
+    // ObjectProvider avoids a circular dependency: WebhookPublisher
+    // transitively depends on entities audited here.
+    private final ObjectProvider<tech.cwvermaak.intellisso.service.webhook.WebhookPublisher> webhookPublisher;
+
+    public AuditService(AuditEventRepository repository,
+                        TenantRepository tenantRepository,
+                        ObjectProvider<tech.cwvermaak.intellisso.service.webhook.WebhookPublisher> webhookPublisher) {
+        this.repository = repository;
+        this.tenantRepository = tenantRepository;
+        this.webhookPublisher = webhookPublisher;
+    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void log(AuditEvent.AuditEventBuilder builder) {
+        AuditEvent event = null;
         try {
-            AuditEvent event = buildWithContext(builder);
+            event = buildWithContext(builder);
             repository.save(event);
         } catch (Exception e) {
             log.error("Failed to write audit event: {}", e.getMessage(), e);
+        }
+        if (event != null) publishWebhook(event);
+    }
+
+    /**
+     * Fan the audit event out to any matching webhook subscriptions
+     * (PRD API-05). Publish failures are swallowed — webhook delivery is
+     * a side-effect of the primary operation and must never break it.
+     */
+    private void publishWebhook(AuditEvent event) {
+        if (event.getTenant() == null || event.getEventType() == null) return;
+        try {
+            tech.cwvermaak.intellisso.service.webhook.WebhookPublisher publisher = webhookPublisher.getIfAvailable();
+            if (publisher == null) return;
+            Map<String, Object> data = new HashMap<>();
+            data.put("outcome", event.getOutcome() != null ? event.getOutcome().name() : null);
+            data.put("actor_email", event.getActorEmail());
+            data.put("target_type", event.getTargetType());
+            data.put("target_id", event.getTargetId());
+            if (event.getMetadata() != null) data.put("metadata", event.getMetadata());
+            publisher.publish(event.getEventType(), event.getTenant(), data);
+        } catch (Exception e) {
+            log.warn("Webhook fan-out for audit event {} failed: {}", event.getEventType(), e.getMessage());
         }
     }
 

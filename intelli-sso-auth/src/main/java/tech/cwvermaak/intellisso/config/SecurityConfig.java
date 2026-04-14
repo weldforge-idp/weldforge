@@ -105,12 +105,17 @@ public class SecurityConfig {
                                 // SAML IdP metadata — public like OIDC discovery
                                 "/t/*/oauth2/register",
                                 "/t/*/saml2/idp/metadata",
+                                // PKI public endpoints — CRL, CA cert, OCSP responder (PRD X50-02/05)
+                                "/t/*/pki/ca.pem",
+                                "/t/*/pki/crl.pem",
+                                "/t/*/pki/ocsp",
                                 // SCIM endpoints — authenticated by their own filter
                                 // (Bearer token against app_clients), so the Spring
                                 // Security chain just passes them through.
                                 "/scim/v2/**",
                                 "/actuator/health/**",
                                 "/actuator/prometheus",
+                                "/actuator/circuitbreakers",
                                 // OpenAPI / Swagger UI
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",

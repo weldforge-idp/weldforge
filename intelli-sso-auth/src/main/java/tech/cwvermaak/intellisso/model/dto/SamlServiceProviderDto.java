@@ -20,4 +20,6 @@ public class SamlServiceProviderDto {
     private String nameIdFormat;
     private Map<String, Object> attributeMappings;
     private Boolean enabled;
+    /** PRD SAM-04. When true and spCertificate is set, the IdP returns EncryptedAssertion. */
+    private Boolean encryptAssertions;
 }

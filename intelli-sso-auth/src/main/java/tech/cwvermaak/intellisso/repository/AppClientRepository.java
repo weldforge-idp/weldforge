@@ -10,6 +10,8 @@ public interface AppClientRepository extends JpaRepository<AppClient, Long> {
 
     Optional<AppClient> findByApiKeyAndEnabledTrue(String apiKey);
 
+    Optional<AppClient> findByApiKeyHashAndEnabledTrue(String apiKeyHash);
+
     List<AppClient> findByTenantId(Long tenantId);
 
     Optional<AppClient> findByIdAndTenantId(Long id, Long tenantId);

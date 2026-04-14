@@ -129,4 +129,10 @@ public class AdminController {
         adminService.deleteAppClient(id);
         return ResponseEntity.noContent().build();
     }
+
+    /** Rotate an app client's secret. PRD TOK-01 — new key returned once. */
+    @PostMapping("/app-clients/{id}/rotate")
+    public ResponseEntity<AppClientDto> rotateAppClient(@PathVariable Long id) {
+        return ResponseEntity.ok(adminService.rotateAppClient(id));
+    }
 }
