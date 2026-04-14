@@ -2,6 +2,7 @@ package tech.cwvermaak.intellisso.model.dto;
 
 import lombok.Builder;
 import lombok.Data;
+import tech.cwvermaak.intellisso.model.AdminRole;
 import tech.cwvermaak.intellisso.model.AuthProvider;
 
 @Data
@@ -13,4 +14,7 @@ public class UserResponseDto {
     private String imageUrl;
     private AuthProvider provider;
     private String role;
+
+    /** PRD ADM-02: admin console role (NONE / READ_ONLY / TENANT_ADMIN / SUPER_ADMIN). */
+    private AdminRole adminRole;
 }

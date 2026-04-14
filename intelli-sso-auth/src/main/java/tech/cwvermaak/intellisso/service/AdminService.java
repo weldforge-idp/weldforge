@@ -84,6 +84,7 @@ public class AdminService {
     // -------- Users ---------------------------------------------------
 
     public List<UserResponseDto> listUsers() {
+        tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
         return userRepository.findByTenantId(tid).stream()
                 .map(AdminService::toDto)
@@ -91,6 +92,7 @@ public class AdminService {
     }
 
     public UserResponseDto getUser(Long id) {
+        tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
         return toDto(userRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found")));
@@ -98,6 +100,7 @@ public class AdminService {
 
     @Transactional
     public void deleteUser(Long id) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         User user = userRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found"));
@@ -119,6 +122,7 @@ public class AdminService {
      */
     @Transactional
     public int resetUserMfa(Long targetUserId) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         User target = userRepository.findByIdAndTenantId(targetUserId, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + targetUserId + " not found"));
@@ -127,6 +131,42 @@ public class AdminService {
         }
         User actor = currentActor();
         return mfaService.adminReset(actor, target);
+    }
+
+    /**
+     * PRD ADM-02: set a user's admin console role. Only SUPER_ADMIN may
+     * call this, and only SUPER_ADMIN may grant SUPER_ADMIN to someone
+     * else. Tenant admins cannot assign any admin role themselves — if
+     * they could, any tenant admin could trivially escalate to
+     * super-admin.
+     */
+    @Transactional
+    public UserResponseDto setAdminRole(Long targetUserId, tech.cwvermaak.intellisso.model.AdminRole newRole) {
+        tenantAccessor.requireSuperAdmin();
+        if (newRole == null) {
+            throw new IllegalArgumentException("adminRole is required");
+        }
+        User target = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new EntityNotFoundException("User " + targetUserId + " not found"));
+
+        target.setAdminRole(newRole);
+        // Keep the legacy boolean in sync so code that still reads it
+        // (DB queries, old JWTs) behaves consistently.
+        target.setSuperAdmin(newRole == tech.cwvermaak.intellisso.model.AdminRole.SUPER_ADMIN);
+
+        // Bump token version so any outstanding access token is invalidated
+        // — role changes take effect on the user's next request.
+        target.setTokenVersion(target.getTokenVersion() + 1);
+        userRepository.save(target);
+
+        User actor = currentActor();
+        auditService.recordAdmin("admin.role.assigned", actor,
+                AuditEventTypes.TARGET_USER, String.valueOf(target.getId()),
+                AuditService.meta(
+                        "target_email", target.getEmail(),
+                        "new_role", newRole.name(),
+                        "tenant", target.getTenant() != null ? target.getTenant().getSlug() : null));
+        return toDto(target);
     }
 
     private User currentActor() {
@@ -255,6 +295,7 @@ public class AdminService {
                 .imageUrl(u.getImageUrl())
                 .provider(u.getProvider())
                 .role(u.getRole() != null ? u.getRole().getName() : null)
+                .adminRole(u.getAdminRole() != null ? u.getAdminRole() : tech.cwvermaak.intellisso.model.AdminRole.NONE)
                 .build();
     }
 

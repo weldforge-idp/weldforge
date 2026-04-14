@@ -43,6 +43,7 @@ public class GroupRoleMappingService {
     // ---- CRUD -----------------------------------------------------------
 
     public List<GroupRoleMappingDto> list() {
+        tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
         return mappingRepository.findByTenantId(tid).stream()
                 .map(GroupRoleMappingService::toDto)
@@ -51,6 +52,7 @@ public class GroupRoleMappingService {
 
     @Transactional
     public GroupRoleMappingDto create(GroupRoleMappingDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantAccessor.requireTenant();
         if (dto.getScimGroupId() == null) throw new IllegalArgumentException("scimGroupId is required");
         if (dto.getRoleId() == null) throw new IllegalArgumentException("roleId is required");
@@ -78,6 +80,7 @@ public class GroupRoleMappingService {
 
     @Transactional
     public void delete(Long id) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         GroupRoleMapping mapping = mappingRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("Mapping " + id + " not found"));

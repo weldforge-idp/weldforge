@@ -13,6 +13,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tech.cwvermaak.intellisso.config.tenant.TenantContext;
+import tech.cwvermaak.intellisso.model.AdminRole;
 import tech.cwvermaak.intellisso.repository.UserRepository;
 import tech.cwvermaak.intellisso.service.JwtService;
 
@@ -62,6 +63,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         Object tenantSlug = claims.get(JwtService.CLAIM_TENANT_SLUG);
         Object tenantId   = claims.get(JwtService.CLAIM_TENANT_ID);
         Object superAdmin = claims.get(JwtService.CLAIM_SUPER_ADMIN);
+        Object adminRoleClaim = claims.get(JwtService.CLAIM_ADMIN_ROLE);
         Integer tokenVersion = jwtService.extractTokenVersion(claims);
 
         // Session revocation: if the token's version is older than the
@@ -88,8 +90,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         boolean sa = Boolean.TRUE.equals(superAdmin)
                 || "true".equalsIgnoreCase(String.valueOf(superAdmin));
 
+        AdminRole adminRole;
+        if (adminRoleClaim != null && !adminRoleClaim.toString().isBlank()) {
+            try {
+                adminRole = AdminRole.valueOf(adminRoleClaim.toString());
+            } catch (IllegalArgumentException e) {
+                adminRole = sa ? AdminRole.SUPER_ADMIN : AdminRole.NONE;
+            }
+        } else {
+            // Back-compat: older tokens without the adm claim use the legacy sa bool.
+            adminRole = sa ? AdminRole.SUPER_ADMIN : AdminRole.NONE;
+        }
+
         if (slug != null && !slug.isBlank()) {
-            TenantContext.set(slug, tid, sa);
+            TenantContext.set(slug, tid, adminRole);
         }
 
         UsernamePasswordAuthenticationToken authToken =

@@ -17,6 +17,7 @@ public class JwtService {
     public static final String CLAIM_TENANT_ID    = "tid";
     public static final String CLAIM_TENANT_SLUG  = "tenant";
     public static final String CLAIM_SUPER_ADMIN  = "sa";
+    public static final String CLAIM_ADMIN_ROLE   = "adm";
     public static final String CLAIM_PURPOSE      = "purpose";
     public static final String CLAIM_TOKEN_VERSION = "ver";
     public static final String PURPOSE_MFA_CHALLENGE = "mfa_challenge";
@@ -55,6 +56,20 @@ public class JwtService {
     public String generateAccessToken(String email, Long tenantId, String tenantSlug,
                                       boolean superAdmin, int tokenVersion,
                                       Long tenantTtlMs, Map<String, Object> customClaims) {
+        return generateAccessToken(email, tenantId, tenantSlug, superAdmin,
+                tokenVersion, tenantTtlMs, customClaims,
+                superAdmin ? "SUPER_ADMIN" : "NONE");
+    }
+
+    /**
+     * Full overload with an explicit admin role claim (PRD ADM-02).
+     * The {@code superAdmin} boolean is retained for backwards compat
+     * with older clients that only look at {@code sa}.
+     */
+    public String generateAccessToken(String email, Long tenantId, String tenantSlug,
+                                      boolean superAdmin, int tokenVersion,
+                                      Long tenantTtlMs, Map<String, Object> customClaims,
+                                      String adminRole) {
         Map<String, Object> claims = new LinkedHashMap<>();
         // Custom claims go first so reserved claims below always win on collision.
         if (customClaims != null) {
@@ -67,6 +82,7 @@ public class JwtService {
         claims.put(CLAIM_TENANT_ID, tenantId);
         claims.put(CLAIM_TENANT_SLUG, tenantSlug == null ? "" : tenantSlug);
         claims.put(CLAIM_SUPER_ADMIN, superAdmin);
+        claims.put(CLAIM_ADMIN_ROLE, adminRole == null ? "NONE" : adminRole);
         claims.put(CLAIM_PURPOSE, PURPOSE_ACCESS);
         claims.put(CLAIM_TOKEN_VERSION, tokenVersion);
 
@@ -84,7 +100,7 @@ public class JwtService {
         return switch (name) {
             case "sub", "iss", "aud", "exp", "iat", "nbf", "jti",
                  CLAIM_TENANT_ID, CLAIM_TENANT_SLUG, CLAIM_SUPER_ADMIN,
-                 CLAIM_PURPOSE, CLAIM_TOKEN_VERSION -> true;
+                 CLAIM_ADMIN_ROLE, CLAIM_PURPOSE, CLAIM_TOKEN_VERSION -> true;
             default -> false;
         };
     }

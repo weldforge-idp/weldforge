@@ -53,14 +53,18 @@ public class TenantService {
     // ---- Tenant CRUD --------------------------------------------------
 
     public List<TenantDto> listTenants() {
+        // PRD ADM-02: any admin role (READ_ONLY, TENANT_ADMIN, SUPER_ADMIN)
+        // may list tenants. READ_ONLY and TENANT_ADMIN only see their own;
+        // SUPER_ADMIN sees every tenant in the system.
+        tenantAccessor.requireAnyAdmin();
         if (tenantAccessor.isSuperAdmin()) {
             return tenantRepository.findAll().stream().map(TenantService::toDto).toList();
         }
-        // Regular caller: only ever sees their own tenant.
         return List.of(toDto(tenantAccessor.requireTenant()));
     }
 
     public TenantDto getTenant(Long id) {
+        tenantAccessor.requireAnyAdmin();
         Tenant t = tenantRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + id + " not found"));
         tenantAccessor.requireSameTenant(t.getId());
@@ -96,6 +100,7 @@ public class TenantService {
 
     @Transactional
     public TenantDto updateTenant(Long id, TenantDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Tenant t = tenantRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + id + " not found"));
         tenantAccessor.requireSameTenant(t.getId());
@@ -134,6 +139,7 @@ public class TenantService {
     // ---- Social provider CRUD ----------------------------------------
 
     public List<SocialProviderDto> listProviders(Long tenantId) {
+        tenantAccessor.requireAnyAdmin();
         Tenant t = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(t.getId());
@@ -144,6 +150,7 @@ public class TenantService {
 
     @Transactional
     public SocialProviderDto upsertProvider(Long tenantId, SocialProviderDto dto) {
+        tenantAccessor.requireTenantAdmin();
         if (dto.getProvider() == null) {
             throw new IllegalArgumentException("provider is required");
         }
@@ -193,6 +200,7 @@ public class TenantService {
 
     @Transactional
     public void deleteProvider(Long tenantId, SocialProviderType provider) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(tenant.getId());

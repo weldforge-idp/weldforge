@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
+import tech.cwvermaak.intellisso.model.AdminRole;
 import tech.cwvermaak.intellisso.model.Tenant;
 import tech.cwvermaak.intellisso.repository.TenantRepository;
 
@@ -46,6 +47,35 @@ public class TenantAccessor {
 
     public boolean isSuperAdmin() {
         return TenantContext.isSuperAdmin();
+    }
+
+    public AdminRole adminRole() {
+        return TenantContext.getAdminRole();
+    }
+
+    /**
+     * Caller must be able to mutate admin resources within their tenant
+     * (TENANT_ADMIN or SUPER_ADMIN). Throws {@link AccessDeniedException}
+     * otherwise. PRD ADM-02.
+     */
+    public void requireTenantAdmin() {
+        AdminRole r = adminRole();
+        if (!r.canWriteTenant()) {
+            throw new AccessDeniedException(
+                    "Admin write access required — current role: " + r);
+        }
+    }
+
+    /**
+     * Caller must have at least read access to the admin console
+     * (READ_ONLY, TENANT_ADMIN, or SUPER_ADMIN).
+     */
+    public void requireAnyAdmin() {
+        AdminRole r = adminRole();
+        if (!r.canRead()) {
+            throw new AccessDeniedException(
+                    "Admin read access required — current role: " + r);
+        }
     }
 
     /**

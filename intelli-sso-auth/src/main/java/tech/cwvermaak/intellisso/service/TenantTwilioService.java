@@ -36,6 +36,7 @@ public class TenantTwilioService {
     private final TwilioService twilioService;
 
     public TwilioProviderDto get(Long tenantId) {
+        tenantAccessor.requireAnyAdmin();
         Tenant t = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(t.getId());
@@ -46,6 +47,7 @@ public class TenantTwilioService {
 
     @Transactional
     public TwilioProviderDto upsert(Long tenantId, TwilioProviderDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(tenant.getId());
@@ -107,6 +109,7 @@ public class TenantTwilioService {
 
     @Transactional
     public void delete(Long tenantId) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(tenant.getId());

@@ -189,6 +189,7 @@ public class AuthService {
         Tenant tenant = user.getTenant();
         writeRefreshCookie(response, issued.rawToken(), tenant.getRefreshTtlMs());
 
+        String refreshAdminRole = user.getAdminRole() != null ? user.getAdminRole().name() : "NONE";
         String accessToken = jwtService.generateAccessToken(
                 user.getEmail(),
                 tenant.getId(),
@@ -196,7 +197,8 @@ public class AuthService {
                 user.isSuperAdmin(),
                 user.getTokenVersion(),
                 tenant.getAccessTtlMs(),
-                tenant.getCustomClaims());
+                tenant.getCustomClaims(),
+                refreshAdminRole);
         long effectiveTtl = tenant.getAccessTtlMs() != null
                 ? tenant.getAccessTtlMs() / 1000
                 : jwtService.getExpirationTime();
@@ -240,7 +242,8 @@ public class AuthService {
     private AuthResponseDto issueTokens(User user, HttpServletRequest httpRequest,
                                         HttpServletResponse response) {
         Tenant tenant = user.getTenant();
-        // PRD SSO-03 + OA2-07: honor per-tenant TTL and custom claims.
+        // PRD SSO-03 + OA2-07 + ADM-02: per-tenant TTL, custom claims, admin role.
+        String adminRoleName = user.getAdminRole() != null ? user.getAdminRole().name() : "NONE";
         String accessToken = jwtService.generateAccessToken(
                 user.getEmail(),
                 tenant.getId(),
@@ -248,7 +251,8 @@ public class AuthService {
                 user.isSuperAdmin(),
                 user.getTokenVersion(),
                 tenant.getAccessTtlMs(),
-                tenant.getCustomClaims());
+                tenant.getCustomClaims(),
+                adminRoleName);
 
         Issued refresh = refreshTokenService.issueNew(user, clientIp(httpRequest), userAgent(httpRequest));
         writeRefreshCookie(response, refresh.rawToken(), tenant.getRefreshTtlMs());

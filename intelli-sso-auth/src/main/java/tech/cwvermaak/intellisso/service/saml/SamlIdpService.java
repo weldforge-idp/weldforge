@@ -72,6 +72,7 @@ public class SamlIdpService {
 
     @Transactional
     public SamlServiceProviderDto create(SamlServiceProviderDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantAccessor.requireTenant();
         if (dto.getEntityId() == null || dto.getEntityId().isBlank()) {
             throw new IllegalArgumentException("entityId is required");
@@ -106,6 +107,7 @@ public class SamlIdpService {
 
     @Transactional
     public SamlServiceProviderDto update(Long id, SamlServiceProviderDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         SamlServiceProvider sp = spRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("SP " + id + " not found"));
@@ -127,6 +129,7 @@ public class SamlIdpService {
 
     @Transactional
     public void delete(Long id) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         SamlServiceProvider sp = spRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("SP " + id + " not found"));
@@ -138,6 +141,7 @@ public class SamlIdpService {
     }
 
     public List<SamlServiceProviderDto> list() {
+        tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
         return spRepository.findByTenantId(tid).stream().map(SamlIdpService::toDto).toList();
     }

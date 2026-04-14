@@ -34,6 +34,7 @@ public class OidcClientService {
     private final OidcClientRepository repository;
 
     public List<OidcClientDto> list() {
+        tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
         return repository.findByTenantId(tid).stream()
                 .map(c -> toDto(c, false))
@@ -42,6 +43,7 @@ public class OidcClientService {
 
     @Transactional
     public OidcClientDto create(OidcClientDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantAccessor.requireTenant();
         require(dto.getRedirectUris(), "redirectUris");
         require(dto.getScopes(),       "scopes");
@@ -78,6 +80,7 @@ public class OidcClientService {
 
     @Transactional
     public OidcClientDto rotateSecret(Long id) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         OidcClient client = repository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("OIDC client " + id + " not found"));
@@ -90,6 +93,7 @@ public class OidcClientService {
 
     @Transactional
     public void delete(Long id) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         OidcClient client = repository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("OIDC client " + id + " not found"));

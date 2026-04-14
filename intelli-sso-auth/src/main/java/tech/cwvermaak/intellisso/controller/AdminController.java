@@ -65,6 +65,27 @@ public class AdminController {
         return ResponseEntity.ok(java.util.Map.of("removed", removed));
     }
 
+    /**
+     * PRD ADM-02: assign an admin console role to a user. Super-admin only.
+     * Body: {"adminRole": "NONE|READ_ONLY|TENANT_ADMIN|SUPER_ADMIN"}
+     */
+    @PostMapping("/users/{id}/admin-role")
+    public ResponseEntity<UserResponseDto> setAdminRole(@PathVariable Long id,
+                                                         @RequestBody java.util.Map<String, String> body) {
+        String raw = body != null ? body.get("adminRole") : null;
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("adminRole is required");
+        }
+        tech.cwvermaak.intellisso.model.AdminRole role;
+        try {
+            role = tech.cwvermaak.intellisso.model.AdminRole.valueOf(raw);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Invalid adminRole — expected NONE, READ_ONLY, TENANT_ADMIN, or SUPER_ADMIN");
+        }
+        return ResponseEntity.ok(adminService.setAdminRole(id, role));
+    }
+
     // Environments -----------------------------------------------------
     @GetMapping("/environments")
     public ResponseEntity<List<EnvironmentDto>> listEnvironments() {

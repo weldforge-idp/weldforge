@@ -48,6 +48,7 @@ public class TenantMfaPolicyService {
     // ---- Admin CRUD --------------------------------------------------
 
     public MfaPolicyDto get(Long tenantId) {
+        tenantAccessor.requireAnyAdmin();
         Tenant t = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(t.getId());
@@ -58,6 +59,7 @@ public class TenantMfaPolicyService {
 
     @Transactional
     public MfaPolicyDto upsert(Long tenantId, MfaPolicyDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(tenant.getId());

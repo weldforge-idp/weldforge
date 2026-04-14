@@ -37,6 +37,7 @@ public class TenantSamlService {
     private final AuditService auditService;
 
     public List<SamlProviderDto> list(Long tenantId) {
+        tenantAccessor.requireAnyAdmin();
         Tenant t = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(t.getId());
@@ -47,6 +48,7 @@ public class TenantSamlService {
 
     @Transactional
     public SamlProviderDto upsert(Long tenantId, SamlProviderDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(tenant.getId());
@@ -107,6 +109,7 @@ public class TenantSamlService {
 
     @Transactional
     public void delete(Long tenantId, String providerKey) {
+        tenantAccessor.requireTenantAdmin();
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         tenantAccessor.requireSameTenant(tenant.getId());

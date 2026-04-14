@@ -55,6 +55,17 @@ public class User {
     private boolean superAdmin;
 
     /**
+     * PRD ADM-02 admin-console RBAC role. Defaults to {@link AdminRole#NONE}
+     * for regular users. Super admin assignment is gated behind the
+     * existing {@link #superAdmin} boolean to preserve historical data —
+     * V21 migration seeds SUPER_ADMIN where the boolean was already true.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "admin_role", nullable = false, length = 32)
+    @Builder.Default
+    private AdminRole adminRole = AdminRole.NONE;
+
+    /**
      * SCIM-style deactivation flag. False means the row exists but the
      * user cannot sign in — set by SCIM PATCH operations from upstream
      * IdPs (Okta / Workday / Entra ID) when an employee leaves the org.
