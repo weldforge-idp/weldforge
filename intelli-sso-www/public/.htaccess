@@ -1,0 +1,66 @@
+# ============================================================
+# WeldForge marketing site — Apache config for Xneelo shared
+# hosting.
+#
+# Addresses SECURITY_AUDIT_2026-04-15.md HIGH-2:
+#   - no HTTPS redirect
+#   - no security response headers
+#   - Apache default 404 leaks "Apache Server at ... Port 443"
+#
+# Xneelo permits mod_rewrite, mod_headers, and ErrorDocument in
+# per-directory .htaccess files on shared accounts, so all of
+# this applies without needing server-level changes.
+# ============================================================
+
+# ---- 1. Force HTTPS on every request --------------------------
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ---- 2. Security response headers -----------------------------
+<IfModule mod_headers.c>
+    # HSTS — 1 year, includeSubDomains. Raise to 2 years and add
+    # `preload` once we've confirmed no third-party subdomain
+    # exists that needs plaintext HTTP.
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+    # Block content-type sniffing.
+    Header always set X-Content-Type-Options "nosniff"
+
+    # Block iframing of this site from any origin.
+    Header always set X-Frame-Options "DENY"
+
+    # Reasonable referrer policy — send full URL to the same origin,
+    # only the origin (no path) to cross-origin HTTPS targets,
+    # nothing to HTTP targets.
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Lock down powerful browser features we don't use.
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=()"
+
+    # Content Security Policy.
+    # - default-src 'self'           baseline: only load from this origin
+    # - img-src 'self' data:         logo SVG + inline data URIs if any
+    # - style-src                    allow Google Fonts stylesheet +
+    #                                inline style="" attributes (used in
+    #                                footer snippets on every page)
+    # - font-src                     allow Google Fonts font files
+    # - script-src 'self'            no scripts currently, keep strict
+    # - object-src 'none'            no Flash/plugins ever
+    # - base-uri 'self'              prevent <base> tag injection attacks
+    # - form-action 'self'           prevent form-hijack exfiltration
+    # - frame-ancestors 'none'       redundant with XFO but CSP-native
+    Header always set Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+</IfModule>
+
+# ---- 3. Custom 404 page --------------------------------------
+# Stops the Apache default "Apache Server at weldforge.org Port 443"
+# footer from leaking.
+ErrorDocument 404 /404.html
+
+# ---- 4. Hide sensitive dotfiles -------------------------------
+# Shared hosting may upload .htaccess, .git, .env etc. accidentally;
+# refuse to serve them even if they end up in the docroot.
+<FilesMatch "^\.(env|git|ht|DS_Store)">
+    Require all denied
+</FilesMatch>
