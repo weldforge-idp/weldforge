@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeldForge — federated identity platform</title>
+<meta name="description" content="WeldForge is a multi-tenant SSO, OAuth2/OIDC, SAML, SCIM, MFA and PKI platform for workforce and customer identity.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/" class="active">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>One identity forge for <span class="accent">every application</span> you ship.</h1>
+        <p class="lead">
+            WeldForge is a multi-tenant identity platform that unifies workforce SSO,
+            customer sign-in, API authentication and internal PKI behind a single,
+            audit-first backend. Built on open standards — OAuth 2.0, OIDC, SAML 2.0,
+            SCIM 2.0 — and designed so a small team can run it without compromising on
+            compliance.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="/tutorials.html">Get started</a>
+            <a class="btn ghost" href="/workforce-sso.html">See what it does</a>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>What it is, in one screen</h2>
+        <p class="lead">
+            WeldForge consolidates the pieces every company otherwise stitches together
+            from three vendors: an identity provider, a directory sync service, and a
+            secrets &amp; certificate backend. Each capability is tenant-isolated by
+            default, so you can run one installation that serves several organisations
+            — or a single business with strict separation between dev, staging and
+            production.
+        </p>
+
+        <div class="feature-strip">
+            <div class="feat"><strong>Standards-first</strong><span>OAuth 2.0, OIDC, SAML 2.0, SCIM 2.0, WebAuthn.</span></div>
+            <div class="feat"><strong>Multi-tenant</strong><span>Every query is tenant-scoped from the database up.</span></div>
+            <div class="feat"><strong>Audit-first</strong><span>Append-only log with webhook fan-out for every event.</span></div>
+            <div class="feat"><strong>Resilient</strong><span>Circuit breakers on every external dependency.</span></div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>Choose your application</h2>
+        <p class="lead">WeldForge is organised around the outcomes you need, not the protocols underneath. Pick the scenario that fits and the platform takes care of the plumbing.</p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Workforce</span>
+                <h3>Workforce SSO</h3>
+                <p>Give your staff one sign-on for every internal tool. SAML and OIDC for apps, LDAP/AD for the directory you already run, MFA enforced by policy.</p>
+                <a class="more" href="/workforce-sso.html">Read more →</a>
+            </div>
+
+            <div class="card">
+                <span class="kicker">Customer</span>
+                <h3>Customer Identity</h3>
+                <p>Registration, social login, MFA, password reset, email verification. A complete CIAM stack that your product teams integrate in an afternoon.</p>
+                <a class="more" href="/customer-identity.html">Read more →</a>
+            </div>
+
+            <div class="card">
+                <span class="kicker">API</span>
+                <h3>API &amp; M2M Authentication</h3>
+                <p>API keys with path and method scopes, service-account tokens, OAuth 2.0 client credentials, mutual TLS. Secure backend-to-backend calls without reinventing key rotation.</p>
+                <a class="more" href="/api-authentication.html">Read more →</a>
+            </div>
+
+            <div class="card">
+                <span class="kicker">Certificates</span>
+                <h3>Internal PKI</h3>
+                <p>Run your own certificate authority per tenant. Issue client certs for mTLS, publish a CRL, answer OCSP queries, get renewal warnings 30/14/7/1 days before expiry.</p>
+                <a class="more" href="/pki.html">Read more →</a>
+            </div>
+
+            <div class="card">
+                <span class="kicker">Compliance</span>
+                <h3>Compliance &amp; Observability</h3>
+                <p>Every authentication, admin action and lifecycle event lands in an append-only audit log. Subscribe to the webhook stream for SIEM, GRC or custom downstream workflows.</p>
+                <a class="more" href="/compliance.html">Read more →</a>
+            </div>
+
+            <div class="card">
+                <span class="kicker">Integrations</span>
+                <h3>Directory &amp; CRM sync</h3>
+                <p>Pull users from LDAP or Active Directory on login. Push identities to Salesforce or HubSpot after sign-in. Configurable field mappings, no code required.</p>
+                <a class="more" href="/customer-identity.html#crm">Read more →</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>What's in the box</h2>
+        <p class="lead">A non-exhaustive snapshot of the capabilities shipped today. Every item is covered by an automated BDD test suite before it reaches production.</p>
+
+        <div class="card-grid">
+            <div class="card">
+                <h3>Authentication</h3>
+                <ul class="checklist">
+                    <li>Password + MFA (TOTP, SMS OTP, WebAuthn, backup codes)</li>
+                    <li>Per-tenant MFA enrolment &amp; step-up policies</li>
+                    <li>OAuth 2.0 social login (Google, Microsoft, GitHub, Apple, …)</li>
+                    <li>SAML 2.0 federation as SP and IdP</li>
+                    <li>LDAP / Active Directory upstream</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Authorisation &amp; tokens</h3>
+                <ul class="checklist">
+                    <li>OIDC issuer with per-tenant signing keys</li>
+                    <li>Admin RBAC (SUPER_ADMIN / TENANT_ADMIN / READ_ONLY / NONE)</li>
+                    <li>Hashed, single-reveal API keys with path + method scopes</li>
+                    <li>Service-account tokens for M2M without OAuth2</li>
+                    <li>Per-tenant custom JWT claims and session TTL</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Provisioning &amp; federation</h3>
+                <ul class="checklist">
+                    <li>SCIM 2.0 for Users and Groups</li>
+                    <li>Group-to-role binding with priority resolution</li>
+                    <li>JSONPath claim transforms + ordered matching rules</li>
+                    <li>CRM push to Salesforce / HubSpot / Dynamics / Pipedrive</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Platform &amp; ops</h3>
+                <ul class="checklist">
+                    <li>Outbound webhooks, HMAC-signed, with retry + dead-letter</li>
+                    <li>Internal CA, CRL and OCSP per tenant</li>
+                    <li>Resilience4j circuit breakers on every downstream</li>
+                    <li>Prometheus metrics, liveness/readiness probes, graceful shutdown</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Built on open standards</span>
+            WeldForge does not invent a new wire protocol. Every capability maps to an
+            RFC or OASIS specification — so the clients, SDKs and tooling you already
+            know just work. Want to swap WeldForge out later? Your applications don't
+            need to change.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

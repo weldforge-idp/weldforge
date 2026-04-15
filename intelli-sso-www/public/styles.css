@@ -1,0 +1,288 @@
+/* ============================================================
+   WeldForge marketing site — shared styles.
+   Derived from the admin portal design system:
+     Blue Steel  #4A8FF5   (primary)
+     Amber Weld  #E8921F   (accent)
+     Dark Forge  #070B17   (background)
+   Typography: Syne (display), DM Sans (body), Space Mono (code).
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+    --blue-steel: #4A8FF5;
+    --blue-steel-dim: #2E63B0;
+    --amber-weld: #E8921F;
+    --amber-weld-dim: #9F640F;
+    --forge: #070B17;
+    --forge-card: #0C1020;
+    --forge-border: #1A2238;
+    --ink: #E6EBF5;
+    --ink-dim: #8B93A8;
+    --ink-faint: #4F5672;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    background: var(--forge);
+    color: var(--ink);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+        radial-gradient(circle at 20% 10%, rgba(74, 143, 245, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 80% 80%, rgba(232, 146, 31, 0.06) 0%, transparent 45%),
+        radial-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    background-size: auto, auto, 24px 24px;
+    background-attachment: fixed;
+}
+
+a { color: var(--blue-steel); text-decoration: none; }
+a:hover { color: var(--amber-weld); }
+
+h1, h2, h3, h4 {
+    font-family: 'Syne', system-ui, sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: #fff;
+}
+
+h1 { font-size: 3rem; margin-bottom: 1.5rem; }
+h2 { font-size: 2rem; margin: 3rem 0 1rem; }
+h3 { font-size: 1.35rem; margin: 1.75rem 0 .75rem; color: var(--blue-steel); }
+h4 { font-size: 1.05rem; margin: 1.25rem 0 .5rem; color: var(--amber-weld); }
+
+p { margin-bottom: 1rem; color: var(--ink); }
+p.lead { font-size: 1.25rem; color: var(--ink-dim); max-width: 62ch; }
+
+code, pre {
+    font-family: 'Space Mono', ui-monospace, monospace;
+    font-size: 0.92em;
+}
+code { color: var(--amber-weld); background: rgba(232, 146, 31, 0.08); padding: 0.1em 0.4em; border-radius: 3px; }
+pre {
+    background: #03060F;
+    border: 1px solid var(--forge-border);
+    border-left: 3px solid var(--blue-steel);
+    padding: 1.1rem 1.25rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 1rem 0;
+    color: #C8D0E0;
+    font-size: 0.85rem;
+    line-height: 1.55;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+
+/* ---- Layout ------------------------------------------------ */
+
+.container { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem; }
+.narrow { max-width: 760px; margin: 0 auto; padding: 0 1.5rem; }
+
+header.site-header {
+    border-bottom: 1px solid var(--forge-border);
+    background: rgba(7, 11, 23, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+header.site-header .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    gap: 2rem;
+}
+.brand { display: flex; align-items: center; gap: .75rem; }
+.brand img { height: 36px; }
+.brand .wordmark {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.1rem;
+    letter-spacing: 0.06em;
+    color: #fff;
+}
+nav.primary { display: flex; gap: 1.75rem; flex-wrap: wrap; }
+nav.primary a {
+    color: var(--ink-dim);
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: color 0.15s;
+}
+nav.primary a:hover, nav.primary a.active { color: var(--ink); }
+nav.primary a.active { border-bottom: 2px solid var(--amber-weld); padding-bottom: 2px; }
+
+/* ---- Hero -------------------------------------------------- */
+
+section.hero { padding: 6rem 0 4rem; }
+section.hero h1 { font-size: 3.5rem; max-width: 18ch; }
+section.hero h1 .accent { color: var(--amber-weld); }
+section.hero p.lead { margin-top: 1.25rem; }
+section.hero .cta-row {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2.5rem;
+    flex-wrap: wrap;
+}
+.btn {
+    display: inline-block;
+    padding: 0.85rem 1.75rem;
+    border-radius: 4px;
+    font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+}
+.btn.primary {
+    background: var(--blue-steel);
+    color: #fff;
+    box-shadow: 0 0 24px rgba(74, 143, 245, 0.25);
+}
+.btn.primary:hover {
+    background: #5E9EFF;
+    box-shadow: 0 0 32px rgba(74, 143, 245, 0.4);
+    color: #fff;
+}
+.btn.ghost {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--forge-border);
+}
+.btn.ghost:hover { border-color: var(--amber-weld); color: var(--amber-weld); }
+
+/* ---- Feature / card grid ----------------------------------- */
+
+section { padding: 3rem 0; }
+section.tight { padding: 1.5rem 0; }
+
+.card-grid {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    margin-top: 1.5rem;
+}
+.card {
+    background: var(--forge-card);
+    border: 1px solid var(--forge-border);
+    border-radius: 6px;
+    padding: 1.5rem 1.75rem;
+    transition: border-color 0.15s, transform 0.15s;
+}
+.card:hover {
+    border-color: var(--blue-steel-dim);
+    transform: translateY(-2px);
+}
+.card h3 { margin-top: 0; color: #fff; font-size: 1.2rem; }
+.card .kicker {
+    display: inline-block;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--amber-weld);
+    margin-bottom: 0.5rem;
+}
+.card p { color: var(--ink-dim); font-size: 0.95rem; margin-bottom: 0.5rem; }
+.card a.more {
+    display: inline-block;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+/* ---- Feature strip (horizontal) ---------------------------- */
+
+.feature-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+.feature-strip .feat { border-left: 2px solid var(--blue-steel); padding-left: 1rem; }
+.feature-strip .feat strong {
+    display: block;
+    font-family: 'Syne', sans-serif;
+    font-size: 1rem;
+    color: #fff;
+    margin-bottom: 0.25rem;
+}
+.feature-strip .feat span { color: var(--ink-dim); font-size: 0.9rem; }
+
+/* ---- Tables + lists ---------------------------------------- */
+
+ul.checklist { list-style: none; padding: 0; margin: 0.5rem 0 1.5rem; }
+ul.checklist li {
+    padding: 0.5rem 0 0.5rem 1.75rem;
+    position: relative;
+    color: var(--ink);
+    border-bottom: 1px solid var(--forge-border);
+}
+ul.checklist li:last-child { border-bottom: none; }
+ul.checklist li::before {
+    content: "■";
+    position: absolute;
+    left: 0.25rem;
+    top: 0.6rem;
+    color: var(--amber-weld);
+    font-size: 0.75rem;
+}
+
+/* ---- Callout ----------------------------------------------- */
+
+.callout {
+    background: rgba(74, 143, 245, 0.05);
+    border: 1px solid var(--blue-steel-dim);
+    border-left: 3px solid var(--blue-steel);
+    padding: 1.25rem 1.5rem;
+    border-radius: 4px;
+    margin: 2rem 0;
+    color: var(--ink);
+}
+.callout .kicker {
+    display: block;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--blue-steel);
+    margin-bottom: 0.5rem;
+}
+
+/* ---- Footer ------------------------------------------------ */
+
+footer.site-footer {
+    margin-top: 6rem;
+    padding: 3rem 0 2rem;
+    border-top: 1px solid var(--forge-border);
+    color: var(--ink-faint);
+    font-size: 0.85rem;
+}
+footer.site-footer .container {
+    display: flex;
+    justify-content: space-between;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+footer.site-footer nav a {
+    color: var(--ink-dim);
+    margin-right: 1.25rem;
+}
+
+/* ---- Responsive -------------------------------------------- */
+
+@media (max-width: 720px) {
+    section.hero { padding: 3rem 0 2rem; }
+    section.hero h1 { font-size: 2.25rem; }
+    h1 { font-size: 2rem; }
+    h2 { font-size: 1.5rem; }
+    header.site-header .container { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+    nav.primary { gap: 1rem; }
+}

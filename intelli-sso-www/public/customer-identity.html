@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Identity — WeldForge</title>
+<meta name="description" content="Customer identity: registration, social login, MFA, password reset, CRM provisioning.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html" class="active">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Customer identity that <span class="accent">doesn't get in the way.</span></h1>
+        <p class="lead">
+            Everything your product team needs to sign a user up, keep their
+            account safe, and push the result into every downstream system that
+            cares. Self-service registration, social login, MFA, email
+            verification, password reset, and CRM provisioning — out of the box.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="/tutorials.html#customer">Start integrating</a>
+            <a class="btn ghost" href="/api-authentication.html">API authentication →</a>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>End-user flows</h2>
+        <p class="lead">
+            Every flow here is an implementation of an open standard, exposed
+            over a JSON API. Your product can either use the hosted UI or call
+            the endpoints directly from a custom front-end.
+        </p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Registration</span>
+                <h3>Sign-up &amp; email verification</h3>
+                <p>Configurable password policy, email verification with single-use tokens, and optional rate limiting per email and per IP to block bulk-register attacks.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Sign-in</span>
+                <h3>Password + MFA</h3>
+                <p>TOTP (Google Authenticator, 1Password), WebAuthn (hardware keys, Touch ID, Face ID), SMS one-time codes, and printable backup codes.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Social</span>
+                <h3>Social login</h3>
+                <p>Google, Microsoft, Apple, GitHub, Facebook, LinkedIn, Amazon and more. Conditional on tenant configuration — a customer-facing tenant enables what it wants without touching code.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Recovery</span>
+                <h3>Password reset</h3>
+                <p>Time-limited, single-use reset tokens delivered by email. Users who reset their password have all outstanding sessions invalidated automatically.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Lockout</span>
+                <h3>Brute-force protection</h3>
+                <p>Configurable account lockout with exponential backoff. Locked accounts return the same "invalid credentials" error as unknown accounts, so an attacker can't tell what's real.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Self-service</span>
+                <h3>Profile &amp; session management</h3>
+                <p>Users can view active sessions, revoke them individually, enrol or remove MFA factors, and rotate their password — without raising a support ticket.</p>
+        </div>
+        </div>
+    </div>
+</section>
+
+<section id="crm">
+    <div class="container">
+        <h2>CRM provisioning</h2>
+        <p class="lead">
+            When a user signs in, WeldForge can push their identity into your
+            CRM of choice. Field mappings are configured per tenant; dedupe is
+            automatic; a single user never produces two records even across
+            browsers and devices.
+        </p>
+
+        <div class="card-grid">
+            <div class="card"><h3>Salesforce</h3><p>Contact upsert against the Salesforce REST API.</p></div>
+            <div class="card"><h3>HubSpot</h3><p>Contact upsert via HubSpot's CRM v3 API.</p></div>
+            <div class="card"><h3>Microsoft Dynamics</h3><p>Contact upsert via the Dynamics Web API.</p></div>
+            <div class="card"><h3>Pipedrive</h3><p>Person upsert through Pipedrive's REST API.</p></div>
+        </div>
+
+        <div class="callout">
+            <span class="kicker">Failure isolation</span>
+            CRM provisioning is fire-and-forget. If Salesforce is down, your
+            users still sign in — the failed push lands in a retry log and
+            the next successful login reconciles.
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>Integrating in your app</h2>
+        <p>The simplest integration is the OIDC Authorization Code flow. Point your app at the tenant's OIDC endpoints:</p>
+        <pre><code>https://sso.example.com/t/{tenant-slug}/.well-known/openid-configuration</code></pre>
+        <p>This document lists every OAuth2 endpoint (authorize, token, userinfo, jwks, revoke, end-session) your OIDC library needs to configure itself automatically. WeldForge issues RS256-signed JWTs using a per-tenant signing key.</p>
+        <p>Prefer to build your own sign-in UI? Call <code>/api/auth/login</code> and <code>/api/auth/refresh</code> directly — both return a JWT your front-end can store and present on subsequent API calls.</p>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

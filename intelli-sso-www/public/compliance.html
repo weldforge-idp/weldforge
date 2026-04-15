@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compliance &amp; Observability — WeldForge</title>
+<meta name="description" content="Audit log, webhooks, Prometheus metrics, circuit breakers — everything you need for compliance and operational visibility.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html" class="active">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Every event, <span class="accent">accounted for.</span></h1>
+        <p class="lead">
+            Compliance is a consequence of knowing what happened. WeldForge
+            records every authentication, every admin action, every provider
+            change, and every lifecycle event in an append-only audit log, and
+            fans the same stream out over HMAC-signed webhooks for your SIEM,
+            GRC platform, or custom workflows.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="/tutorials.html#webhooks">Set up a webhook</a>
+            <a class="btn ghost" href="/api-authentication.html">Query the audit log →</a>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>The audit log</h2>
+        <p class="lead">
+            Every entry is a row with a timestamp, event type, outcome, actor,
+            target, IP address, user agent and structured metadata. The log is
+            append-only and scoped per tenant, so cross-tenant queries aren't
+            possible even accidentally. Every write runs in its own transaction
+            — a failure to audit can never roll back the business action.
+        </p>
+
+        <h3>Events recorded today (incomplete list)</h3>
+        <div class="card-grid">
+            <div class="card">
+                <h3>Authentication</h3>
+                <ul class="checklist">
+                    <li><code>auth.login.success</code> / <code>failed</code> / <code>mfa_required</code></li>
+                    <li><code>auth.register</code>, <code>auth.logout.rp_initiated</code></li>
+                    <li><code>auth.email.verification_sent</code> / <code>verified</code></li>
+                    <li><code>auth.password_reset.requested</code> / <code>completed</code></li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>MFA</h3>
+                <ul class="checklist">
+                    <li><code>mfa.factor.enroll</code> / <code>activate</code> / <code>remove</code></li>
+                    <li><code>mfa.challenge.success</code> / <code>failed</code></li>
+                    <li><code>mfa.self_reset</code> / <code>admin_reset</code></li>
+                    <li><code>mfa.policy.upsert</code>, <code>mfa.stepup_required</code></li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Administration</h3>
+                <ul class="checklist">
+                    <li><code>tenant.create</code> / <code>update</code> / <code>delete</code></li>
+                    <li><code>admin.role.assigned</code>, <code>user.delete</code></li>
+                    <li><code>service_account.create</code> / <code>rotate</code> / <code>delete</code></li>
+                    <li><code>saml_provider.upsert</code>, <code>oidc_client.dynamic_register</code></li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>PKI &amp; integrations</h3>
+                <ul class="checklist">
+                    <li><code>pki.ca.create</code>, <code>pki.cert.issue</code> / <code>revoke</code> / <code>expiring</code></li>
+                    <li><code>federation.rules.update</code>, <code>group_role.mapping.*</code></li>
+                    <li><code>ldap_provider.upsert</code>, <code>crm.provisioned</code></li>
+                    <li><code>twilio_provider.upsert</code>, <code>webhook.subscription.*</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="webhooks">
+    <div class="container">
+        <h2>Webhook fan-out</h2>
+        <p class="lead">
+            Every audit event is automatically published to matching webhook
+            subscriptions. You don't wire events into webhooks one service at a
+            time — the subscription is the contract.
+        </p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Signing</span>
+                <h3>HMAC-SHA256</h3>
+                <p>The body of every delivery is signed with the subscription's secret. The <code>X-WeldForge-Signature</code> header carries a timestamp and signature so replays are trivially detectable.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Filtering</span>
+                <h3>Event-type globs</h3>
+                <p>Subscribe to <code>user.*</code>, or <code>auth.login.*</code>, or just <code>pki.cert.expiring</code>. Missing filters means "every event, everywhere".</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Resilience</span>
+                <h3>Retry + dead letter</h3>
+                <p>Failed deliveries back off at 30s → 2m → 10m → 1h → 6h. After <code>max_attempts</code> they move to a dead-letter state so your team can replay them later.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Isolation</span>
+                <h3>Tenant-scoped</h3>
+                <p>A subscription only receives events from its own tenant. No amount of mis-configuration can make tenant A see tenant B's traffic.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>Operational visibility</h2>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Prometheus</span>
+                <h3>/actuator/prometheus</h3>
+                <p>Every Micrometer metric — JVM, HTTP, authentication counters, circuit breaker state, custom SSO metrics — exported in Prometheus format. Scrape once, grep later.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Health</span>
+                <h3>Liveness &amp; readiness probes</h3>
+                <p>Standard Kubernetes probes at <code>/actuator/health/liveness</code> and <code>/actuator/health/readiness</code>. Tied to DB connectivity on the readiness side so a DB outage drains traffic cleanly.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Resilience</span>
+                <h3>Circuit breakers</h3>
+                <p>Five named breakers (<code>webhook</code>, <code>twilio</code>, <code>smtp</code>, <code>upstream-idp</code>, <code>crm</code>) whose state is visible on <code>/actuator/circuitbreakers</code> and scraped into Prometheus.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Errors</span>
+                <h3>Consistent error shape</h3>
+                <p>Every error response returns <code>{error, message, timestamp, path}</code>. No stack traces leak, no vendor-specific exception types surface — a global handler ensures clients always get something they can parse.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

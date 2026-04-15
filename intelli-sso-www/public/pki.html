@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Internal PKI — WeldForge</title>
+<meta name="description" content="Per-tenant Certificate Authority: issue, revoke, CRL, OCSP, client cert auth, renewal notifications.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html" class="active">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Your own <span class="accent">certificate authority,</span> ready in a minute.</h1>
+        <p class="lead">
+            Every tenant can run its own internal CA without buying an HSM,
+            standing up OpenSSL scripts, or writing a CRL publisher. WeldForge
+            generates the keys, issues end-entity certificates, publishes a
+            signed CRL, answers OCSP queries, and tells you a month before a
+            cert expires — all from the admin API.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="/tutorials.html#pki">Create a CA</a>
+            <a class="btn ghost" href="/api-authentication.html">mTLS authentication →</a>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>What's included</h2>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">CA lifecycle</span>
+                <h3>Self-signed root CA</h3>
+                <p>RSA-4096 keys, SHA-256 signature, BasicConstraints + KeyUsage + SKI/AKI set correctly. Private keys encrypted at rest via AES-GCM — the same envelope every other sensitive column uses.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">End-entity</span>
+                <h3>Client cert issuance</h3>
+                <p>RSA-2048 end-entity certificates with <code>clientAuth</code> + <code>emailProtection</code> EKU, SAN support, configurable validity, and single-reveal private keys returned exactly once to the caller.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Revocation</span>
+                <h3>CRL publication</h3>
+                <p>Signed X.509 v2 CRLs at <code>/t/{tenant}/pki/crl.pem</code>. Every revocation bumps the CRL number, so relying parties can tell newer lists apart from older ones.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Real-time</span>
+                <h3>OCSP responder</h3>
+                <p>RFC 6960 OCSP endpoint at <code>/t/{tenant}/pki/ocsp</code>. Returns GOOD, REVOKED (with reason and timestamp) or UNKNOWN — so your TLS terminators can check revocation without downloading a CRL.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Auth</span>
+                <h3>Client cert authentication</h3>
+                <p>Bind an issued certificate to a user. At login time, present the cert; WeldForge fingerprints it, verifies it's still active and untampered, and resolves the user automatically.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Renewals</span>
+                <h3>30 / 14 / 7 / 1-day notices</h3>
+                <p>A scheduled job scans expiring certificates daily and emits audit events at 30, 14, 7 and 1 day before expiry. Subscribe to them via the webhook stream and pipe the notifications wherever your ops team lives.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>Standards WeldForge speaks</h2>
+        <ul class="checklist">
+            <li>X.509 v3 end-entity certificates (RFC 5280)</li>
+            <li>X.509 v2 CRLs with cRLNumber extension (RFC 5280 §5)</li>
+            <li>OCSP with SHA-1 CertificateID (RFC 6960)</li>
+            <li>PKCS #8 PEM for private keys, PEM / DER for certificates</li>
+            <li>SHA-256 with RSA signatures by default (configurable on the CA row)</li>
+        </ul>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Open the hood</span>
+            The CA service is built on the Bouncy Castle pipeline with no
+            proprietary layer on top. You can verify a certificate we issued,
+            or a CRL we generated, using any standards-compliant library — or
+            OpenSSL from the command line.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

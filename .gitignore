@@ -43,6 +43,8 @@ AWSCLIV2.pkg
 
 # Local dev env files — only .env.example should be committed
 .env
+.env.local
+.env.*.local
 intelli-sso-auth/.env
 intelli-sso-admin-portal/.env
 

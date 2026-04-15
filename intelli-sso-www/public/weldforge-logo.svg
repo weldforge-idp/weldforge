@@ -1,0 +1,125 @@
+<svg viewBox="0 0 292 56" height="56" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&amp;display=swap');</style>
+
+    <radialGradient id="forgeInterior" cx="28" cy="27" r="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#E8921F" stop-opacity="0.28"/>
+      <stop offset="35%"  stop-color="#E8921F" stop-opacity="0.10"/>
+      <stop offset="70%"  stop-color="#C06010" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#070C18"  stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="weldPool" cx="50%" cy="30%" r="50%">
+      <stop offset="0%"   stop-color="#FFD060" stop-opacity="0.6"/>
+      <stop offset="50%"  stop-color="#E8921F" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#E8921F" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="sparkCore" cx="40%" cy="35%" r="60%">
+      <stop offset="0%"   stop-color="#FFE8A0"/>
+      <stop offset="45%"  stop-color="#FFAA30"/>
+      <stop offset="100%" stop-color="#E8721F"/>
+    </radialGradient>
+
+    <clipPath id="plateClip">
+      <polygon points="12,2 44,2 54,12 54,44 44,54 12,54 2,44 2,12"/>
+    </clipPath>
+
+    <filter id="rayGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="coreGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="wGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Plate base -->
+  <polygon points="12,2 44,2 54,12 54,44 44,54 12,54 2,44 2,12"
+           fill="#070C18" stroke="#3D7EF5" stroke-width="1.5"/>
+  <polygon points="14,5 42,5 51,14 51,42 42,51 14,51 5,42 5,14"
+           fill="none" stroke="#152040" stroke-width="0.75"/>
+
+  <!-- Forge interior heat glow -->
+  <polygon points="12,2 44,2 54,12 54,44 44,54 12,54 2,44 2,12"
+           fill="url(#forgeInterior)" clip-path="url(#plateClip)"/>
+
+  <!-- W letterform — thinner, recedes so forge dominates -->
+  <polyline points="11,14 19,42 28,27 37,42 45,14"
+            fill="none" stroke="#B8CCEE" stroke-width="2.5"
+            stroke-linejoin="round" stroke-linecap="round"
+            filter="url(#wGlow)" clip-path="url(#plateClip)"/>
+
+  <!-- All forge elements clipped to plate -->
+  <g clip-path="url(#plateClip)">
+
+    <!-- Ambient outer ring -->
+    <circle cx="28" cy="27" r="22" fill="none"
+            stroke="#E8921F" stroke-width="0.5" opacity="0.12"/>
+    <!-- Mid glow ring -->
+    <circle cx="28" cy="27" r="16" fill="none"
+            stroke="#E8921F" stroke-width="0.8" opacity="0.22"/>
+    <!-- Inner glow ring -->
+    <circle cx="28" cy="27" r="11"
+            fill="rgba(232,146,31,0.08)"
+            stroke="#E8921F" stroke-width="1" opacity="0.45"/>
+
+    <!-- Weld pool — molten metal at base -->
+    <ellipse cx="28" cy="32" rx="9" ry="4.5"
+             fill="url(#weldPool)" opacity="0.7"/>
+
+    <!-- Cardinal rays — long, nearly touch plate edges -->
+    <line x1="28" y1="18" x2="28" y2="4"
+          stroke="#E8921F" stroke-width="2" stroke-linecap="round"
+          filter="url(#rayGlow)" opacity="0.9"/>
+    <line x1="28" y1="36" x2="28" y2="50"
+          stroke="#E8921F" stroke-width="2" stroke-linecap="round"
+          filter="url(#rayGlow)" opacity="0.9"/>
+    <line x1="19" y1="27" x2="4"  y2="27"
+          stroke="#E8921F" stroke-width="2" stroke-linecap="round"
+          filter="url(#rayGlow)" opacity="0.9"/>
+    <line x1="37" y1="27" x2="52" y2="27"
+          stroke="#E8921F" stroke-width="2" stroke-linecap="round"
+          filter="url(#rayGlow)" opacity="0.9"/>
+
+    <!-- Diagonal rays — medium length -->
+    <line x1="33.5" y1="21.5" x2="40" y2="15"
+          stroke="#E8921F" stroke-width="1.4" stroke-linecap="round"
+          filter="url(#rayGlow)" opacity="0.72"/>
+    <line x1="22.5" y1="21.5" x2="16" y2="15"
+          stroke="#E8921F" stroke-width="1.4" stroke-linecap="round"
+          filter="url(#rayGlow)" opacity="0.72"/>
+    <line x1="33.5" y1="32.5" x2="40" y2="39"
+          stroke="#E8921F" stroke-width="1.4" stroke-linecap="round"
+          filter="url(#rayGlow)" opacity="0.72"/>
+    <line x1="22.5" y1="32.5" x2="16" y2="39"
+          stroke="#E8921F" stroke-width="1.4" stroke-linecap="round"
+          filter="url(#rayGlow)" opacity="0.72"/>
+
+    <!-- Spark core -->
+    <circle cx="28" cy="27" r="7.5"
+            fill="rgba(232,146,31,0.35)"
+            filter="url(#coreGlow)"/>
+    <circle cx="28" cy="27" r="5.5"
+            fill="url(#sparkCore)"/>
+    <!-- Bright hot centre -->
+    <circle cx="27" cy="26" r="2.2"
+            fill="#FFF0B0" opacity="0.9"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="70" y="24" font-family="Syne, sans-serif" font-weight="700"
+        font-size="18" fill="#9AAED0" letter-spacing="3.5">WELD</text>
+  <text x="70" y="46" font-family="Syne, sans-serif" font-weight="800"
+        font-size="18" fill="#F0E8D8" letter-spacing="3.5">FORGE</text>
+  <line x1="70" y1="28.5" x2="205" y2="28.5" stroke="#1A2E5A" stroke-width="0.75"/>
+
+  <!-- Protocol dots -->
+  <circle cx="62" cy="22" r="2" fill="#3D7EF5"/>
+  <circle cx="62" cy="44" r="2.5" fill="#E8921F" filter="url(#rayGlow)"/>
+</svg>

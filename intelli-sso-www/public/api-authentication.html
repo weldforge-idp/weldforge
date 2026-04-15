@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API &amp; M2M Authentication — WeldForge</title>
+<meta name="description" content="API keys, service accounts, OAuth2 client credentials, mutual TLS. Secure backend-to-backend authentication.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html" class="active">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Four ways to say <span class="accent">"this service is allowed."</span></h1>
+        <p class="lead">
+            WeldForge gives you four independent mechanisms for authenticating
+            machines to machines — pick the one that matches the trust model
+            of each integration, mix and match across tenants, and let the
+            platform worry about rotation, scoping and revocation.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="/tutorials.html#api">Start with API keys</a>
+            <a class="btn ghost" href="/pki.html">Or set up mTLS →</a>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>The four mechanisms</h2>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Simple</span>
+                <h3>Prefixed API keys</h3>
+                <p>A <code>wf_live_…</code> key your integrator pastes into an environment variable. Hashed at rest, returned exactly once on creation, optionally scoped to a path glob and a set of HTTP methods.</p>
+                <p><strong>Use when:</strong> the other side is one service, the secret lives in a secret manager, and you want the simplest thing that could work.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">RBAC-aware</span>
+                <h3>Service-account tokens</h3>
+                <p>Prefixed <code>wf_svc_…</code> tokens backed by a proper identity with an admin role, expiry, and audit trail. Unlike an API key, a service account can act as TENANT_ADMIN or READ_ONLY — so automations don't need a human's credentials.</p>
+                <p><strong>Use when:</strong> the client is an automation (Terraform, CI/CD, a chatops bot) that needs admin-console capabilities.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Standard</span>
+                <h3>OAuth 2.0 client credentials</h3>
+                <p>Register an OIDC client, configure its grant types to include <code>client_credentials</code>, and your service exchanges its client id + secret for a short-lived JWT. Works with every OAuth2 library on earth.</p>
+                <p><strong>Use when:</strong> the client is another OIDC-aware app or a third-party SaaS that already speaks OAuth2.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">High assurance</span>
+                <h3>Mutual TLS</h3>
+                <p>Issue a client certificate from the tenant's internal CA, bind it to a user, and authenticate with the cert instead of a password. Revoked certs fail-fast through the CRL and OCSP responder.</p>
+                <p><strong>Use when:</strong> you need cryptographic proof of identity at the transport layer — payment systems, healthcare, anywhere compliance demands it.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>Scoped API keys</h2>
+        <p class="lead">
+            A key without a scope is a loaded gun. Every API key in WeldForge
+            can be restricted to an Ant-style path pattern and a set of HTTP
+            methods — if the call doesn't match, it's refused before any
+            business logic runs.
+        </p>
+        <pre><code>{
+  "clientName": "reporting-pipeline",
+  "scopes": [
+    { "path": "/api/admin/users/**",  "methods": ["GET"] },
+    { "path": "/api/admin/audit/**",  "methods": ["GET"] }
+  ]
+}</code></pre>
+        <p>
+            The key above can read users and the audit log, nothing else.
+            Compromise it and the blast radius stays small — and rotation is
+            a single API call that returns a new <code>wf_live_…</code> value
+            and invalidates the old hash immediately.
+        </p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>Circuit-broken everywhere</h2>
+        <p class="lead">
+            Every outbound dependency (Twilio, webhook receivers, SMTP, upstream
+            IdPs, CRMs) runs inside a Resilience4j circuit breaker. If a
+            downstream fails, the breaker opens and subsequent calls fast-fail
+            instead of piling up on a struggling receiver — preserving latency
+            for the requests that can succeed. Breaker state is exposed on
+            <code>/actuator/circuitbreakers</code> and scraped into Prometheus
+            out of the box.
+        </p>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

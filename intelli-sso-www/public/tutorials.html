@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tutorials &amp; Scripts — WeldForge</title>
+<meta name="description" content="Step-by-step walkthroughs and copy-pasteable curl recipes for common WeldForge tasks.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html" class="active">Tutorials</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Tutorials &amp; <span class="accent">copy-pasteable recipes.</span></h1>
+        <p class="lead">
+            Short walkthroughs for the most common things you'll do on day one.
+            Every recipe is a curl command — no SDK required — so you can
+            verify the platform behaves before writing integration code. Set
+            <code>$HOST</code>, <code>$TENANT</code> and <code>$TOKEN</code>
+            once and every block below just works.
+        </p>
+        <pre><code>export HOST=https://sso.example.com
+export TENANT=acme
+export TOKEN=wf_live_...</code></pre>
+    </div>
+</section>
+
+<section id="workforce">
+    <div class="container">
+        <h2>Workforce SSO</h2>
+
+        <h3>1. Register a tenant</h3>
+        <pre><code>curl -X POST $HOST/api/admin/tenants \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"slug":"acme","name":"Acme Corporation"}'</code></pre>
+
+        <h3>2. Wire up an LDAP upstream</h3>
+        <pre><code>curl -X POST $HOST/api/admin/tenants/1/ldap-providers \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "corp-ad",
+      "providerType": "ACTIVE_DIRECTORY",
+      "url": "ldap://dc01.acme.internal",
+      "bindDn": "CN=svc-weldforge,OU=Service Accounts,DC=acme,DC=internal",
+      "bindPassword": "REDACTED",
+      "userBaseDn": "OU=Users,DC=acme,DC=internal",
+      "userSearchFilter": "(|(userPrincipalName={0})(sAMAccountName={0}))",
+      "enabled": true
+    }'</code></pre>
+
+        <h3>3. Register a SAML Service Provider</h3>
+        <pre><code>curl -X POST $HOST/api/admin/saml/service-providers \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "entityId": "https://wiki.acme.internal/saml/metadata",
+      "name": "Internal Wiki",
+      "acsUrl": "https://wiki.acme.internal/saml/acs",
+      "nameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+      "encryptAssertions": true,
+      "spCertificate": "-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----"
+    }'</code></pre>
+
+        <h3>4. Grab the IdP metadata for the other side</h3>
+        <pre><code>curl $HOST/t/$TENANT/saml2/idp/metadata -o weldforge-idp-metadata.xml</code></pre>
+    </div>
+</section>
+
+<section id="customer">
+    <div class="container">
+        <h2>Customer Identity</h2>
+
+        <h3>1. Discover the OIDC configuration</h3>
+        <pre><code>curl $HOST/t/$TENANT/.well-known/openid-configuration | jq</code></pre>
+
+        <h3>2. Register a user from your front-end</h3>
+        <pre><code>curl -X POST $HOST/api/auth/register \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "email":    "alice@example.com",
+      "name":     "alice",
+      "password": "CorrectHorse-Battery-Staple-9"
+    }'</code></pre>
+
+        <h3>3. Log in — password only</h3>
+        <pre><code>curl -X POST $HOST/api/auth/login \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "identifier": "alice@example.com",
+      "password":   "CorrectHorse-Battery-Staple-9"
+    }'</code></pre>
+
+        <h3>4. Refresh an access token</h3>
+        <pre><code>curl -X POST $HOST/api/auth/refresh \
+    --cookie "refresh_token=..."</code></pre>
+    </div>
+</section>
+
+<section id="api">
+    <div class="container">
+        <h2>API keys &amp; service accounts</h2>
+
+        <h3>Create a scoped API key</h3>
+        <pre><code>curl -X POST $HOST/api/admin/app-clients \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "clientName": "reporting-pipeline",
+      "scopes": [
+        { "path": "/api/admin/users/**", "methods": ["GET"] },
+        { "path": "/api/admin/audit/**", "methods": ["GET"] }
+      ]
+    }'</code></pre>
+        <p>The response carries <code>apiKey</code> — capture it immediately, it is never returned again. Rotate with:</p>
+        <pre><code>curl -X POST $HOST/api/admin/app-clients/42/rotate \
+    -H "x-app-authorization: $TOKEN"</code></pre>
+
+        <h3>Create a service account with TENANT_ADMIN</h3>
+        <pre><code>curl -X POST $HOST/api/admin/service-accounts \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "terraform-ci",
+      "description": "Used by Terraform Cloud to manage SAML SPs",
+      "adminRole": "TENANT_ADMIN"
+    }'</code></pre>
+        <p>The response carries <code>token</code> — again, once only. Present it on subsequent calls as <code>x-app-authorization: wf_svc_…</code>.</p>
+    </div>
+</section>
+
+<section id="pki">
+    <div class="container">
+        <h2>Internal PKI</h2>
+
+        <h3>Bootstrap a root CA</h3>
+        <pre><code>curl -X POST $HOST/api/admin/pki/ca \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"yearsValid": 10}'</code></pre>
+
+        <h3>Issue a client certificate bound to a user</h3>
+        <pre><code>curl -X POST $HOST/api/admin/pki/certificates \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "subjectDn":     "CN=alice@acme.test",
+      "sans":          ["alice@acme.test"],
+      "validityDays":  365,
+      "userId":        123
+    }'</code></pre>
+
+        <h3>Verify the CRL with OpenSSL</h3>
+        <pre><code>curl $HOST/t/$TENANT/pki/ca.pem  -o ca.pem
+curl $HOST/t/$TENANT/pki/crl.pem -o crl.pem
+openssl crl -in crl.pem -CAfile ca.pem -noout -verify</code></pre>
+
+        <h3>Revoke an issued certificate</h3>
+        <pre><code>curl -X POST $HOST/api/admin/pki/certificates/&lt;serial-hex&gt;/revoke \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"reason": "KEY_COMPROMISE"}'</code></pre>
+    </div>
+</section>
+
+<section id="webhooks">
+    <div class="container">
+        <h2>Webhooks</h2>
+
+        <h3>Subscribe to identity events</h3>
+        <pre><code>curl -X POST $HOST/api/admin/webhooks \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name":         "siem-feed",
+      "targetUrl":    "https://siem.acme.internal/ingest/weldforge",
+      "eventFilters": ["auth.*", "admin.*", "pki.cert.*"]
+    }'</code></pre>
+        <p>The response carries a one-time <code>secret</code>. Keep it — the receiver will use it to verify HMAC signatures on every incoming delivery.</p>
+
+        <h3>Verify the HMAC signature on the receiving side (Node.js)</h3>
+        <pre><code>const crypto = require('crypto');
+
+function verify(secret, header, rawBody) {
+    const [tPart, sigPart] = header.split(',');
+    const t   = tPart.slice(2);              // "t=..."
+    const sig = sigPart.slice(3);            // "v1=..."
+    const expected = crypto
+        .createHmac('sha256', secret)
+        .update(t + '.' + rawBody)
+        .digest('hex');
+    return crypto.timingSafeEqual(
+        Buffer.from(sig, 'hex'),
+        Buffer.from(expected, 'hex'));
+}</code></pre>
+    </div>
+</section>
+
+<section id="crm">
+    <div class="container">
+        <h2>CRM provisioning</h2>
+
+        <h3>Wire up a Salesforce connector</h3>
+        <pre><code>curl -X POST $HOST/api/admin/tenants/1/crm-providers \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name":         "sf-prod",
+      "providerType": "SALESFORCE",
+      "baseUrl":      "https://acme.my.salesforce.com",
+      "apiToken":     "00D...!AR...",
+      "fieldMappings": [
+        { "source": "email", "target": "Email"     },
+        { "source": "name",  "target": "FirstName" }
+      ],
+      "matchKeys":    ["email"],
+      "enabled":      true
+    }'</code></pre>
+        <p>On the next successful login, WeldForge will upsert the user into Salesforce and record the returned contact id for dedupe on subsequent logins.</p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">More on the way</span>
+            The tutorials here cover the most common getting-started flows.
+            For anything deeper — MFA step-up, federation rules with JSONPath
+            transforms, SCIM bulk operations, or running against a local
+            Docker Compose stack — see the repository's README and the
+            integration tests under <code>src/test/resources/features</code>.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

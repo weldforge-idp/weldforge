@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workforce SSO — WeldForge</title>
+<meta name="description" content="Single sign-on for your staff: SAML, OIDC, LDAP/AD upstream, MFA, SCIM provisioning.">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html" class="active">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Workforce SSO for the tools your <span class="accent">team actually uses.</span></h1>
+        <p class="lead">
+            One sign-on, every internal app. WeldForge federates against the
+            directory you already run (LDAP, Active Directory, Google Workspace),
+            speaks SAML 2.0 and OIDC to every vendor that matters, and enforces
+            MFA by tenant policy — so your admins spend less time maintaining
+            identity glue and more time on the problems worth solving.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="/tutorials.html#workforce">Set up workforce SSO</a>
+            <a class="btn ghost" href="/compliance.html">See the audit trail</a>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>What it solves</h2>
+        <p class="lead">
+            The realities of a growing company's internal IT: the HR system lives
+            in one CRM, finance in another, engineering uses ten SaaS products,
+            and you've accumulated a half-dozen places a password can leak.
+            Workforce SSO is the fix.
+        </p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Federation</span>
+                <h3>SAML &amp; OIDC to everything</h3>
+                <p>Register each vendor as a Service Provider once; users log in to your WeldForge portal and step into every app without a second prompt. Per-SP attribute release policies keep claim surface minimal.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Directory</span>
+                <h3>LDAP / AD upstream</h3>
+                <p>Keep your existing directory as the source of truth. WeldForge binds on login, verifies the password against the directory, and provisions a local shadow automatically — complete with break-glass fallback to a local admin if the directory is unreachable.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Provisioning</span>
+                <h3>SCIM 2.0 in both directions</h3>
+                <p>Okta, Entra, Workday or Rippling can push employees in via SCIM on day one and deactivate them instantly on day last. Group memberships drive roles automatically through configurable group-to-role mappings.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">MFA</span>
+                <h3>Policy-driven MFA</h3>
+                <p>Require TOTP, WebAuthn, SMS OTP or backup codes — or several — per tenant or per role. Step-up MFA for high-assurance apps (admin consoles, production deploys) without rewriting the apps themselves.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">RBAC</span>
+                <h3>Admin role separation</h3>
+                <p>Four built-in admin roles: SUPER_ADMIN across every tenant, TENANT_ADMIN within one, READ_ONLY for auditors, and NONE for everyone else. Role changes invalidate outstanding tokens immediately.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Session control</span>
+                <h3>Tenant-specific TTLs</h3>
+                <p>Access tokens from 1 minute to 30 days per tenant. Custom JWT claims injected server-side. RP-initiated logout works on every downstream app that implements the standard.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>How it fits together</h2>
+        <p class="lead">A typical workforce deployment looks like this:</p>
+
+        <ol style="margin: 1rem 0 2rem 1.5rem; color: var(--ink); line-height: 2;">
+            <li>Your AD / LDAP stays where it is. WeldForge queries it, never replaces it.</li>
+            <li>Each SaaS vendor gets registered as a Service Provider with its ACS URL and certificate.</li>
+            <li>Users hit an internal portal, authenticate once (directory password + MFA), then click through to apps.</li>
+            <li>Every authentication emits an audit event, which feeds your SIEM via the webhook stream.</li>
+            <li>Admins manage tenants, SPs, MFA policies and users from a single Angular console.</li>
+        </ol>
+
+        <div class="callout">
+            <span class="kicker">Break-glass by design</span>
+            If your LDAP is unreachable WeldForge automatically falls back to local
+            passwords for users that have them. A locked-out sysadmin with a local
+            account can always get in — even if the directory is on fire.
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>Quick start</h2>
+        <p>Register a SAML Service Provider via the admin API in one call:</p>
+        <pre><code>curl -X POST https://sso.example.com/api/admin/saml/service-providers \
+     -H "x-app-authorization: wf_live_..." \
+     -H "Content-Type: application/json" \
+     -d '{
+        "entityId": "https://app.example.com/saml/metadata",
+        "name": "Internal Wiki",
+        "acsUrl": "https://app.example.com/saml/acs",
+        "nameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        "encryptAssertions": true,
+        "spCertificate": "-----BEGIN CERTIFICATE-----\n..."
+     }'</code></pre>
+
+        <p>More step-by-step walkthroughs are on the <a href="/tutorials.html">tutorials</a> page.</p>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>
