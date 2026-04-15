@@ -23,24 +23,36 @@ spec:
               value: "start"
           securityContext:
             privileged: true
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "4"
+              memory: 6Gi
           volumeMounts:
             - name: docker-sock
               mountPath: /var/run/docker.sock
             - name: agent-conf
               mountPath: /data/teamcity_agent/conf
-          resources:
-            requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: "1"
-              memory: 2Gi
+            - name: build-cache
+              mountPath: /root/.m2
+              subPath: m2
+            - name: build-cache
+              mountPath: /root/.cache/pip
+              subPath: pip
+            - name: build-cache
+              mountPath: /root/.pub-cache
+              subPath: pub
       volumes:
         - name: docker-sock
           hostPath:
             path: /var/run/docker.sock
         - name: agent-conf
           emptyDir: {}
+        - name: build-cache
+          emptyDir:
+            sizeLimit: 10Gi
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
