@@ -18,12 +18,14 @@ RUN npx ng build --configuration production
 # --- Runtime stage ---
 FROM nginx:alpine
 
-# Remove default nginx config
-RUN rm -rf /etc/nginx/conf.d/default.conf
+# Strip the stock default server block. The real nginx config is
+# provided at runtime by the `frontend-nginx-config` ConfigMap,
+# mounted at /etc/nginx/templates and processed by the nginx:alpine
+# entrypoint via envsubst (to inject the APP_API_KEY secret).
+# See SECURITY_AUDIT_2026-04-15.md HIGH-1 for background.
+RUN rm -f /etc/nginx/conf.d/default.conf
 
-# Copy built Angular app and custom nginx config
 COPY --from=build /app/dist/intelli-sso-admin-portal/browser /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Security: ensure files are readable but not writable by nginx worker
 RUN chown -R nginx:nginx /usr/share/nginx/html && \

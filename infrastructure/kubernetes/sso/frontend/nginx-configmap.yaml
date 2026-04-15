@@ -4,7 +4,11 @@ metadata:
   name: frontend-nginx-config
   namespace: sso
 data:
-  default.conf: |
+  # The filename ends in .template so the nginx:alpine entrypoint runs
+  # envsubst over it at container startup. APP_API_KEY is sourced from
+  # the sso-frontend-app-key k8s Secret — see the sso-frontend Deployment.
+  # SECURITY_AUDIT_2026-04-15.md HIGH-1 follow-up to CRITICAL-1.
+  default.conf.template: |
     # =====================================================================
     # Common proxy settings — forwards the original scheme as HTTPS because
     # the NLB terminates TLS, so every request reaching nginx was HTTPS from
@@ -65,6 +69,11 @@ data:
 
     # =====================================================================
     # Admin portal vhost — admin.weldforge.org
+    #
+    # nginx injects x-app-authorization on every proxied API call so the
+    # SPA bundle does not need to carry the key in clear text. APP_API_KEY
+    # is substituted at container startup by the nginx:alpine entrypoint
+    # (envsubst over this template) from the sso-frontend-app-key Secret.
     # =====================================================================
     server {
         listen 80 default_server;
@@ -92,11 +101,29 @@ data:
             }
         }
 
-        location /api/            { proxy_pass http://sso-api:8080; }
-        location /t/              { proxy_pass http://sso-api:8080; }
-        location /saml2/          { proxy_pass http://sso-api:8080; }
-        location /scim/           { proxy_pass http://sso-api:8080; }
-        location /oauth2/         { proxy_pass http://sso-api:8080; }
-        location /login/          { proxy_pass http://sso-api:8080; }
+        location /api/ {
+            proxy_set_header x-app-authorization "${APP_API_KEY}";
+            proxy_pass http://sso-api:8080;
+        }
+        location /t/ {
+            proxy_set_header x-app-authorization "${APP_API_KEY}";
+            proxy_pass http://sso-api:8080;
+        }
+        location /saml2/ {
+            proxy_set_header x-app-authorization "${APP_API_KEY}";
+            proxy_pass http://sso-api:8080;
+        }
+        location /scim/ {
+            proxy_set_header x-app-authorization "${APP_API_KEY}";
+            proxy_pass http://sso-api:8080;
+        }
+        location /oauth2/ {
+            proxy_set_header x-app-authorization "${APP_API_KEY}";
+            proxy_pass http://sso-api:8080;
+        }
+        location /login/ {
+            proxy_set_header x-app-authorization "${APP_API_KEY}";
+            proxy_pass http://sso-api:8080;
+        }
         location /actuator/health { proxy_pass http://sso-api:8080; }
     }

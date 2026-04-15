@@ -23,7 +23,9 @@ public class ServiceAccount {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    // EAGER — same reason as AppClient.tenant: accessed from
+    // AppAuthorizationFilter outside a transactional scope.
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "tenant_id", nullable = false)
     private Tenant tenant;
 

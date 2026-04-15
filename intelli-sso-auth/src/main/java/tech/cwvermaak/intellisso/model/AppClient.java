@@ -20,7 +20,13 @@ public class AppClient {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    // EAGER because AppAuthorizationFilter and ScimAuthenticationFilter
+    // read tenant.slug / tenant.id outside any @Transactional scope —
+    // the filters run ahead of DispatcherServlet and Spring's
+    // open-in-view interceptor, so lazy access on the detached entity
+    // throws LazyInitializationException. The tenant row is tiny, so
+    // the cost of the join is negligible.
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "tenant_id", nullable = false)
     private Tenant tenant;
 

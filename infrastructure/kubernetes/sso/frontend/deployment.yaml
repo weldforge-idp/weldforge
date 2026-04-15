@@ -21,9 +21,25 @@ spec:
               name: https-tgt
             - containerPort: 8081
               name: http-tgt
+          env:
+            # Injected into the nginx template via envsubst at startup.
+            # Restricts which $VAR references get substituted — nginx's
+            # own $host / $remote_addr / etc. must NOT be touched.
+            - name: NGINX_ENVSUBST_FILTER
+              value: "^APP_API_KEY$"
+            - name: APP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sso-frontend-app-key
+                  key: APP_API_KEY
           volumeMounts:
+            # Files under /etc/nginx/templates/*.template are processed
+            # by envsubst by the nginx:alpine entrypoint and written to
+            # /etc/nginx/conf.d/<basename-without-.template>. We mount
+            # the ConfigMap here so the default.conf.template key lands
+            # in the template directory.
             - name: nginx-config
-              mountPath: /etc/nginx/conf.d
+              mountPath: /etc/nginx/templates
           resources:
             requests:
               cpu: 100m
