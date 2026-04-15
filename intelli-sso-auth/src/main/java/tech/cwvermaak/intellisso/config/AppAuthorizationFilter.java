@@ -61,6 +61,13 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // Public paths — skip the app-authorization header check.
+        // NOTE: /v3/api-docs, /swagger-ui and /swagger-ui.html are
+        // intentionally NOT listed here. SECURITY_AUDIT_2026-04-15.md
+        // MEDIUM-1 — the OpenAPI spec and interactive Swagger UI were
+        // previously anonymously reachable, which handed an attacker a
+        // complete map of the API. They now require a valid app-client
+        // key. Internal callers via admin.weldforge.org still work
+        // because nginx injects the header; external scanners do not.
         if (path.startsWith("/login")
                 || path.startsWith("/oauth2")
                 || path.equals("/error")
@@ -68,9 +75,6 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
                 || path.startsWith("/t/")          // per-tenant OIDC + SAML IdP
                 || path.startsWith("/saml2/")      // SAML SP login
                 || path.startsWith("/scim/v2/")    // SCIM (has its own auth filter)
-                || path.startsWith("/v3/api-docs")
-                || path.startsWith("/swagger-ui")
-                || path.equals("/swagger-ui.html")
                 || path.startsWith("/webjars/")) {
             filterChain.doFilter(request, response);
             return;

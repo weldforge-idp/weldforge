@@ -38,6 +38,11 @@ data:
         listen 80;
         server_name sso.weldforge.org;
 
+        # HIGH-3: emit relative redirects so nginx's trailing-slash
+        # auto-redirects don't downgrade https→http in the Location.
+        absolute_redirect off;
+        port_in_redirect off;
+
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options    "nosniff"                              always;
         add_header X-Frame-Options           "DENY"                                 always;
@@ -78,6 +83,11 @@ data:
     server {
         listen 80 default_server;
         server_name admin.weldforge.org _;
+
+        # HIGH-3: relative redirects so auto-added trailing-slash
+        # 301s don't emit a http:// Location.
+        absolute_redirect off;
+        port_in_redirect off;
 
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options    "nosniff"                              always;
