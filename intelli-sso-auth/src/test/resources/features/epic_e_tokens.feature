@@ -23,10 +23,10 @@ Feature: Token model rebuild — hashed keys, scopes, service accounts (PRD TOK-
     When a request to "/api/admin/ping" arrives with raw key "wf_live_bogus"
     Then the auth filter denies the request with 403
 
-  Scenario: Legacy plaintext key from before V23 is still accepted
+  Scenario: Legacy plaintext key is rejected (CRITICAL-1 remediation)
     Given a legacy plaintext app client "legacy-c" exists with key "wf_live_legacy"
     When a request to "/api/admin/ping" arrives with raw key "wf_live_legacy"
-    Then the auth filter allows the request
+    Then the auth filter denies the request with 403
 
   Scenario: Scoped key allows matching path and method
     Given admin has created app client "scoped-d" scoped to "/api/admin/users/**" methods "GET"

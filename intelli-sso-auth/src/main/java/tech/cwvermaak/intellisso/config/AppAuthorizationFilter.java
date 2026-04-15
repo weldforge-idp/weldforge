@@ -110,13 +110,13 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // App-client path: wf_live_* — or legacy plaintext before TOK-01.
+        // App-client path: wf_live_* — hashed lookup only. The plaintext
+        // fallback that existed as a V23 grace-period helper was removed
+        // following SECURITY_AUDIT_2026-04-15.md CRITICAL-1: any legacy
+        // unhashed row in app_clients is treated as revoked. Rotate stale
+        // keys through POST /api/admin/app-clients/{id}/rotate.
         Optional<AppClient> clientOpt =
                 appClientRepository.findByApiKeyHashAndEnabledTrue(ApiKeyHasher.hash(header));
-        if (clientOpt.isEmpty()) {
-            // Fallback: legacy rows still stored the plaintext in api_key.
-            clientOpt = appClientRepository.findByApiKeyAndEnabledTrue(header);
-        }
         if (clientOpt.isEmpty()) {
             deny(response, "Missing or invalid x-app-authorization header");
             return;

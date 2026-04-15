@@ -13,6 +13,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import tech.cwvermaak.intellisso.config.tenant.TenantContext;
 import tech.cwvermaak.intellisso.model.AppClient;
 import tech.cwvermaak.intellisso.repository.AppClientRepository;
+import tech.cwvermaak.intellisso.service.security.ApiKeyHasher;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -57,7 +58,11 @@ public class ScimAuthenticationFilter extends OncePerRequestFilter {
         }
         String apiKey = header.substring(7).trim();
 
-        Optional<AppClient> client = appClientRepository.findByApiKeyAndEnabledTrue(apiKey);
+        // Hashed lookup only. The earlier plaintext fallback was
+        // removed as part of SECURITY_AUDIT_2026-04-15.md CRITICAL-1
+        // — legacy unhashed rows are treated as revoked.
+        Optional<AppClient> client =
+                appClientRepository.findByApiKeyHashAndEnabledTrue(ApiKeyHasher.hash(apiKey));
         if (client.isEmpty()) {
             unauthorised(response, "invalid_token");
             return;
