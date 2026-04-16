@@ -67,6 +67,19 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.SERVICE_UNAVAILABLE, "provider_unavailable", ex.getMessage(), request);
     }
 
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodNotAllowed(
+            org.springframework.web.HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+        return respond(HttpStatus.METHOD_NOT_ALLOWED, "method_not_allowed",
+                "HTTP " + ex.getMethod() + " is not supported for this endpoint", request);
+    }
+
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoResource(
+            org.springframework.web.servlet.resource.NoResourceFoundException ex, HttpServletRequest request) {
+        return respond(HttpStatus.NOT_FOUND, "not_found", ex.getMessage(), request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleAll(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception on {} {}: {}", request.getMethod(), request.getRequestURI(),

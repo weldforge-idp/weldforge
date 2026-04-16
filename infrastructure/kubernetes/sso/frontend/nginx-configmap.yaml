@@ -9,6 +9,9 @@ data:
   # the sso-frontend-app-key k8s Secret — see the sso-frontend Deployment.
   # SECURITY_AUDIT_2026-04-15.md HIGH-1 follow-up to CRITICAL-1.
   default.conf.template: |
+    # LOW-1: suppress nginx version in the Server response header.
+    server_tokens off;
+
     # =====================================================================
     # Common proxy settings — forwards the original scheme as HTTPS because
     # the NLB terminates TLS, so every request reaching nginx was HTTPS from
@@ -99,6 +102,13 @@ data:
         gzip on;
         gzip_types text/plain text/css application/json application/javascript application/xml text/xml;
         gzip_min_length 256;
+
+        # INFO-2: the Angular try_files fallback returns 200 for any
+        # path, which misleads scanners into thinking .env / .git are
+        # served. Block the most commonly probed dotfiles + dev-config
+        # patterns with a 404 BEFORE the try_files fallback fires.
+        location ~ /\.(env|git|svn|hg|DS_Store|htaccess|htpasswd) { return 404; }
+        location ~ /(package|tsconfig|angular)\.json$              { return 404; }
 
         location / {
             root /usr/share/nginx/html;
