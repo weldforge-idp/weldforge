@@ -235,6 +235,63 @@ ul.checklist li::before {
     font-size: 0.75rem;
 }
 
+/* ---- Tables ------------------------------------------------ */
+
+table.pricing {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0 2rem;
+    font-size: 0.92rem;
+    background: var(--forge-card);
+    border: 1px solid var(--forge-border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+table.pricing th,
+table.pricing td {
+    padding: 0.85rem 1rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--forge-border);
+}
+table.pricing th {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    color: #fff;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: rgba(74, 143, 245, 0.08);
+    border-bottom: 1px solid var(--blue-steel-dim);
+}
+table.pricing td { color: var(--ink); }
+table.pricing td strong { color: #fff; }
+table.pricing tbody tr:last-child td { border-bottom: none; }
+table.pricing tbody tr:hover td { background: rgba(74, 143, 245, 0.04); }
+
+table.pricing td.price,
+table.pricing td .price {
+    color: var(--amber-weld);
+    font-family: 'Space Mono', ui-monospace, monospace;
+    font-weight: 700;
+    white-space: nowrap;
+}
+table.pricing td.price .overage,
+table.pricing td .overage {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--ink-dim);
+    font-size: 0.78rem;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+}
+
+@media (max-width: 720px) {
+    table.pricing { font-size: 0.85rem; }
+    table.pricing th,
+    table.pricing td { padding: 0.6rem 0.5rem; }
+}
+
 /* ---- Callout ----------------------------------------------- */
 
 .callout {

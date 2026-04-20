@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pricing — WeldForge</title>
+<meta name="description" content="WeldForge pricing: free self-host tier, hosted tiers from $29/mo, cloud dedicated and regulated-industry options. Full feature matrix and usage-based add-ons.">
+<meta name="keywords" content="WeldForge pricing, SSO pricing, OIDC pricing, SAML IdP pricing, self-host IAM, managed IdP, B2B identity pricing, CIAM pricing">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html" class="active">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Pricing that <span class="accent">scales with the bill, not with the audit.</span></h1>
+        <p class="lead">
+            Start free — run it yourself on your own infrastructure, forever.
+            Move to hosted when you want us to carry the pager. Dedicated
+            clusters, compliance packs and air-gapped builds are available
+            where they're needed. Every tier includes every protocol; we
+            don't hide SAML or SCIM behind an enterprise paywall.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="#tiers">See the tiers</a>
+            <a class="btn ghost" href="/deployment.html">Pick a deployment model</a>
+        </div>
+    </div>
+</section>
+
+<section id="tiers">
+    <div class="container">
+        <h2>Plans</h2>
+        <p class="lead">
+            USD, per month, billed annually (add 20% for monthly billing).
+            Monthly Active Users (MAU) counts <em>distinct end-user identities
+            that authenticated at least once in the billing period</em>.
+            Admin and service-account seats are not counted toward MAU.
+        </p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Tier</th>
+                    <th>Who it's for</th>
+                    <th>Key limits</th>
+                    <th>SLA</th>
+                    <th>Support</th>
+                    <th>Price</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Developer</strong></td>
+                    <td>Self-host, evaluation, side projects, open-source apps.</td>
+                    <td>Unlimited tenants and users. You run the infra.</td>
+                    <td>—</td>
+                    <td>Community (GitHub issues &amp; discussions).</td>
+                    <td class="price">Free</td>
+                </tr>
+                <tr>
+                    <td><strong>Self-Host Supported</strong></td>
+                    <td>Teams running their own cluster but who want a human to answer when things go wrong.</td>
+                    <td>Unlimited tenants and users. You run the infra.</td>
+                    <td>—</td>
+                    <td>Email, 2 business-day response. Security advisory list.</td>
+                    <td class="price">$249/mo</td>
+                </tr>
+                <tr>
+                    <td><strong>Cloud Starter</strong></td>
+                    <td>Small products and MVPs that just want a working IdP.</td>
+                    <td>3 tenants (1 production), 1 000 MAU, 30-day audit retention.</td>
+                    <td>99.5%</td>
+                    <td>Email.</td>
+                    <td class="price">Free &le; 500 MAU, then $29/mo</td>
+                </tr>
+                <tr>
+                    <td><strong>Cloud Team</strong></td>
+                    <td>Growing products with a real user base and real uptime needs.</td>
+                    <td>10 tenants, 10 000 MAU included, 90-day audit, 3 admin seats.</td>
+                    <td>99.9%</td>
+                    <td>Email + chat, 1 business-day.</td>
+                    <td class="price">$149/mo <span class="overage">+ $0.025/MAU over 10 000</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Cloud Business</strong></td>
+                    <td>Mid-market with SSO, SCIM and an auditor asking questions.</td>
+                    <td>50 tenants, 50 000 MAU, 1-year audit retention, unlimited admin seats, SAML IdP mode, SCIM inbound.</td>
+                    <td>99.9%</td>
+                    <td>Email + chat, 4-hour response in business hours.</td>
+                    <td class="price">$699/mo <span class="overage">+ $0.02/MAU over 50 000</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Cloud Scale</strong></td>
+                    <td>Multi-product companies with large workforce or CIAM footprints.</td>
+                    <td>Unlimited tenants, 250 000 MAU included, 7-year audit, export to S3 / Snowflake / BigQuery.</td>
+                    <td>99.95%</td>
+                    <td>Shared Slack, 1-hour business-hours response.</td>
+                    <td class="price">$2 499/mo <span class="overage">+ $0.012/MAU over 250 000</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Cloud Dedicated</strong></td>
+                    <td>Single-tenant cluster — private data plane, custom domain, BYO KMS.</td>
+                    <td>Dedicated cluster, VPC peering, region pick, BYO KMS for JWT signing keys.</td>
+                    <td>99.95%</td>
+                    <td>24/5 Slack + pager escalation.</td>
+                    <td class="price">From $4 999/mo</td>
+                </tr>
+                <tr>
+                    <td><strong>Regulated / Air-gap</strong></td>
+                    <td>Banks, government, defence, healthcare — on-prem or offline.</td>
+                    <td>On-prem or air-gapped install, signed release bundles, FIPS 140-3 build, compliance artefact pack.</td>
+                    <td>99.99% operational</td>
+                    <td>24/7 pager. Named on-call engineer.</td>
+                    <td class="price">From $9 999/mo</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>What every tier includes</h2>
+        <p class="lead">
+            Protocols are not a tier lever. If you are paying us a dollar,
+            you get every wire protocol WeldForge speaks.
+        </p>
+        <div class="card-grid">
+            <div class="card">
+                <h3>Every protocol</h3>
+                <ul class="checklist">
+                    <li>OAuth 2.0 + OpenID Connect issuer</li>
+                    <li>SAML 2.0 Service Provider and Identity Provider</li>
+                    <li>SCIM 2.0 Users and Groups (inbound and outbound)</li>
+                    <li>LDAP / Active Directory upstream</li>
+                    <li>X.509 PKI per tenant — CA, CRL, OCSP</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Security fundamentals</h3>
+                <ul class="checklist">
+                    <li>MFA: TOTP, WebAuthn, SMS OTP, backup codes</li>
+                    <li>Per-tenant JWT signing keys</li>
+                    <li>Hashed, single-reveal API keys with path + method scopes</li>
+                    <li>Role-based admin (SUPER_ADMIN / TENANT_ADMIN / READ_ONLY)</li>
+                    <li>Append-only audit log with HMAC-signed webhooks</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Operational</h3>
+                <ul class="checklist">
+                    <li>Prometheus metrics, liveness/readiness probes</li>
+                    <li>Graceful shutdown, per-tenant rate limits</li>
+                    <li>Resilience4j circuit breakers on every downstream</li>
+                    <li>OpenAPI spec (gated)</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Multi-tenant by design</h3>
+                <ul class="checklist">
+                    <li>Every query tenant-scoped from the database up</li>
+                    <li>Per-tenant OIDC issuer URL</li>
+                    <li>Per-tenant SAML IdP metadata</li>
+                    <li>Per-tenant PKI and signing keys</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="addons">
+    <div class="container">
+        <h2>Usage-based add-ons</h2>
+        <p class="lead">Available on every paid cloud tier. Pay only for what you actually send.</p>
+
+        <table class="pricing">
+            <thead>
+                <tr><th>Add-on</th><th>Included</th><th>Overage</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>SMS OTP deliveries (Twilio pass-through)</td><td>Pass-through cost</td><td class="price">+ 15% routing fee</td></tr>
+                <tr><td>Outbound webhook deliveries</td><td>100 000 / mo</td><td class="price">$0.50 per 10 000</td></tr>
+                <tr><td>PKI certificate issuance</td><td>5 000 / mo / tenant</td><td class="price">$0.02 per cert</td></tr>
+                <tr><td>Audit event storage (beyond tier retention)</td><td>—</td><td class="price">$0.08 / GB·month</td></tr>
+                <tr><td>CRM sync operations (Salesforce / HubSpot / Dynamics / Pipedrive)</td><td>25 000 / mo</td><td class="price">$0.40 per 10 000</td></tr>
+                <tr><td>Dedicated outbound IP for webhook delivery</td><td>—</td><td class="price">$49 / mo</td></tr>
+                <tr><td>HSM-backed tenant signing keys (AWS CloudHSM)</td><td>—</td><td class="price">$249 / mo per tenant</td></tr>
+                <tr><td>Data residency pin (EU-only, UK-only, ZA-only, …)</td><td>—</td><td class="price">$399 / mo per region</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="services">
+    <div class="container">
+        <h2>Professional services</h2>
+        <p class="lead">
+            Packaged engagements for things that don't belong in a recurring
+            invoice. All figures in USD; rates include implementation and
+            handover but exclude third-party SaaS licences if any are
+            involved.
+        </p>
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Migration</span>
+                <h3>From another IdP</h3>
+                <ul class="checklist">
+                    <li>Keycloak &rarr; WeldForge — from <code>$3 500</code></li>
+                    <li>Auth0 &rarr; WeldForge — from <code>$5 500</code></li>
+                    <li>Okta &rarr; WeldForge — from <code>$9 500</code></li>
+                </ul>
+                <p>Covers data import, SAML SP re-registration, MFA enrolment carry-over, and go-live cutover.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Connectors</span>
+                <h3>Custom integrations</h3>
+                <ul class="checklist">
+                    <li>Bespoke SAML SP connector — <code>$2 500 – $4 000</code></li>
+                    <li>Bespoke CRM / HRIS connector — <code>$4 000 – $8 000</code></li>
+                    <li>Non-standard LDAP dialect — <code>$2 500</code></li>
+                </ul>
+                <p>We build it, we maintain it, you get a production entitlement.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">Compliance</span>
+                <h3>Audit artefact packs</h3>
+                <ul class="checklist">
+                    <li>SOC 2 Type II evidence — <code>$1 500 / yr</code></li>
+                    <li>HIPAA BAA + access-review pack — <code>$1 500 / yr</code></li>
+                    <li>PCI-DSS SAQ-A-EP — <code>$1 500 / yr</code></li>
+                    <li>POPIA Operator agreement — <code>$750 / yr</code></li>
+                </ul>
+            </div>
+            <div class="card">
+                <span class="kicker">Advisory</span>
+                <h3>Engineering hours</h3>
+                <ul class="checklist">
+                    <li>Solution architect — <code>$285 / hr</code></li>
+                    <li>Incident deep-dive — <code>$500 / hr</code></li>
+                    <li>Dedicated Technical Account Manager — <code>$3 500 / mo</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="compare">
+    <div class="container">
+        <h2>How we compare</h2>
+        <p class="lead">List prices for a <em>roughly equivalent</em> configuration. Every vendor slices their feature matrix differently, so treat these as a directional read, not a quote.</p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Vendor</th>
+                    <th>Free self-host</th>
+                    <th>Hosted base</th>
+                    <th>At 25 000 MAU</th>
+                    <th>SAML IdP in base tier?</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>WeldForge</strong></td><td>✓ unlimited</td><td>$29/mo</td><td>~$525/mo</td><td>✓ (Business)</td></tr>
+                <tr><td>Auth0</td><td>✗</td><td>$240/mo B2C</td><td>~$1 100/mo</td><td>Enterprise only</td></tr>
+                <tr><td>Okta Customer Identity</td><td>✗</td><td>$2 / user / mo</td><td>—</td><td>✓</td></tr>
+                <tr><td>FusionAuth</td><td>✓ unlimited</td><td>$125/mo</td><td>~$225/mo</td><td>Paid add-on</td></tr>
+                <tr><td>Clerk</td><td>partial</td><td>$25/mo</td><td>~$525/mo</td><td>Pro tier</td></tr>
+                <tr><td>Keycloak (self-host)</td><td>✓ unlimited</td><td>DIY</td><td>DIY</td><td>✓</td></tr>
+            </tbody>
+        </table>
+
+        <div class="callout">
+            <span class="kicker">What you get that the others charge extra for</span>
+            WeldForge ships SAML IdP mode, internal PKI, group-to-role
+            binding, and HMAC-signed audit webhooks in every hosted tier —
+            the features Auth0, Clerk and FusionAuth lock behind Enterprise
+            or paid add-ons.
+        </div>
+    </div>
+</section>
+
+<section id="faq">
+    <div class="container">
+        <h2>FAQ</h2>
+
+        <h3>What is a Monthly Active User?</h3>
+        <p>A distinct end-user identity (human end user, not a service account) that successfully completed at least one authentication in the calendar month. Refreshing an existing access token with a refresh token is <em>not</em> a new MAU. A user that signs in 500 times in a month counts as 1.</p>
+
+        <h3>What counts against my tenant limit?</h3>
+        <p>A tenant is a logical customer or business unit — one row in the <code>tenants</code> table. The <code>default</code> tenant on a fresh install counts. Deactivated tenants do not.</p>
+
+        <h3>Do admin seats cost extra?</h3>
+        <p>Not on Business or above — they are unlimited. Starter and Team tiers bundle a finite number of admin seats (see the table). Service-account tokens and scoped API keys are unlimited at every paid tier.</p>
+
+        <h3>How is audit retention billed?</h3>
+        <p>Within your tier's retention window it is included. Beyond the window, audit events are compressed and stored at <code>$0.08/GB·month</code> or exported to your own S3 / Snowflake / BigQuery at no extra charge.</p>
+
+        <h3>Can I bring my own KMS for JWT signing?</h3>
+        <p>Yes, on Cloud Dedicated and above. We can also integrate with AWS CloudHSM (add-on, $249/mo per tenant) on any paid tier.</p>
+
+        <h3>Do you have a non-profit / education discount?</h3>
+        <p>Yes — 50% off any cloud tier for verified non-profits, educational institutions and accredited open-source projects. Email support for the discount code before your first invoice.</p>
+
+        <h3>Can I self-host and still buy support?</h3>
+        <p>Yes — that is precisely the Self-Host Supported tier ($249/mo). You run the cluster; we answer the phone.</p>
+
+        <h3>Is there a South African billing entity?</h3>
+        <p>Yes. Invoices can be issued in USD, EUR or ZAR from the appropriate entity depending on your tax residency. VAT handling is per the rules of your billing country.</p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Ready to start?</span>
+            Grab the source at
+            <a href="https://github.com/christiaanwvermaak/intelli-sso">github.com/christiaanwvermaak/intelli-sso</a>
+            and run it today for free. When you need a hosted tenant, SLA
+            or a compliance pack, the upgrade path is one email.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

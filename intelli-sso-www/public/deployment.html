@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deployment Models — WeldForge</title>
+<meta name="description" content="Six ways to run WeldForge: free self-host, supported self-host, cloud shared, cloud dedicated, on-prem managed, air-gapped. Decision matrix, data residency and migration paths.">
+<meta name="keywords" content="WeldForge deployment, SSO self-hosted, managed IdP, dedicated cluster, air-gapped IAM, on-prem identity, data residency, SOC 2, HIPAA, POPIA">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html" class="active">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>One platform, <span class="accent">six ways to run it.</span></h1>
+        <p class="lead">
+            The same WeldForge binary runs on your laptop, your Kubernetes
+            cluster, our shared cloud, a dedicated cluster we operate for
+            you, your on-prem data centre, or an air-gapped vault. Pick the
+            model that fits your data residency, compliance and operations
+            posture — the upgrade paths between them are all supported.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="#models">Compare models</a>
+            <a class="btn ghost" href="/pricing.html">See pricing</a>
+        </div>
+    </div>
+</section>
+
+<section id="models">
+    <div class="container">
+        <h2>The six models</h2>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">D1 &middot; Free</span>
+                <h3>Self-Host &mdash; OSS</h3>
+                <p>You pull the source, you run the cluster. Docker Compose for dev, Kubernetes manifests for production, Flyway-managed schema on any Postgres 14+.</p>
+                <ul class="checklist">
+                    <li><strong>Runs on:</strong> your infra (bare metal, any cloud, laptop)</li>
+                    <li><strong>Data location:</strong> yours</li>
+                    <li><strong>Upgrades:</strong> you pull, you apply</li>
+                    <li><strong>Support:</strong> GitHub issues &amp; discussions</li>
+                    <li><strong>Best for:</strong> side projects, evaluation, OSS apps, hobbyists</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <span class="kicker">D2 &middot; $249/mo</span>
+                <h3>Self-Host &mdash; Supported</h3>
+                <p>Same binary, same cluster, but you get a human on the other end of an email. We ship a security advisory feed and a ticket queue with 2 business-day SLA.</p>
+                <ul class="checklist">
+                    <li><strong>Runs on:</strong> your infra</li>
+                    <li><strong>Data location:</strong> yours</li>
+                    <li><strong>Upgrades:</strong> you apply — we provide release notes and upgrade guidance</li>
+                    <li><strong>Support:</strong> email, 2 business-day, advisory list</li>
+                    <li><strong>Best for:</strong> small-to-mid teams running their own IdP who want backup for the weird cases</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <span class="kicker">D3 &middot; From $29/mo</span>
+                <h3>Cloud &mdash; Shared</h3>
+                <p>Multi-tenant cluster we operate. Tenant isolation is enforced at the application layer (every query is tenant-scoped); data sits in a region-pinned Postgres.</p>
+                <ul class="checklist">
+                    <li><strong>Runs on:</strong> WeldForge cloud (EKS / af-south-1 + EU-West-1)</li>
+                    <li><strong>Data location:</strong> region you pick at sign-up</li>
+                    <li><strong>Upgrades:</strong> we ship them</li>
+                    <li><strong>SLA:</strong> 99.5%–99.95% depending on tier</li>
+                    <li><strong>Best for:</strong> SaaS teams, B2C products, mid-market B2B</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <span class="kicker">D4 &middot; From $4 999/mo</span>
+                <h3>Cloud &mdash; Dedicated</h3>
+                <p>Your own single-tenant cluster. Private data plane, custom domain on our root nameservers, VPC peering into your cloud account, BYO KMS for JWT signing keys.</p>
+                <ul class="checklist">
+                    <li><strong>Runs on:</strong> WeldForge-operated single-tenant cluster</li>
+                    <li><strong>Data location:</strong> region of your choice</li>
+                    <li><strong>Upgrades:</strong> we ship them in your maintenance window</li>
+                    <li><strong>SLA:</strong> 99.95%</li>
+                    <li><strong>Best for:</strong> enterprise with strict privacy, noisy-neighbour concerns, or regulatory multi-region requirements</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <span class="kicker">D5 &middot; From $9 999/mo</span>
+                <h3>On-prem &mdash; Managed</h3>
+                <p>Your data centre, our operations team. We operate the cluster over a pull-based GitOps control plane — you open no inbound ports. Suitable for on-prem banking, defence, national-ID platforms.</p>
+                <ul class="checklist">
+                    <li><strong>Runs on:</strong> your infra, any supported Kubernetes distribution (OpenShift, RKE2, vanilla K8s, k3s)</li>
+                    <li><strong>Data location:</strong> yours</li>
+                    <li><strong>Upgrades:</strong> GitOps-driven, we stage, you merge</li>
+                    <li><strong>SLA:</strong> 99.99% operational</li>
+                    <li><strong>Best for:</strong> regulated industries, sovereign clouds</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <span class="kicker">D6 &middot; Custom</span>
+                <h3>Air-gapped Appliance</h3>
+                <p>Signed release bundles delivered on physical media or a secure air-gap transfer. FIPS 140-3 build, offline licence activation, quarterly cadence.</p>
+                <ul class="checklist">
+                    <li><strong>Runs on:</strong> fully offline infrastructure</li>
+                    <li><strong>Data location:</strong> yours, no external connectivity</li>
+                    <li><strong>Upgrades:</strong> signed bundles, quarterly</li>
+                    <li><strong>SLA:</strong> by contract</li>
+                    <li><strong>Best for:</strong> defence, intelligence, sensitive critical infrastructure</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="pick">
+    <div class="container">
+        <h2>How to pick</h2>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>If you…</th>
+                    <th>…pick</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>want to try the platform today, no friction</td><td><strong>D1 — Self-Host OSS</strong></td></tr>
+                <tr><td>are shipping a SaaS product and the IdP is not your core differentiator</td><td><strong>D3 — Cloud Shared</strong></td></tr>
+                <tr><td>have a compliance or residency constraint that forbids shared infrastructure</td><td><strong>D4 — Cloud Dedicated</strong></td></tr>
+                <tr><td>already run Kubernetes and know your platform team, but want a support contract</td><td><strong>D2 — Self-Host Supported</strong></td></tr>
+                <tr><td>are a bank, insurer, healthcare provider or gov body that can't send audit data off-prem</td><td><strong>D5 — On-prem Managed</strong></td></tr>
+                <tr><td>operate classified or sovereign systems</td><td><strong>D6 — Air-gapped Appliance</strong></td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="residency">
+    <div class="container">
+        <h2>Data residency</h2>
+        <p class="lead">
+            Where the database row sits matters for POPIA, GDPR, HIPAA and
+            most industry-specific regulations. WeldForge Cloud currently
+            operates in two regions, with more opening as customer demand
+            warrants.
+        </p>
+
+        <div class="card-grid">
+            <div class="card">
+                <h3>Africa</h3>
+                <p><strong>Primary:</strong> AWS af-south-1 (Cape Town).</p>
+                <p>Appropriate for POPIA, South African financial-services and healthcare data-residency requirements.</p>
+            </div>
+            <div class="card">
+                <h3>Europe</h3>
+                <p><strong>Primary:</strong> AWS eu-west-1 (Dublin). EU-residency pin available as an add-on ($399/mo).</p>
+                <p>Appropriate for GDPR, Schrems-II-compliant processing arrangements.</p>
+            </div>
+            <div class="card">
+                <h3>Other regions</h3>
+                <p>Cloud Dedicated and On-prem Managed tiers operate in any region your cloud provider offers — US, UK, UAE, Asia-Pacific, Latin America.</p>
+            </div>
+            <div class="card">
+                <h3>Self-host</h3>
+                <p>You pick. Postgres 14+, Java 21, and a container runtime is all the platform requires.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="compliance">
+    <div class="container">
+        <h2>Compliance posture</h2>
+        <p class="lead">
+            The hosted tiers ship with the audit artefacts attached; for
+            self-hosters the platform produces the raw evidence and we
+            package it on request.
+        </p>
+
+        <div class="card-grid">
+            <div class="card">
+                <h3>Built-in</h3>
+                <ul class="checklist">
+                    <li>Append-only audit log, HMAC-signed webhook fan-out</li>
+                    <li>MFA policies enforceable per tenant</li>
+                    <li>Password-policy + bcrypt-cost enforcement</li>
+                    <li>Admin role separation with tenant scoping</li>
+                    <li>Password &amp; secret-at-rest encryption</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Certifiable against</h3>
+                <ul class="checklist">
+                    <li>SOC 2 Type II (Cloud Business+)</li>
+                    <li>HIPAA (Cloud Dedicated with BAA)</li>
+                    <li>PCI-DSS SAQ-A-EP</li>
+                    <li>POPIA (Operator agreement available)</li>
+                    <li>GDPR (Processor addendum available)</li>
+                    <li>ISO 27001 (Cloud Scale+, roadmap 2026-Q3)</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Audit evidence we emit</h3>
+                <ul class="checklist">
+                    <li>Every admin action with actor, target, tenant, IP</li>
+                    <li>Every authentication success/failure with MFA method</li>
+                    <li>Every token issuance (grant type, client, tenant)</li>
+                    <li>SCIM lifecycle events</li>
+                    <li>PKI issuance and revocation events</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Packaged artefacts</h3>
+                <ul class="checklist">
+                    <li>SOC 2 Type II report &mdash; <code>$1 500 / yr</code></li>
+                    <li>HIPAA BAA &amp; access-review pack &mdash; <code>$1 500 / yr</code></li>
+                    <li>PCI-DSS SAQ-A-EP &mdash; <code>$1 500 / yr</code></li>
+                    <li>POPIA Operator agreement &mdash; <code>$750 / yr</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="upgrade">
+    <div class="container">
+        <h2>Moving between models</h2>
+        <p class="lead">
+            None of these are one-way doors. The data model is identical
+            across all six deployment modes, so the transition is an export,
+            a restore, and a DNS cut-over.
+        </p>
+
+        <h3>Self-host &rarr; Cloud</h3>
+        <p>We run a one-off <code>pg_dump | gzip | restore</code> on our side, point your customer-facing DNS at our NLB, rotate any API keys that crossed over, and done. Typical cut-over window: 30 minutes read-only, 5 minutes write-blocked.</p>
+
+        <h3>Cloud Shared &rarr; Cloud Dedicated</h3>
+        <p>Your rows are copied into a fresh single-tenant cluster over VPC peering, JWT signing keys are rotated once traffic is moved, and the shared-cluster tenant is marked <code>migrated</code>. No customer-visible downtime.</p>
+
+        <h3>Cloud &rarr; Self-host</h3>
+        <p>We hand you a timestamped <code>pg_dump</code>, the Flyway migration history, a Helm values file matching your shape, and a 72-hour handover call. You keep running the same software.</p>
+
+        <h3>Cloud &rarr; On-prem / Air-gap</h3>
+        <p>Requires a one-off Professional Services engagement to stand up the on-prem control plane, wire your CA into your existing PKI, and handover the GitOps pipeline. From <code>$8 500</code> depending on target platform.</p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Still deciding?</span>
+            The safe default: start on <strong>D1 Self-Host OSS</strong>
+            today, hit the tutorials, and upgrade to a Cloud tier when you
+            want someone else to carry the pager. Your data, your config
+            and your integration code all carry across unchanged.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

@@ -31,6 +31,16 @@
         <changefreq>monthly</changefreq>
     </url>
     <url>
+        <loc>https://www.weldforge.org/pricing.html</loc>
+        <priority>0.9</priority>
+        <changefreq>monthly</changefreq>
+    </url>
+    <url>
+        <loc>https://www.weldforge.org/deployment.html</loc>
+        <priority>0.9</priority>
+        <changefreq>monthly</changefreq>
+    </url>
+    <url>
         <loc>https://www.weldforge.org/tutorials.html</loc>
         <priority>0.9</priority>
         <changefreq>monthly</changefreq>

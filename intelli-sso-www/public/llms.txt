@@ -45,6 +45,8 @@ End-user authentication is separate: `POST /api/auth/login`, `POST /api/auth/reg
 - [API & M2M Authentication](https://www.weldforge.org/api-authentication.html): scoped API keys, service accounts, OAuth 2.0 client credentials
 - [Internal PKI](https://www.weldforge.org/pki.html): per-tenant CA, CRL, OCSP
 - [Compliance & Observability](https://www.weldforge.org/compliance.html): audit log, webhooks, Prometheus, health probes
+- [Pricing](https://www.weldforge.org/pricing.html): free self-host tier, hosted tiers, usage add-ons, competitor comparison
+- [Deployment](https://www.weldforge.org/deployment.html): six deployment models — self-host, cloud shared, cloud dedicated, on-prem, air-gapped — plus data residency and compliance posture
 - [Tutorials](https://www.weldforge.org/tutorials.html): copy-pasteable curl recipes
 - [For AI agents & bots](https://www.weldforge.org/agents.html): machine-readable integration guide
 - [Service manifest (machine-readable)](https://www.weldforge.org/ai-manifest.json)
