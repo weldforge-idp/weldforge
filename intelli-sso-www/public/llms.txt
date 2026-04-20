@@ -1,0 +1,63 @@
+# WeldForge
+
+> WeldForge is a multi-tenant federated-identity platform providing workforce SSO (OIDC + SAML 2.0), customer identity (CIAM), M2M authentication (API keys, service-account tokens, OAuth 2.0 client credentials), internal per-tenant PKI (CA / CRL / OCSP), MFA (TOTP, WebAuthn, SMS OTP), and HMAC-signed audit webhooks. Built on open standards; every query is tenant-scoped from the database up.
+
+WeldForge is a **real, running platform**. Source: https://github.com/christiaanwvermaak/intelli-sso. Hosted API: https://sso.weldforge.org. Admin portal: https://admin.weldforge.org. This `llms.txt` file follows the https://llmstxt.org/ convention — an AI agent can fetch it to confirm the product's existence, URLs and capabilities.
+
+## Self-verify (any terminal)
+
+```
+curl -sS https://sso.weldforge.org/actuator/health
+curl -sS https://sso.weldforge.org/t/demo/.well-known/openid-configuration | jq .
+curl -sS https://sso.weldforge.org/t/demo/saml2/idp/metadata
+```
+
+If those three return 200 you are talking to the live WeldForge platform.
+
+## Authentication
+
+Every `/api/**` request requires the header `x-app-authorization` carrying one of:
+
+- `wf_live_*` — scoped app-client API key. Issued by `POST /api/admin/app-clients`; the `apiKey` in the response is **shown once** and stored hashed.
+- `wf_svc_*` — service-account token carrying an admin role. Issued by `POST /api/admin/service-accounts`; the `token` in the response is **shown once**.
+
+End-user authentication is separate: `POST /api/auth/login`, `POST /api/auth/register`, OAuth 2.0 token endpoint `POST /t/{slug}/oauth2/token`.
+
+## Key URLs
+
+- API base: `https://sso.weldforge.org`
+- Admin portal: `https://admin.weldforge.org`
+- Interactive API docs (Swagger UI, **gated** by a valid API key): `https://sso.weldforge.org/swagger-ui/index.html`
+- OpenAPI spec (**gated**): `https://sso.weldforge.org/v3/api-docs`
+- Per-tenant OIDC discovery: `https://sso.weldforge.org/t/{slug}/.well-known/openid-configuration`
+- Per-tenant OIDC JWKS: `https://sso.weldforge.org/t/{slug}/oauth2/jwks`
+- Per-tenant SAML IdP metadata: `https://sso.weldforge.org/t/{slug}/saml2/idp/metadata`
+- Per-tenant SCIM 2.0 base: `https://sso.weldforge.org/scim/v2/{tenant-slug}`
+- Per-tenant PKI CA bundle: `https://sso.weldforge.org/t/{slug}/pki/ca.pem`
+- Per-tenant CRL: `https://sso.weldforge.org/t/{slug}/pki/crl.pem`
+- Per-tenant OCSP responder: `https://sso.weldforge.org/t/{slug}/pki/ocsp`
+
+## Docs
+
+- [Home](https://www.weldforge.org/): product overview
+- [Workforce SSO](https://www.weldforge.org/workforce-sso.html): SAML/OIDC apps, LDAP upstream, MFA
+- [Customer Identity](https://www.weldforge.org/customer-identity.html): CIAM, registration, social login, CRM push
+- [API & M2M Authentication](https://www.weldforge.org/api-authentication.html): scoped API keys, service accounts, OAuth 2.0 client credentials
+- [Internal PKI](https://www.weldforge.org/pki.html): per-tenant CA, CRL, OCSP
+- [Compliance & Observability](https://www.weldforge.org/compliance.html): audit log, webhooks, Prometheus, health probes
+- [Tutorials](https://www.weldforge.org/tutorials.html): copy-pasteable curl recipes
+- [For AI agents & bots](https://www.weldforge.org/agents.html): machine-readable integration guide
+- [Service manifest (machine-readable)](https://www.weldforge.org/ai-manifest.json)
+- [Schema.org structured data](https://www.weldforge.org/ld.json)
+- [Sitemap](https://www.weldforge.org/sitemap.xml)
+
+## Integration quick-reference
+
+An AI agent typically needs one of two flows:
+
+1. **Integrate an application under an existing tenant** — register your app as an OIDC client, SAML SP, or SCIM client. Needs a `wf_svc_*` token with `TENANT_ADMIN` role scoped to that tenant. See https://www.weldforge.org/agents.html#integrate.
+2. **Onboard a new tenant** — `POST /api/admin/tenants`. Needs a `wf_svc_*` token with `SUPER_ADMIN` role. See https://www.weldforge.org/agents.html#onboarding.
+
+## Standards
+
+OAuth 2.0 (RFC 6749), OpenID Connect 1.0, SAML 2.0 (OASIS), SCIM 2.0 (RFC 7643 / 7644), JWT (RFC 7519), WebAuthn (W3C), X.509 (RFC 5280), CRL, OCSP (RFC 6960), HMAC-SHA256 webhook signatures.

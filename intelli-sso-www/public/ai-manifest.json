@@ -1,0 +1,137 @@
+{
+    "schemaVersion": "1.0",
+    "name": "WeldForge",
+    "alternateName": "intelli-sso",
+    "description": "Multi-tenant federated identity platform: SSO (OIDC, SAML 2.0), CIAM, SCIM 2.0 provisioning, MFA (TOTP/WebAuthn/SMS), internal per-tenant PKI (CA/CRL/OCSP), M2M auth (scoped API keys, service-account tokens, OAuth 2.0 client credentials), HMAC-signed audit webhooks.",
+    "homepage": "https://www.weldforge.org",
+    "sourceRepository": "https://github.com/christiaanwvermaak/intelli-sso",
+    "apiBaseUrl": "https://sso.weldforge.org",
+    "adminPortalUrl": "https://admin.weldforge.org",
+    "openApiSpecUrl": "https://sso.weldforge.org/v3/api-docs",
+    "interactiveDocsUrl": "https://sso.weldforge.org/swagger-ui/index.html",
+    "openApiAccess": "gated — requires a valid x-app-authorization API key (SECURITY_AUDIT_2026-04-15 MEDIUM-1)",
+    "contact": {
+        "issues": "https://github.com/christiaanwvermaak/intelli-sso/issues"
+    },
+    "authScheme": {
+        "headerName": "x-app-authorization",
+        "tokenFormats": [
+            {
+                "prefix": "wf_live_",
+                "kind": "app-client-api-key",
+                "obtain": "POST /api/admin/app-clients",
+                "scoped": true,
+                "scopeShape": "[{path:'<ant-pattern>', methods:['GET','POST',...]}]",
+                "rotate": "POST /api/admin/app-clients/{id}/rotate",
+                "notes": "Returned once in response body as 'apiKey'. Stored hashed (SHA-256) server-side; plaintext is never retrievable."
+            },
+            {
+                "prefix": "wf_svc_",
+                "kind": "service-account-token",
+                "obtain": "POST /api/admin/service-accounts",
+                "carriesAdminRole": true,
+                "roles": ["SUPER_ADMIN", "TENANT_ADMIN", "READ_ONLY"],
+                "expirySupported": true,
+                "notes": "Returned once in response body as 'token'. Unlike app-client keys, these carry admin authorisation in SecurityContext — use for agents that must call admin endpoints."
+            }
+        ]
+    },
+    "endUserAuthentication": {
+        "register":       "POST /api/auth/register",
+        "passwordLogin":  "POST /api/auth/login",
+        "refresh":        "POST /api/auth/refresh (cookie-borne refresh_token)",
+        "logout":         "POST /api/auth/logout",
+        "mfa": {
+            "enroll":  "POST /api/auth/mfa/enroll",
+            "verify":  "POST /api/auth/mfa/verify",
+            "methods": ["TOTP", "WEBAUTHN", "SMS_OTP", "BACKUP_CODES"]
+        },
+        "oauth2": {
+            "authorize": "GET  /t/{slug}/oauth2/authorize",
+            "token":     "POST /t/{slug}/oauth2/token",
+            "userinfo":  "GET  /t/{slug}/oauth2/userinfo",
+            "jwks":      "GET  /t/{slug}/oauth2/jwks",
+            "discovery": "GET  /t/{slug}/.well-known/openid-configuration"
+        },
+        "saml": {
+            "spLogin":      "GET /saml2/authenticate/{tenant-provider}",
+            "idpMetadata":  "GET /t/{slug}/saml2/idp/metadata",
+            "idpSsoRedirect": "GET /t/{slug}/saml2/idp/sso",
+            "idpSsoPost":     "POST /t/{slug}/saml2/idp/sso"
+        }
+    },
+    "perTenantPublicEndpoints": {
+        "oidcDiscovery":   "/t/{slug}/.well-known/openid-configuration",
+        "oidcJwks":        "/t/{slug}/oauth2/jwks",
+        "samlIdpMetadata": "/t/{slug}/saml2/idp/metadata",
+        "scimBase":        "/scim/v2/{tenant-slug}",
+        "pkiCaBundle":     "/t/{slug}/pki/ca.pem",
+        "pkiCrl":          "/t/{slug}/pki/crl.pem",
+        "pkiOcsp":         "/t/{slug}/pki/ocsp"
+    },
+    "keyAdminEndpoints": [
+        {"method": "POST",   "path": "/api/admin/tenants",                              "purpose": "Create a new tenant",                                             "requires": "SUPER_ADMIN"},
+        {"method": "GET",    "path": "/api/admin/tenants",                              "purpose": "List tenants",                                                    "requires": "SUPER_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/users",                                "purpose": "Provision a user",                                                "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/app-clients",                          "purpose": "Issue a scoped API key (wf_live_*)",                              "requires": "TENANT_ADMIN",  "responseOneShot": "apiKey"},
+        {"method": "POST",   "path": "/api/admin/app-clients/{id}/rotate",              "purpose": "Rotate an API key",                                               "requires": "TENANT_ADMIN",  "responseOneShot": "apiKey"},
+        {"method": "POST",   "path": "/api/admin/service-accounts",                     "purpose": "Issue a service-account token (wf_svc_*)",                        "requires": "TENANT_ADMIN",  "responseOneShot": "token"},
+        {"method": "POST",   "path": "/api/admin/saml/service-providers",               "purpose": "Register a SAML SP the IdP will assert to",                       "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/oidc-clients",                         "purpose": "Register an OIDC relying party",                                  "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/ldap-providers",                       "purpose": "Wire an upstream AD/LDAP directory",                              "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/crm-providers",                        "purpose": "Wire a CRM push target (Salesforce, HubSpot, Dynamics, Pipedrive)","requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/webhooks",                             "purpose": "Subscribe to identity events (HMAC-signed delivery)",             "requires": "TENANT_ADMIN",  "responseOneShot": "secret"},
+        {"method": "POST",   "path": "/api/admin/pki/ca",                               "purpose": "Bootstrap a root CA for the tenant",                              "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/pki/certificates",                     "purpose": "Issue a client certificate",                                      "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/pki/certificates/{serial}/revoke",     "purpose": "Revoke a client certificate",                                     "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/group-role-mappings",                  "purpose": "Bind a SCIM group to an admin role",                              "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/mfa-policies",                         "purpose": "Configure per-tenant MFA enforcement",                            "requires": "TENANT_ADMIN"}
+    ],
+    "standards": [
+        "RFC 6749 (OAuth 2.0)",
+        "RFC 7517 (JWK)",
+        "RFC 7519 (JWT)",
+        "OpenID Connect 1.0",
+        "SAML 2.0 (OASIS)",
+        "SCIM 2.0 (RFC 7643, RFC 7644)",
+        "WebAuthn (W3C)",
+        "X.509 (RFC 5280), CRL, OCSP (RFC 6960)",
+        "HMAC-SHA256 (RFC 2104) for webhook signatures"
+    ],
+    "eventCatalog": {
+        "auth":   ["auth.login.success", "auth.login.failure", "auth.mfa.challenge", "auth.mfa.success", "auth.logout", "auth.password.reset"],
+        "admin":  ["admin.user.create", "admin.user.update", "admin.user.delete", "admin.role.assign"],
+        "scim":   ["scim.user.create", "scim.user.update", "scim.user.delete", "scim.group.create", "scim.group.member.add", "scim.group.member.remove"],
+        "pki":    ["pki.cert.issue", "pki.cert.revoke", "pki.cert.expiring", "pki.ca.rotate"],
+        "oauth2": ["oauth2.token.issued", "oauth2.client.register"],
+        "saml":   ["saml.sp.register", "saml.idp.assertion.issued"],
+        "tenant": ["tenant.create", "tenant.update", "tenant.suspend"]
+    },
+    "errorModel": {
+        "shape": {
+            "error":     "string — machine-readable code (e.g. not_found, bad_request, unauthorized, forbidden, validation_error, provider_unavailable, internal_error)",
+            "message":   "string — human-readable detail (never leaks a stack trace)",
+            "timestamp": "ISO-8601 instant",
+            "path":      "string — the request URI"
+        },
+        "statusMap": {
+            "400": "bad_request | validation_error",
+            "401": "unauthorized",
+            "403": "forbidden",
+            "404": "not_found",
+            "405": "method_not_allowed",
+            "503": "provider_unavailable",
+            "500": "internal_error"
+        }
+    },
+    "observability": {
+        "health":     "GET /actuator/health",
+        "liveness":   "GET /actuator/health/liveness",
+        "readiness":  "GET /actuator/health/readiness",
+        "prometheus": "GET /actuator/prometheus"
+    },
+    "rateLimits": {
+        "strategy": "per-identity (API key or service account), sliding window",
+        "notes": "Specific limits per endpoint are enforced but not published; expect 429 with Retry-After on overrun."
+    }
+}

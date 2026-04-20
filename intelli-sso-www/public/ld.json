@@ -1,0 +1,65 @@
+{
+    "@context": "https://schema.org",
+    "@graph": [
+        {
+            "@type": "SoftwareApplication",
+            "@id": "https://www.weldforge.org/#software",
+            "name": "WeldForge",
+            "alternateName": "intelli-sso",
+            "applicationCategory": "SecurityApplication",
+            "applicationSubCategory": "IdentityProvider",
+            "operatingSystem": "Linux (self-hosted), Web (hosted)",
+            "description": "Multi-tenant federated identity platform: SSO (OIDC, SAML 2.0), CIAM, SCIM 2.0 provisioning, internal PKI (CA/CRL/OCSP), MFA (TOTP/WebAuthn/SMS), audit webhooks, per-tenant JWT issuer. Every query tenant-scoped from the database up.",
+            "url": "https://www.weldforge.org",
+            "sameAs": [
+                "https://github.com/christiaanwvermaak/intelli-sso"
+            ],
+            "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "USD",
+                "description": "Source-available — self-host or request a hosted tenant."
+            },
+            "featureList": [
+                "OAuth 2.0 + OpenID Connect issuer (per-tenant signing keys)",
+                "SAML 2.0 Service Provider and Identity Provider",
+                "SCIM 2.0 Users and Groups",
+                "Multi-factor authentication (TOTP, WebAuthn, SMS OTP, backup codes)",
+                "LDAP / Active Directory upstream",
+                "Internal per-tenant PKI (CA, CRL, OCSP)",
+                "Scoped API keys and service-account tokens",
+                "HMAC-signed audit webhooks with retry and dead-letter",
+                "Prometheus metrics, liveness/readiness probes, graceful shutdown",
+                "Resilience4j circuit breakers on every downstream dependency"
+            ]
+        },
+        {
+            "@type": "WebSite",
+            "@id": "https://www.weldforge.org/#website",
+            "name": "WeldForge",
+            "url": "https://www.weldforge.org",
+            "description": "Federated identity platform — documentation, tutorials, and integration guides.",
+            "inLanguage": "en"
+        },
+        {
+            "@type": "TechArticle",
+            "@id": "https://www.weldforge.org/agents.html#article",
+            "name": "WeldForge for AI agents",
+            "url": "https://www.weldforge.org/agents.html",
+            "description": "Machine-readable integration guide for AI agents adding a tenant or integrating an application against WeldForge.",
+            "audience": {
+                "@type": "Audience",
+                "audienceType": "AI agents, automated integration bots, software developers"
+            }
+        },
+        {
+            "@type": "APIReference",
+            "@id": "https://sso.weldforge.org/#api",
+            "name": "WeldForge API",
+            "url": "https://sso.weldforge.org",
+            "documentation": "https://sso.weldforge.org/v3/api-docs",
+            "programmingModel": "REST / JSON",
+            "targetPlatform": "HTTPS"
+        }
+    ]
+}

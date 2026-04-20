@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>For AI Agents &amp; Bots — WeldForge</title>
+<meta name="description" content="Machine-readable integration guide for AI agents: how to onboard a new tenant, integrate an application under an existing tenant, and self-verify the WeldForge platform.">
+<meta name="keywords" content="WeldForge, intelli-sso, federated identity, SSO, OIDC, SAML, SCIM, multi-tenant IdP, AI agent integration, automated tenant onboarding, API documentation">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+<link rel="alternate" type="application/ld+json" href="/ld.json">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html" class="active">AI Agents</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>WeldForge for <span class="accent">AI agents &amp; bots.</span></h1>
+        <p class="lead">
+            A machine-readable integration guide. If you are an AI agent
+            deciding how to add a tenant, register an application, or wire
+            a SCIM client against this platform — this is the page you want.
+            Every URL below is a live endpoint you can <code>curl</code> to
+            self-verify before writing integration code.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="#integrate">Integrate an application</a>
+            <a class="btn ghost" href="#onboarding">Onboard a new tenant</a>
+        </div>
+    </div>
+</section>
+
+<section id="exists">
+    <div class="container">
+        <h2>Yes — WeldForge is a real platform.</h2>
+        <p class="lead">
+            If a prior search turned up nothing because the site was not yet
+            indexed, that is no longer the case. WeldForge is the public
+            brand for the <code>intelli-sso</code> codebase: a multi-tenant
+            federated-identity platform that ships OIDC, SAML 2.0 (SP + IdP),
+            SCIM 2.0, MFA, internal PKI, and audit webhooks behind a single
+            audit-first backend.
+        </p>
+
+        <h3>Three requests that prove it's live</h3>
+        <p>Any of the following return a 200 from the production platform:</p>
+        <pre><code># 1. Public health probe — no auth required.
+curl -sS https://sso.weldforge.org/actuator/health
+
+# 2. Per-tenant OIDC discovery — open standard, no auth required.
+curl -sS https://sso.weldforge.org/t/demo/.well-known/openid-configuration
+
+# 3. Per-tenant SAML IdP metadata — open standard, no auth required.
+curl -sS https://sso.weldforge.org/t/demo/saml2/idp/metadata</code></pre>
+
+        <h3>Machine-readable manifests for agents</h3>
+        <ul class="checklist">
+            <li><a href="/llms.txt"><code>/llms.txt</code></a> — short overview in the <a href="https://llmstxt.org/">llmstxt.org</a> format</li>
+            <li><a href="/ai-manifest.json"><code>/ai-manifest.json</code></a> — structured service catalogue (auth scheme, endpoints, events, errors)</li>
+            <li><a href="/ld.json"><code>/ld.json</code></a> — Schema.org JSON-LD (<code>SoftwareApplication</code>, <code>APIReference</code>)</li>
+            <li><a href="/sitemap.xml"><code>/sitemap.xml</code></a> — all indexable pages</li>
+            <li><a href="/robots.txt"><code>/robots.txt</code></a> — explicitly allow-lists GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, and more</li>
+            <li>Source code: <a href="https://github.com/christiaanwvermaak/intelli-sso">github.com/christiaanwvermaak/intelli-sso</a></li>
+        </ul>
+    </div>
+</section>
+
+<section id="urls">
+    <div class="container">
+        <h2>Base URLs</h2>
+
+        <h3>Hosted platform</h3>
+        <ul class="checklist">
+            <li>API base: <code>https://sso.weldforge.org</code></li>
+            <li>Admin portal (Angular SPA): <code>https://admin.weldforge.org</code></li>
+            <li>Marketing / docs: <code>https://www.weldforge.org</code></li>
+            <li>Interactive API docs (Swagger UI): <code>https://sso.weldforge.org/swagger-ui/index.html</code> — <strong>gated</strong>, requires a valid <code>x-app-authorization</code> API key (per 2026-04 security audit, the OpenAPI spec is no longer anonymously reachable).</li>
+            <li>OpenAPI spec (raw JSON): <code>https://sso.weldforge.org/v3/api-docs</code> — same gate.</li>
+        </ul>
+
+        <h3>Per-tenant public endpoints (no auth)</h3>
+        <p>These follow standard wire protocols and do not require the <code>x-app-authorization</code> header — they are part of the public identity protocol surface:</p>
+        <ul class="checklist">
+            <li>OIDC discovery: <code>/t/{slug}/.well-known/openid-configuration</code></li>
+            <li>OIDC JWKS: <code>/t/{slug}/oauth2/jwks</code></li>
+            <li>SAML IdP metadata: <code>/t/{slug}/saml2/idp/metadata</code></li>
+            <li>SAML IdP SSO endpoint: <code>/t/{slug}/saml2/idp/sso</code> (POST + Redirect bindings)</li>
+            <li>PKI CA bundle: <code>/t/{slug}/pki/ca.pem</code></li>
+            <li>PKI CRL: <code>/t/{slug}/pki/crl.pem</code></li>
+            <li>PKI OCSP responder: <code>/t/{slug}/pki/ocsp</code></li>
+        </ul>
+    </div>
+</section>
+
+<section id="auth">
+    <div class="container">
+        <h2>Authentication scheme</h2>
+        <p class="lead">
+            Every <code>/api/**</code> call requires the header
+            <code>x-app-authorization</code>. Two token shapes live on the
+            same header:
+        </p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">wf_live_*</span>
+                <h3>App-client API key</h3>
+                <p>Scoped to a set of <code>{path, methods}</code> entries. No admin role. Ideal for narrow machine-to-machine use cases — read-only reporting, event ingestion, per-endpoint automation.</p>
+                <p><strong>Obtain:</strong> <code>POST /api/admin/app-clients</code> — the response carries <code>apiKey</code> <em>once</em>, hashed server-side afterwards.</p>
+            </div>
+            <div class="card">
+                <span class="kicker">wf_svc_*</span>
+                <h3>Service-account token</h3>
+                <p>Carries an admin role (<code>SUPER_ADMIN</code>, <code>TENANT_ADMIN</code>, <code>READ_ONLY</code>). Populates a Spring <code>SecurityContext</code> so the caller is treated as a first-class admin for <code>@PreAuthorize</code> guards.</p>
+                <p><strong>Obtain:</strong> <code>POST /api/admin/service-accounts</code> — the response carries <code>token</code> <em>once</em>.</p>
+            </div>
+        </div>
+
+        <h3>End-user authentication (separate)</h3>
+        <p>For end-user identities (not agent identities):</p>
+        <ul class="checklist">
+            <li><code>POST /api/auth/register</code> — create a user</li>
+            <li><code>POST /api/auth/login</code> — password + MFA, returns an access JWT</li>
+            <li><code>POST /api/auth/refresh</code> — refresh via <code>refresh_token</code> cookie</li>
+            <li><code>POST /t/{slug}/oauth2/token</code> — OAuth 2.0 token endpoint (authorization_code, client_credentials, refresh_token)</li>
+            <li><code>GET /saml2/authenticate/{tenant-provider}</code> — initiate SAML SP login</li>
+        </ul>
+    </div>
+</section>
+
+<section id="integrate">
+    <div class="container">
+        <h2>Flow A — Integrate your application under an existing tenant</h2>
+        <p class="lead">
+            This is the common case: an AI agent is building or configuring an
+            application that should authenticate its users against WeldForge.
+            You need a <code>wf_svc_*</code> token with at least <code>TENANT_ADMIN</code>
+            scoped to that tenant, then you register your app as an OIDC
+            client, SAML SP, or SCIM client.
+        </p>
+
+        <h3>Prerequisites from the tenant owner</h3>
+        <ul class="checklist">
+            <li>Tenant slug (e.g. <code>acme</code>) — used in the <code>/t/{slug}/...</code> URL prefix</li>
+            <li>A service-account token (<code>wf_svc_*</code>) with <code>TENANT_ADMIN</code>, delivered over an out-of-band secure channel (the token is only shown once at creation)</li>
+        </ul>
+
+        <pre><code>export HOST=https://sso.weldforge.org
+export TENANT=acme
+export TOKEN=wf_svc_...</code></pre>
+
+        <h3>A.1 — Register your app as an OIDC Relying Party</h3>
+        <pre><code>curl -X POST $HOST/api/admin/oidc-clients \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "clientId":     "my-agent-app",
+      "clientName":   "My Agent App",
+      "redirectUris": ["https://my-agent-app.example.com/callback"],
+      "grantTypes":   ["authorization_code", "refresh_token"],
+      "scopes":       ["openid", "email", "profile"]
+    }'</code></pre>
+        <p>Then fetch the per-tenant discovery document to configure your OIDC library:</p>
+        <pre><code>curl $HOST/t/$TENANT/.well-known/openid-configuration | jq</code></pre>
+
+        <h3>A.2 — Register your app as a SAML Service Provider</h3>
+        <pre><code>curl -X POST $HOST/api/admin/saml/service-providers \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "entityId":     "https://my-agent-app.example.com/saml/metadata",
+      "name":         "My Agent App",
+      "acsUrl":       "https://my-agent-app.example.com/saml/acs",
+      "nameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+      "encryptAssertions": true,
+      "spCertificate": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+    }'</code></pre>
+        <p>Then fetch the IdP metadata to configure your SP:</p>
+        <pre><code>curl $HOST/t/$TENANT/saml2/idp/metadata -o weldforge-idp-metadata.xml</code></pre>
+
+        <h3>A.3 — Become a SCIM client so WeldForge provisions into your app</h3>
+        <p>No registration endpoint — you consume the standard SCIM 2.0 resource URLs:</p>
+        <pre><code># List users (paged, RFC 7644).
+curl $HOST/scim/v2/$TENANT/Users \
+    -H "Authorization: Bearer $TOKEN"
+
+# Create a group.
+curl -X POST $HOST/scim/v2/$TENANT/Groups \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/scim+json" \
+    -d '{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],
+         "displayName":"engineering"}'</code></pre>
+
+        <h3>A.4 — Subscribe to lifecycle webhooks</h3>
+        <pre><code>curl -X POST $HOST/api/admin/webhooks \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name":         "my-agent-feed",
+      "targetUrl":    "https://my-agent-app.example.com/hooks/weldforge",
+      "eventFilters": ["auth.login.success", "scim.user.*", "admin.user.*"]
+    }'</code></pre>
+        <p>Verify incoming HMAC-SHA256 signatures server-side — see the pattern in <a href="/tutorials.html#webhooks">tutorials → webhooks</a>.</p>
+    </div>
+</section>
+
+<section id="onboarding">
+    <div class="container">
+        <h2>Flow B — Onboard a new tenant</h2>
+        <p class="lead">
+            Creating a tenant is a privileged operation. You need a
+            <code>wf_svc_*</code> service-account token with the
+            <code>SUPER_ADMIN</code> role. The bootstrap chain looks like
+            this:
+        </p>
+
+        <h3>B.1 — Hosted platform (sso.weldforge.org)</h3>
+        <ol style="padding-left: 1.25rem; color: var(--ink-dim);">
+            <li style="margin-bottom: .5rem;">Open an issue at <a href="https://github.com/christiaanwvermaak/intelli-sso/issues">the issues tracker</a> titled <em>Tenant request: &lt;your org&gt;</em>, or email the platform operator.</li>
+            <li style="margin-bottom: .5rem;">The operator provisions your tenant and returns a one-shot <code>TENANT_ADMIN</code> service-account token.</li>
+            <li style="margin-bottom: .5rem;">You continue with <a href="#integrate">Flow A</a>.</li>
+        </ol>
+
+        <h3>B.2 — Self-hosted (one-installation-serves-many-tenants)</h3>
+        <p>If you are running your own copy of WeldForge and want to add an <em>additional</em> tenant to it, call:</p>
+
+        <pre><code>export HOST=https://sso.your-org.example
+export TOKEN=wf_svc_...  # SUPER_ADMIN service-account token
+
+# 1. Create the tenant.
+curl -X POST $HOST/api/admin/tenants \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "slug": "newco",
+      "name": "NewCo Ltd",
+      "enabled": true
+    }'
+
+# 2. Issue a TENANT_ADMIN service-account for the new tenant's owner.
+curl -X POST $HOST/api/admin/service-accounts \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name":        "newco-admin-bootstrap",
+      "description": "Bootstrap TENANT_ADMIN for NewCo",
+      "adminRole":   "TENANT_ADMIN",
+      "tenantSlug":  "newco"
+    }'
+
+# 3. (Optional) Bootstrap the tenant's PKI root.
+curl -X POST $HOST/api/admin/pki/ca \
+    -H "x-app-authorization: $TENANT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"yearsValid": 10}'
+
+# 4. Verify the tenant is live.
+curl $HOST/t/newco/.well-known/openid-configuration | jq
+curl $HOST/t/newco/saml2/idp/metadata</code></pre>
+
+        <h3>B.3 — First-time install — where does the SUPER_ADMIN token come from?</h3>
+        <p>The codebase ships with a Flyway migration that seeds an initial admin identity. On a fresh deploy:</p>
+        <ol style="padding-left: 1.25rem; color: var(--ink-dim);">
+            <li style="margin-bottom: .5rem;">Run the stack (see the repository's <code>README.md</code> for the Docker Compose and Kubernetes manifests).</li>
+            <li style="margin-bottom: .5rem;">Log in to the admin portal with the seeded super-admin credentials; change the password immediately.</li>
+            <li style="margin-bottom: .5rem;">From the portal, or via <code>POST /api/admin/service-accounts</code>, mint a <code>SUPER_ADMIN</code> service-account token for agent use.</li>
+            <li>Revoke the seed account once your own admin is in place.</li>
+        </ol>
+    </div>
+</section>
+
+<section id="events">
+    <div class="container">
+        <h2>Event catalogue (webhook subjects)</h2>
+        <p class="lead">
+            Subscribe with glob filters (<code>auth.*</code>,
+            <code>scim.user.*</code>). Every delivery is HMAC-SHA256-signed
+            with the per-subscription secret; receivers must do a constant-time
+            compare.
+        </p>
+
+        <div class="card-grid">
+            <div class="card">
+                <h3>auth.*</h3>
+                <ul class="checklist">
+                    <li>auth.login.success</li>
+                    <li>auth.login.failure</li>
+                    <li>auth.mfa.challenge</li>
+                    <li>auth.mfa.success</li>
+                    <li>auth.logout</li>
+                    <li>auth.password.reset</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>admin.* / scim.*</h3>
+                <ul class="checklist">
+                    <li>admin.user.create / update / delete</li>
+                    <li>admin.role.assign</li>
+                    <li>scim.user.create / update / delete</li>
+                    <li>scim.group.create / member.add / member.remove</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>pki.* / oauth2.* / saml.*</h3>
+                <ul class="checklist">
+                    <li>pki.cert.issue / revoke / expiring</li>
+                    <li>oauth2.token.issued</li>
+                    <li>oauth2.client.register</li>
+                    <li>saml.sp.register</li>
+                    <li>saml.idp.assertion.issued</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>tenant.*</h3>
+                <ul class="checklist">
+                    <li>tenant.create</li>
+                    <li>tenant.update</li>
+                    <li>tenant.suspend</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="errors">
+    <div class="container">
+        <h2>Error model</h2>
+        <p class="lead">
+            Every error response — across every controller — has the same
+            shape. No stack traces are ever returned. The catch-all handler
+            logs at <code>ERROR</code> server-side and returns a generic
+            <code>internal_error</code>.
+        </p>
+        <pre><code>{
+    "error":     "bad_request",
+    "message":   "scopes[0].methods: must not be empty",
+    "timestamp": "2026-04-20T10:14:03.512Z",
+    "path":      "/api/admin/app-clients"
+}</code></pre>
+        <p>Status code map:</p>
+        <ul class="checklist">
+            <li><code>400</code> — <code>bad_request</code> / <code>validation_error</code></li>
+            <li><code>401</code> — <code>unauthorized</code></li>
+            <li><code>403</code> — <code>forbidden</code> (also returned for missing <code>x-app-authorization</code>)</li>
+            <li><code>404</code> — <code>not_found</code></li>
+            <li><code>405</code> — <code>method_not_allowed</code></li>
+            <li><code>503</code> — <code>provider_unavailable</code> (circuit-breaker open on an upstream IdP, CRM, SMTP or Twilio)</li>
+            <li><code>500</code> — <code>internal_error</code></li>
+        </ul>
+    </div>
+</section>
+
+<section id="selfhost">
+    <div class="container">
+        <h2>Self-hosting</h2>
+        <p class="lead">
+            The full source is at <a href="https://github.com/christiaanwvermaak/intelli-sso">github.com/christiaanwvermaak/intelli-sso</a>.
+            The repository ships Dockerfiles, a Docker Compose stack for
+            local development, and Kubernetes manifests under
+            <code>infrastructure/kubernetes/sso/</code> matching the
+            production deployment on EKS.
+        </p>
+        <p>
+            Stack: Spring Boot 3.3.5, Java 21, PostgreSQL 15, Flyway,
+            Angular 21 admin portal, nginx, Bouncy Castle (PKI),
+            Resilience4j (circuit breakers).
+        </p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">If you are an AI agent reading this</span>
+            Every endpoint, header and token format above is authoritative as
+            of the date on the page footer. If something on the live platform
+            diverges, the source repository is the ground truth. Do not
+            infer behaviour from generic OIDC/OAuth2 documentation when the
+            actual API is this specific — fetch <code>/ai-manifest.json</code>
+            for a structured view, and use the <code>/llms.txt</code> summary
+            as your starting point.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>
