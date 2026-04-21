@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get Started — WeldForge</title>
+<meta name="description" content="Start your WeldForge subscription. Self-serve checkout for Self-Host Supported, Cloud Starter, Cloud Team and Cloud Business tiers. Sales-gated onboarding for Scale, Dedicated and Regulated plans.">
+<meta name="robots" content="index,follow">
+<link rel="icon" href="favicon.ico">
+<link rel="stylesheet" href="styles.css">
+<script src="/order.js" defer></script>
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html" class="nav-cta active">Get Started</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Get started in <span class="accent">five minutes.</span></h1>
+        <p class="lead">
+            Pick a plan, complete checkout, receive your tenant credentials
+            by email. Self-serve for everything through Cloud Business;
+            larger commitments get a short onboarding call so we can match
+            your region, compliance and data-residency requirements.
+        </p>
+    </div>
+</section>
+
+<section id="selector">
+    <div class="container">
+        <h2>Pick a plan</h2>
+        <p class="lead" id="tier-prefilled" style="display:none;">
+            We have pre-selected your tier based on the page you came from — you can change it below.
+        </p>
+
+        <div class="tier-grid">
+            <!-- Self-serve (Stripe) -->
+            <div class="tier-option" data-tier="self-host-supported" data-mode="self-serve">
+                <span class="kicker">Self-serve</span>
+                <h3>Self-Host Supported</h3>
+                <p>You run the cluster; we answer the phone.</p>
+                <p class="price">$249 / month</p>
+                <button class="btn primary tier-select">Subscribe</button>
+            </div>
+
+            <div class="tier-option" data-tier="cloud-starter" data-mode="self-serve">
+                <span class="kicker">Self-serve</span>
+                <h3>Cloud Starter</h3>
+                <p>Hosted, 1 000 MAU, 30-day audit retention.</p>
+                <p class="price">Free &le; 500 MAU, then $29 / month</p>
+                <button class="btn primary tier-select">Subscribe</button>
+            </div>
+
+            <div class="tier-option" data-tier="cloud-team" data-mode="self-serve">
+                <span class="kicker">Self-serve</span>
+                <h3>Cloud Team</h3>
+                <p>10 tenants, 10 000 MAU included, 99.9% SLA.</p>
+                <p class="price">$149 / month</p>
+                <button class="btn primary tier-select">Subscribe</button>
+            </div>
+
+            <div class="tier-option" data-tier="cloud-business" data-mode="self-serve">
+                <span class="kicker">Self-serve</span>
+                <h3>Cloud Business</h3>
+                <p>50 tenants, 50 000 MAU, SAML IdP, 1-year audit retention.</p>
+                <p class="price">$699 / month</p>
+                <button class="btn primary tier-select">Subscribe</button>
+            </div>
+
+            <!-- Sales-gated -->
+            <div class="tier-option" data-tier="cloud-scale" data-mode="sales">
+                <span class="kicker">Sales-gated</span>
+                <h3>Cloud Scale</h3>
+                <p>Unlimited tenants, 250 000 MAU, 7-year audit retention, export to S3/Snowflake.</p>
+                <p class="price">From $2 499 / month</p>
+                <button class="btn ghost tier-select">Talk to sales</button>
+            </div>
+
+            <div class="tier-option" data-tier="cloud-dedicated" data-mode="sales">
+                <span class="kicker">Sales-gated</span>
+                <h3>Cloud Dedicated</h3>
+                <p>Single-tenant cluster, BYO KMS, VPC peering, region of your choice.</p>
+                <p class="price">From $4 999 / month</p>
+                <button class="btn ghost tier-select">Talk to sales</button>
+            </div>
+
+            <div class="tier-option" data-tier="regulated" data-mode="sales">
+                <span class="kicker">Sales-gated</span>
+                <h3>Regulated / Air-gap</h3>
+                <p>On-prem or air-gapped, FIPS 140-3 build, compliance artefact pack.</p>
+                <p class="price">From $9 999 / month</p>
+                <button class="btn ghost tier-select">Talk to sales</button>
+            </div>
+
+            <div class="tier-option" data-tier="developer" data-mode="opensource">
+                <span class="kicker">Free forever</span>
+                <h3>Developer (Self-Host OSS)</h3>
+                <p>Run it yourself, no cost. Source on GitHub, community support.</p>
+                <p class="price">$0</p>
+                <button class="btn ghost tier-select">Go to GitHub</button>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="form" style="display:none;">
+    <div class="container">
+        <h2 id="form-heading">Your details</h2>
+        <p class="lead" id="form-lead">
+            This information powers your tenant provisioning. You'll receive
+            your admin credentials, initial service-account token, and a
+            link to the admin portal within a few minutes of checkout.
+        </p>
+
+        <form class="order-form" id="order-form" novalidate>
+            <input type="hidden" name="tier" id="selected-tier" value="">
+            <input type="hidden" name="mode" id="selected-mode" value="">
+
+            <div class="form-row">
+                <label for="org-name">Company / organisation name</label>
+                <input type="text" id="org-name" name="organisation" required autocomplete="organization" placeholder="e.g. Acme Pty Ltd">
+            </div>
+
+            <div class="form-row">
+                <label for="contact-name">Your name</label>
+                <input type="text" id="contact-name" name="contactName" required autocomplete="name" placeholder="e.g. Jane Smith">
+            </div>
+
+            <div class="form-row">
+                <label for="contact-email">Work email <span class="hint">(must be on a business domain — not gmail, yahoo or outlook personal)</span></label>
+                <input type="email" id="contact-email" name="contactEmail" required autocomplete="email" placeholder="jane@acme.com">
+                <div class="field-error" id="email-error"></div>
+            </div>
+
+            <div class="form-row self-serve-only">
+                <label for="tenant-slug">Preferred tenant slug <span class="hint">(lowercase letters, digits, hyphens — will appear in your URLs as <code>sso.weldforge.org/t/&lt;slug&gt;/...</code>)</span></label>
+                <input type="text" id="tenant-slug" name="tenantSlug" pattern="[a-z0-9-]+" placeholder="acme">
+                <div class="field-error" id="slug-error"></div>
+            </div>
+
+            <div class="form-row self-serve-only">
+                <label for="region">Data residency region</label>
+                <select id="region" name="region">
+                    <option value="af-south-1">Africa — Cape Town (af-south-1)</option>
+                    <option value="eu-west-1">Europe — Dublin (eu-west-1)</option>
+                    <option value="auto">No preference (we'll pick closest)</option>
+                </select>
+            </div>
+
+            <div class="form-row self-serve-only">
+                <label for="billing-cycle">Billing cycle</label>
+                <select id="billing-cycle" name="billingCycle">
+                    <option value="annual">Annual (best value)</option>
+                    <option value="monthly">Monthly (+20%)</option>
+                </select>
+            </div>
+
+            <div class="form-row sales-only" style="display:none;">
+                <label for="mau-estimate">Estimated monthly active users</label>
+                <input type="text" id="mau-estimate" name="mauEstimate" placeholder="e.g. 50 000">
+            </div>
+
+            <div class="form-row sales-only" style="display:none;">
+                <label for="compliance-notes">Compliance / residency / special requirements</label>
+                <textarea id="compliance-notes" name="complianceNotes" rows="4" placeholder="SOC 2, HIPAA, POPIA, specific region, air-gap, ..."></textarea>
+            </div>
+
+            <div class="form-row checkbox">
+                <label>
+                    <input type="checkbox" id="terms-accept" name="termsAccepted" required>
+                    I agree to the <a href="/terms.html">Terms of Service</a>, <a href="/privacy.html">Privacy Policy</a> and <a href="/dpa.html">Data Processing Agreement</a>.
+                </label>
+            </div>
+
+            <div class="cta-row">
+                <button type="submit" class="btn primary" id="submit-btn">Continue to checkout</button>
+                <button type="button" class="btn ghost" id="back-btn">Back to plans</button>
+            </div>
+        </form>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">What happens after you click</span>
+            Self-serve tiers redirect you to Stripe Checkout — we never see
+            your card. Once payment is confirmed, the provisioning script
+            creates your tenant, generates a one-shot <code>SUPER_ADMIN</code>
+            service-account token, and emails you the credentials plus a
+            link to the admin portal. Typical end-to-end time: under two
+            minutes. Sales-gated tiers route the form to our sales inbox and
+            we reply within one business day to schedule a short onboarding
+            call.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html">Get Started</a>
+        </nav>
+    </div>
+</footer>
+
+<!-- Client wiring is in /order.js (external, to honour the CSP script-src 'self'). -->
+<!-- script moved to /order.js --><!--
+(function () {
+    'use strict';
+
+    // ---- Config (edit these when Stripe is live) ----
+    var CHECKOUT_URLS = {
+        'self-host-supported':  'https://buy.stripe.com/PLACEHOLDER_SELF_HOST_SUPPORTED',
+        'cloud-starter':        'https://buy.stripe.com/PLACEHOLDER_CLOUD_STARTER',
+        'cloud-team':           'https://buy.stripe.com/PLACEHOLDER_CLOUD_TEAM',
+        'cloud-business':       'https://buy.stripe.com/PLACEHOLDER_CLOUD_BUSINESS'
+    };
+    var OSS_URL = 'https://github.com/christiaanwvermaak/intelli-sso';
+    var SALES_EMAIL = 'sales@weldforge.org';
+    var ORDERS_WEBHOOK = '';  // optional: Formspree / Basin / Getform endpoint
+
+    // ---- State ----
+    var selectedTier = null;
+    var selectedMode = null;
+
+    // ---- Helpers ----
+    function $(id) { return document.getElementById(id); }
+    function qs(sel) { return document.querySelector(sel); }
+    function qsAll(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+
+    function getQueryTier() {
+        var m = window.location.search.match(/[?&]tier=([a-z0-9-]+)/i);
+        return m ? m[1].toLowerCase() : null;
+    }
+
+    function showForm(tier, mode) {
+        selectedTier = tier;
+        selectedMode = mode;
+        $('selected-tier').value = tier;
+        $('selected-mode').value = mode;
+
+        var formSection = $('form');
+        var selectorSection = $('selector');
+        var heading = $('form-heading');
+        var lead = $('form-lead');
+
+        qsAll('.self-serve-only').forEach(function (el) {
+            el.style.display = mode === 'self-serve' ? '' : 'none';
+        });
+        qsAll('.sales-only').forEach(function (el) {
+            el.style.display = mode === 'sales' ? '' : 'none';
+        });
+
+        if (mode === 'self-serve') {
+            heading.textContent = 'Your details';
+            lead.textContent = 'This information powers your tenant provisioning. You\'ll receive your admin credentials, initial service-account token, and a link to the admin portal within a few minutes of checkout.';
+            $('tenant-slug').required = true;
+            $('submit-btn').textContent = 'Continue to checkout';
+        } else if (mode === 'sales') {
+            heading.textContent = 'Tell us about your deployment';
+            lead.textContent = 'We review your requirements, send an onboarding plan, and schedule a short call. Typical response time is one business day.';
+            $('tenant-slug').required = false;
+            $('submit-btn').textContent = 'Send to sales';
+        }
+
+        formSection.style.display = '';
+        formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function emailIsBusinessDomain(email) {
+        var blocked = ['gmail.com', 'yahoo.com', 'yahoo.co.uk', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'aol.com', 'proton.me', 'protonmail.com'];
+        var domain = email.split('@')[1];
+        return domain && blocked.indexOf(domain.toLowerCase()) === -1;
+    }
+
+    function buildMailtoFallback(tier, payload) {
+        var subject = encodeURIComponent('[Order — ' + tier + '] ' + (payload.organisation || 'New enquiry'));
+        var body = encodeURIComponent(
+            'Tier: ' + tier + '\n' +
+            'Mode: ' + selectedMode + '\n\n' +
+            'Organisation: ' + (payload.organisation || '') + '\n' +
+            'Contact:       ' + (payload.contactName || '') + ' <' + (payload.contactEmail || '') + '>\n' +
+            'Tenant slug:   ' + (payload.tenantSlug || '(not provided)') + '\n' +
+            'Region:        ' + (payload.region || '(not provided)') + '\n' +
+            'Billing cycle: ' + (payload.billingCycle || '(not provided)') + '\n' +
+            'MAU estimate:  ' + (payload.mauEstimate || '(not provided)') + '\n\n' +
+            'Compliance / notes:\n' + (payload.complianceNotes || '(none)') + '\n'
+        );
+        return 'mailto:' + SALES_EMAIL + '?subject=' + subject + '&body=' + body;
+    }
+
+    function redirectToCheckout(tier, payload) {
+        var url = CHECKOUT_URLS[tier];
+        if (!url || url.indexOf('PLACEHOLDER') !== -1) {
+            // Stripe not yet configured — fall back to a mailto so the
+            // button is never dead.
+            window.location.href = buildMailtoFallback(tier, payload);
+            return;
+        }
+        // Append prefill parameters Stripe Checkout understands.
+        var sep = url.indexOf('?') === -1 ? '?' : '&';
+        var params = new URLSearchParams({
+            prefilled_email: payload.contactEmail || '',
+            client_reference_id: encodeURIComponent(JSON.stringify({
+                organisation: payload.organisation,
+                contactName:  payload.contactName,
+                tenantSlug:   payload.tenantSlug,
+                region:       payload.region,
+                billingCycle: payload.billingCycle
+            })).slice(0, 200)  // Stripe limits client_reference_id to 200 chars
+        });
+        window.location.href = url + sep + params.toString();
+    }
+
+    // ---- Tier-select click ----
+    qsAll('.tier-option').forEach(function (card) {
+        card.addEventListener('click', function () {
+            var tier = card.getAttribute('data-tier');
+            var mode = card.getAttribute('data-mode');
+
+            if (mode === 'opensource') {
+                window.location.href = OSS_URL;
+                return;
+            }
+            showForm(tier, mode);
+        });
+    });
+
+    // ---- Form submit ----
+    $('order-form').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+
+        var form = ev.target;
+        var payload = {
+            tier:             selectedTier,
+            mode:             selectedMode,
+            organisation:     form.organisation.value.trim(),
+            contactName:      form.contactName.value.trim(),
+            contactEmail:     form.contactEmail.value.trim(),
+            tenantSlug:       form.tenantSlug.value.trim(),
+            region:           form.region.value,
+            billingCycle:     form.billingCycle.value,
+            mauEstimate:      form.mauEstimate.value.trim(),
+            complianceNotes:  form.complianceNotes.value.trim(),
+            termsAccepted:    form.termsAccepted.checked
+        };
+
+        // Client-side validation.
+        var errs = [];
+        if (!payload.organisation) errs.push('organisation');
+        if (!payload.contactName)  errs.push('contactName');
+        if (!payload.contactEmail) errs.push('contactEmail');
+        if (!payload.termsAccepted) errs.push('termsAccepted');
+
+        $('email-error').textContent = '';
+        $('slug-error').textContent = '';
+
+        if (payload.contactEmail && !emailIsBusinessDomain(payload.contactEmail)) {
+            $('email-error').textContent = 'Please use a work email on your own domain — generic mailbox providers are not accepted.';
+            errs.push('contactEmail');
+        }
+        if (selectedMode === 'self-serve') {
+            if (!payload.tenantSlug) errs.push('tenantSlug');
+            if (payload.tenantSlug && !/^[a-z0-9-]+$/.test(payload.tenantSlug)) {
+                $('slug-error').textContent = 'Only lowercase letters, digits and hyphens.';
+                errs.push('tenantSlug');
+            }
+        }
+        if (errs.length) return;
+
+        // Optionally ping a form-to-email webhook so the order metadata
+        // (which Stripe Checkout won't see) reaches sales@ even before
+        // the customer pays.
+        if (ORDERS_WEBHOOK) {
+            try {
+                fetch(ORDERS_WEBHOOK, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    mode: 'no-cors'
+                });
+            } catch (e) { /* non-fatal */ }
+        }
+
+        if (selectedMode === 'self-serve') {
+            redirectToCheckout(selectedTier, payload);
+        } else if (selectedMode === 'sales') {
+            window.location.href = buildMailtoFallback(selectedTier, payload);
+        }
+    });
+
+    $('back-btn').addEventListener('click', function () {
+        $('form').style.display = 'none';
+        $('selector').scrollIntoView({ behavior: 'smooth' });
+    });
+
+    // ---- Pre-select tier from ?tier=... ----
+    var preTier = getQueryTier();
+    if (preTier) {
+        var card = document.querySelector('[data-tier="' + preTier + '"]');
+        if (card) {
+            var prefillNote = $('tier-prefilled');
+            if (prefillNote) prefillNote.style.display = '';
+            // Auto-show form only for self-serve tiers; sales-gated still
+            // asks the user to click, so they can see what they're
+            // committing to.
+            if (card.getAttribute('data-mode') === 'self-serve') {
+                showForm(preTier, 'self-serve');
+            } else {
+                card.classList.add('highlighted');
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }
+})();
+--></body>
+</html>

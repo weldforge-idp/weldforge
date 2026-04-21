@@ -30,6 +30,18 @@ public final class AuditEventTypes {
     public static final String TENANT_CREATE          = "tenant.create";
     public static final String TENANT_UPDATE          = "tenant.update";
     public static final String TENANT_DELETE          = "tenant.delete";
+    public static final String TENANT_PROVISIONED_VIA_BILLING = "tenant.provisioned_via_billing";
+
+    // V31: payment &amp; billing
+    public static final String BILLING_ORDER_CREATED   = "billing.order.created";
+    public static final String BILLING_ORDER_PAID      = "billing.order.paid";
+    public static final String BILLING_ORDER_CANCELLED = "billing.order.cancelled";
+    public static final String BILLING_ORDER_EXPIRED   = "billing.order.expired";
+    public static final String BILLING_ORDER_REFUNDED  = "billing.order.refunded";
+    public static final String BILLING_GATEWAY_CREATE  = "billing.gateway.create";
+    public static final String BILLING_GATEWAY_UPDATE  = "billing.gateway.update";
+    public static final String BILLING_GATEWAY_DELETE  = "billing.gateway.delete";
+    public static final String BILLING_PROVISIONING_FAILED = "billing.provisioning.failed";
 
     // Provider config
     public static final String SOCIAL_PROVIDER_UPSERT = "social_provider.upsert";

@@ -119,7 +119,17 @@ public class SecurityConfig {
                                 // OpenAPI / Swagger UI
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
-                                "/swagger-ui.html"
+                                "/swagger-ui.html",
+                                // Public order funnel from www.weldforge.org;
+                                // creates a pending_orders row + redirects to
+                                // Stripe. No app-authorisation header because
+                                // the caller is a browser.
+                                "/api/public/orders/**",
+                                // Payment gateway webhooks — authenticated by
+                                // their own signature header (Stripe-Signature,
+                                // Paddle-Signature, etc.) verified per-gateway
+                                // against the stored webhook secret.
+                                "/api/webhooks/**"
                         ).permitAll()
                         .requestMatchers("/api/admin/**").authenticated()
                         .requestMatchers("/api/**").authenticated()

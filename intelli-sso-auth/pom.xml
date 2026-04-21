@@ -48,6 +48,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-client</artifactId>
         </dependency>
+        <!-- Stripe SDK for v1 of the payment-gateway subsystem. Additional
+             gateways (Paddle, PayFast, Yoco) add their own deps alongside. -->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>28.1.0</version>
+        </dependency>
         <!-- SAML 2.0 Service Provider (upstream IdP federation) -->
         <dependency>
             <groupId>org.springframework.security</groupId>
