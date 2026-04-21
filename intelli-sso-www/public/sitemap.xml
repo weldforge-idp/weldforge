@@ -56,7 +56,17 @@
         <changefreq>monthly</changefreq>
     </url>
     <url>
+        <loc>https://www.weldforge.org/compare/</loc>
+        <priority>0.85</priority>
+        <changefreq>monthly</changefreq>
+    </url>
+    <url>
         <loc>https://www.weldforge.org/compare/auth0.html</loc>
+        <priority>0.95</priority>
+        <changefreq>monthly</changefreq>
+    </url>
+    <url>
+        <loc>https://www.weldforge.org/compare/keycloak.html</loc>
         <priority>0.95</priority>
         <changefreq>monthly</changefreq>
     </url>

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeldForge vs Keycloak — TCO, Features, Migration</title>
+<meta name="description" content="Keycloak vs WeldForge compared honestly: both are free to self-host, so we compare total cost of ownership, built-in features (SCIM, PKI, webhooks) and whether a managed cloud option is worth it.">
+<meta name="keywords" content="WeldForge vs Keycloak, Keycloak alternative, Keycloak TCO, managed Keycloak, Keycloak SCIM, Keycloak PKI, Red Hat SSO alternative, Keycloak upgrade, Keycloak cloud">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/styles.css">
+<link rel="alternate" type="application/ld+json" href="/ld.json">
+<link rel="canonical" href="https://www.weldforge.org/compare/keycloak.html">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="/weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html" class="nav-cta">Get Started</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Keycloak works. <span class="accent">Until running it stops being fun.</span></h1>
+        <p class="lead">
+            Keycloak is the right answer for a lot of teams &mdash; it is
+            battle-tested, Red Hat-backed, and genuinely free. WeldForge is
+            for the teams whose answer to "who's upgrading Keycloak this
+            quarter?" is a long pause. Same OIDC + SAML wire protocols, a
+            smaller footprint, SCIM and PKI and audit webhooks in the box,
+            and a hosted option so nobody has to be the Keycloak person.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="#should-i-switch">Should I switch?</a>
+            <a class="btn ghost" href="#migrate">Migration guide</a>
+        </div>
+    </div>
+</section>
+
+<section id="honest">
+    <div class="container">
+        <h2>If Keycloak is working for you, don't switch</h2>
+        <p class="lead">
+            Seriously. Keycloak is a mature platform with over a decade of
+            production deployments, a massive community, good docs and a
+            commercial support path via Red Hat. If your platform team
+            knows it, if upgrades are smooth for you, and if realms map
+            cleanly to your tenancy model &mdash; keep it. You're not
+            leaving money on the table.
+        </p>
+        <p>
+            But most teams we talk to didn't choose Keycloak for its
+            features &mdash; they chose it because it was free and
+            open-source. And they didn't know the real cost was somewhere
+            else: <strong>the engineering time it takes to operate it
+            safely</strong>. That's what this page is about.
+        </p>
+    </div>
+</section>
+
+<section id="should-i-switch">
+    <div class="container">
+        <h2>The three reasons teams actually migrate</h2>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">#1</span>
+                <h3>Upgrade pain</h3>
+                <p>
+                    Keycloak major-version upgrades have broken custom themes,
+                    SPIs, realm schemas and storage backends at least three
+                    times in the last five years (the Quarkus migration being
+                    the sharpest). If your only identity engineer is the one
+                    who remembers how to survive the next one, you are one
+                    resignation away from a crisis.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">#2</span>
+                <h3>Missing features you had to build</h3>
+                <p>
+                    Keycloak ships OIDC, SAML and user federation. It does
+                    <em>not</em> ship SCIM (community extension), PKI,
+                    HMAC-signed audit webhooks, or a multi-tenant
+                    control-plane above realms. If you've written SPIs for
+                    any of those &mdash; and bear the maintenance cost &mdash;
+                    WeldForge ships them in the base tier.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">#3</span>
+                <h3>"Nobody wants to run it any more"</h3>
+                <p>
+                    The single most common reason we hear. Keycloak wants
+                    JVM + database + Infinispan cache + reverse proxy +
+                    theme-compile pipeline + upgrade testing lane +
+                    on-call. If your team would rather ship product than
+                    babysit an IdP, the managed option is the decision.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="features">
+    <div class="container">
+        <h2>Feature-for-feature</h2>
+        <p class="lead">
+            What's in the box on each side. &check; = included, &plus; = available via community extension or SPI you maintain, &mdash; = not offered.
+        </p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Capability</th>
+                    <th>Keycloak (community)</th>
+                    <th>WeldForge</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>OAuth 2.0 / OpenID Connect issuer</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>SAML 2.0 Service Provider</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>SAML 2.0 Identity Provider</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>LDAP / Active Directory upstream</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>Kerberos / GSSAPI</td><td>&check;</td><td><strong>&mdash; not planned</strong></td></tr>
+                <tr><td>MFA — TOTP / WebAuthn / FIDO2</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>SMS OTP</td><td>&plus; via SPI or theme extension</td><td>&check; (Twilio pass-through)</td></tr>
+                <tr><td>Social login (Google, Microsoft, GitHub, Apple, …)</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>User federation (custom storage)</td><td>&check;</td><td>&plus; via webhooks</td></tr>
+                <tr><td><strong>SCIM 2.0 (inbound + outbound)</strong></td><td>&plus; community extension</td><td><strong>&check; built in</strong></td></tr>
+                <tr><td><strong>Internal PKI — per-tenant CA, CRL, OCSP</strong></td><td>&mdash;</td><td><strong>&check; built in</strong></td></tr>
+                <tr><td><strong>HMAC-signed outbound audit webhooks</strong></td><td>&plus; custom SPI</td><td><strong>&check; built in</strong></td></tr>
+                <tr><td>Group-to-role binding with priority</td><td>&plus; scripted (deprecated) or custom SPI</td><td>&check; built in, admin-portal UI</td></tr>
+                <tr><td><strong>Scoped API keys (path + method)</strong></td><td>&mdash;</td><td><strong>&check; built in</strong></td></tr>
+                <tr><td>Service-account tokens with admin role</td><td>Client credentials only</td><td>&check; with admin role + expiry</td></tr>
+                <tr><td>Password policies (length, complexity, history)</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>Customisable login themes</td><td>&check; (FreeMarker + CSS)</td><td>&check; (CSS + logo; no template engine)</td></tr>
+                <tr><td>Multi-tenancy</td><td>&check; via realms (heavier per-tenant)</td><td>&check; application-layer (one schema, tenant-scoped queries)</td></tr>
+                <tr><td>Admin portal UI</td><td>&check; (jQuery-era, recently replaced)</td><td>&check; (Angular 21, per-tenant)</td></tr>
+                <tr><td>First-party managed cloud</td><td>&mdash; Red Hat SSO is on-prem subscription</td><td><strong>&check; from $29/mo</strong></td></tr>
+                <tr><td>POPIA-native data residency</td><td>Bring your own hosting</td><td>&check; Cape Town region</td></tr>
+                <tr><td>Licence</td><td>Apache 2.0</td><td>Source-available (commercial)</td></tr>
+                <tr><td>Commercial support path</td><td>Red Hat SSO (per-socket, opaque pricing)</td><td><a href="/pricing.html">Transparent tiers</a></td></tr>
+            </tbody>
+        </table>
+
+        <p class="lead" style="margin-top: 2rem;">
+            The short version: Keycloak has a larger feature surface for
+            edge cases (Kerberos, custom storage SPIs, deep theme
+            customisation). WeldForge has more things built-in for the
+            90% case (SCIM, PKI, audit webhooks, scoped API keys) plus a
+            managed-cloud option Keycloak doesn't offer directly.
+        </p>
+    </div>
+</section>
+
+<section id="tco">
+    <div class="container">
+        <h2>Total cost of ownership</h2>
+        <p class="lead">
+            Both Keycloak and WeldForge are free to self-host. The honest
+            comparison isn't licence fees &mdash; it's what running the
+            thing costs you.
+        </p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Cost driver</th>
+                    <th>Keycloak self-host</th>
+                    <th>WeldForge self-host</th>
+                    <th>WeldForge Cloud Business</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Infrastructure (2-node HA + Postgres)</td>
+                    <td class="price">~$180 / mo <span class="overage">JVM nodes need 2–4 GB each</span></td>
+                    <td class="price">~$120 / mo <span class="overage">smaller footprint</span></td>
+                    <td class="price">included</td>
+                </tr>
+                <tr>
+                    <td>Engineering time — ops (cluster, cache, upgrades)</td>
+                    <td class="price">~20% of 1 FTE <span class="overage">~$40 000+ / yr</span></td>
+                    <td class="price">~10% of 1 FTE <span class="overage">~$20 000 / yr</span></td>
+                    <td class="price">0</td>
+                </tr>
+                <tr>
+                    <td>Engineering time — extensions (SCIM / webhook / audit SPIs)</td>
+                    <td class="price">6–12 weeks one-off <span class="overage">maintenance thereafter</span></td>
+                    <td class="price">0 <span class="overage">built in</span></td>
+                    <td class="price">0</td>
+                </tr>
+                <tr>
+                    <td>Commercial support</td>
+                    <td class="price">Red Hat SSO: contact for quote <span class="overage">typical $5–15k / socket / yr</span></td>
+                    <td class="price">Self-Host Supported: $249 / mo</td>
+                    <td class="price">included</td>
+                </tr>
+                <tr>
+                    <td>Upgrade risk absorbed by vendor</td>
+                    <td class="price">No <span class="overage">major versions occasionally break things</span></td>
+                    <td class="price">Partial <span class="overage">we publish migration notes</span></td>
+                    <td class="price">Yes <span class="overage">we roll forward</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Effective yearly cost at 10 000 MAU</strong></td>
+                    <td class="price"><strong>~$42 000+</strong></td>
+                    <td class="price"><strong>~$23 000+</strong></td>
+                    <td class="price"><strong>$8 388</strong></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout">
+            <span class="kicker">The real trade-off</span>
+            The "free" in free open-source is a real free &mdash; no licence
+            fee. But for most mid-market teams, the engineering time is the
+            dominant cost. Running a managed service for $699/mo is cheaper
+            than 20% of one platform engineer's salary, and the
+            comparison gets lopsided once you count the ops pager.
+        </div>
+    </div>
+</section>
+
+<section id="migrate">
+    <div class="container">
+        <h2>Migrating from Keycloak</h2>
+        <p class="lead">
+            The good news: Keycloak and WeldForge speak the same standard
+            protocols on the wire (OIDC, SAML 2.0). Applications that
+            talked to Keycloak keep working by changing an issuer URL.
+            The actual data migration is 3 steps.
+        </p>
+
+        <h3>Step 1 &mdash; Export the Keycloak realm</h3>
+        <p>
+            Keycloak ships a CLI export. Run against a stopped server for
+            a consistent snapshot:
+        </p>
+        <pre><code>./kc.sh export --dir /tmp/keycloak-export \
+    --realm acme \
+    --users realm_file</code></pre>
+        <p>
+            You get <code>acme-realm.json</code> and
+            <code>acme-users-0.json</code>. Keycloak's user export includes
+            password hashes (PBKDF2-SHA256 by default) which WeldForge
+            accepts natively &mdash; no password resets required.
+        </p>
+
+        <h3>Step 2 &mdash; Create the WeldForge tenant</h3>
+        <pre><code>curl -X POST $HOST/api/admin/tenants \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"slug":"acme","name":"Acme Corporation"}'</code></pre>
+
+        <h3>Step 3 &mdash; Run the Keycloak import converter</h3>
+        <p>
+            The converter maps Keycloak's realm JSON to WeldForge's
+            admin-API shape: users &rarr; users, clients &rarr; oidc-clients,
+            client scopes &rarr; custom claims, identity providers &rarr;
+            SAML SPs / social providers, roles &rarr; admin roles or
+            group-role mappings. Bulk-imports run in a single transaction
+            so the cut-over is atomic.
+        </p>
+        <pre><code>curl -X POST $HOST/api/admin/migrate/keycloak \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary @keycloak-export-acme-realm.json</code></pre>
+
+        <h3>Step 4 &mdash; Update issuer URLs in every client</h3>
+        <p>
+            Change the OIDC issuer from
+            <code>https://keycloak.example.com/realms/acme</code> to
+            <code>https://sso.weldforge.org/t/acme</code>. The
+            <code>/.well-known/openid-configuration</code> document has the
+            same shape in both platforms &mdash; your OIDC libraries don't
+            need to change.
+        </p>
+
+        <h3>Step 5 &mdash; Decommission Keycloak</h3>
+        <p>
+            Keep Keycloak running read-only for a 30-day grace period so
+            you can fall back if something goes sideways. No traffic should
+            reach it after the DNS cut-over. Then tear down the cluster,
+            retire the oncall rotation, and go ship product.
+        </p>
+
+        <div class="callout">
+            <span class="kicker">Professional services</span>
+            Keycloak &rarr; WeldForge migration, delivered by the engineering team, is
+            <a href="/pricing.html#services">$3 500 flat</a>. Includes the
+            realm conversion, SAML metadata carry-over, SPI feature audit,
+            and a 48-hour cut-over window. Typically 1 week of elapsed time.
+        </div>
+    </div>
+</section>
+
+<section id="do-not-switch">
+    <div class="container">
+        <h2>When you should NOT switch</h2>
+        <p class="lead">
+            Being honest about where Keycloak remains the better answer.
+        </p>
+
+        <div class="card-grid">
+            <div class="card">
+                <h3>You rely on Kerberos / GSSAPI</h3>
+                <p>Keycloak has first-class Kerberos ticket-forwarding. WeldForge doesn't, and it's not on the roadmap. If your workforce auth flows through a Windows AD forest with Kerberos SSO, Keycloak stays.</p>
+            </div>
+            <div class="card">
+                <h3>You have heavy User Storage SPIs</h3>
+                <p>Keycloak's User Storage SPI lets you back a realm with arbitrary custom storage (mainframes, bespoke HR systems). If you've built one, WeldForge's equivalent is outbound webhooks + SCIM &mdash; a different pattern. Migrating the SPI to webhooks is real work.</p>
+            </div>
+            <div class="card">
+                <h3>You are a Red Hat customer</h3>
+                <p>If your org has a Red Hat enterprise agreement, Red Hat SSO may be bundled or deeply discounted. We can't beat bundled zero.</p>
+            </div>
+            <div class="card">
+                <h3>You want deep theme customisation</h3>
+                <p>Keycloak's FreeMarker themes let you ship a fully bespoke login flow with server-side rendering. WeldForge's customisation is CSS + logo + custom claims. If your brand needs pixel-perfect per-tenant login pages with server-side logic, Keycloak is deeper.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="faq">
+    <div class="container">
+        <h2>FAQ</h2>
+
+        <h3>Will my users need to reset their passwords?</h3>
+        <p>No. Keycloak's default PBKDF2-SHA256 hashes import into WeldForge natively. Legacy Keycloak deployments using bcrypt or scrypt also carry over cleanly. Users sign in with their existing password the moment after DNS cut-over.</p>
+
+        <h3>Do my existing OIDC-integrated apps keep working?</h3>
+        <p>Yes. WeldForge's OIDC discovery document is standard &mdash; change the issuer URL in each app's config and you're done. The token format, userinfo payload and logout flow are all spec-compliant.</p>
+
+        <h3>What happens to my realm-level admins?</h3>
+        <p>Realm admins map to WeldForge's TENANT_ADMIN role. Master-realm admins map to SUPER_ADMIN. The migration tool preserves the role assignment per user.</p>
+
+        <h3>How does WeldForge compare to Red Hat SSO specifically?</h3>
+        <p>Red Hat SSO is Keycloak with Red Hat's support contract plus curated release cadence. The feature set is effectively Keycloak + Red Hat's backport list. If you're paying per-socket for RHSSO and don't use the Red Hat ecosystem, WeldForge Cloud typically comes in 60–80% cheaper with more features bundled.</p>
+
+        <h3>Can I self-host WeldForge the way I self-host Keycloak?</h3>
+        <p>Yes &mdash; the Developer tier is free and runs as a Spring Boot jar or container. Docker Compose for dev, Kubernetes manifests for production. Smaller footprint than Keycloak (~512 MB per pod vs 2-4 GB for Keycloak).</p>
+
+        <h3>Will you support Kerberos eventually?</h3>
+        <p>Not planned. The overlap between "needs Kerberos" and "wants a managed IdP in Cape Town" is small enough that the engineering cost isn't justified. If Kerberos is non-negotiable, Keycloak is the better answer &mdash; we'll tell you that up front.</p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Next step</span>
+            Read the <a href="/deployment.html">six deployment models</a>
+            if you're weighing self-host vs managed, try the
+            <a href="/calculator.html">cost calculator</a> for a quick
+            MAU-based figure, or
+            <a href="/order.html?tier=cloud-team">start a Cloud Team
+            subscription</a> and migrate in the next quiet week.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="/weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html">Get Started</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>
