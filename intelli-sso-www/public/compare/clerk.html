@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeldForge vs Clerk — When React Auth Stops Being Enough</title>
+<meta name="description" content="Clerk owns the drop-in React auth space. WeldForge is for everything that comes after — SAML IdP for enterprise buyers, SCIM for workforce directories, PKI for mTLS, and self-host when you need it.">
+<meta name="keywords" content="WeldForge vs Clerk, Clerk alternative, Clerk SAML, Clerk SCIM, Clerk enterprise, self-hosted Clerk alternative, Clerk pricing">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/styles.css">
+<link rel="alternate" type="application/ld+json" href="/ld.json">
+<link rel="canonical" href="https://www.weldforge.org/compare/clerk.html">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="/weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html" class="nav-cta">Get Started</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Clerk is the best <span class="accent">drop-in for React.</span></h1>
+        <p class="lead">
+            If you're building a React or Next.js app and need auth
+            working this afternoon, Clerk is genuinely unbeatable.
+            <code>&lt;SignIn /&gt;</code>, <code>&lt;UserButton /&gt;</code>,
+            done. This page isn't an argument to replace that.
+            It's about the moment when "we ship React auth" stops being
+            the hard problem and "we sell to enterprise customers who
+            demand SAML SSO and SCIM provisioning" starts being it.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="#when-weldforge">When you outgrow Clerk</a>
+            <a class="btn ghost" href="#when-clerk">When Clerk is still right</a>
+        </div>
+    </div>
+</section>
+
+<section id="when-clerk">
+    <div class="container">
+        <h2>Stay on Clerk if …</h2>
+        <p class="lead">Being straight about where they're the better call.</p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Stack</span>
+                <h3>You're React / Next.js and &lt; 10 000 MAU</h3>
+                <p>
+                    Clerk's free tier covers up to 10 000 MAU. For a
+                    B2C React app in its first two years, that's usually
+                    the whole journey. The developer experience is
+                    exceptional and there's no reason to switch until you
+                    hit a concrete wall.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">DX</span>
+                <h3>The login UI is a core differentiator</h3>
+                <p>
+                    Clerk's hosted login components and user profile
+                    widgets are the cleanest in the market. If your team
+                    values not owning the login UI at all &mdash; and
+                    you're willing to accept vendor-specific wrappers in
+                    your React tree &mdash; Clerk wins.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">Scope</span>
+                <h3>You don't need SAML IdP, SCIM, PKI, or self-host</h3>
+                <p>
+                    If your requirements are "sign-in and session
+                    management for a consumer app," Clerk does that
+                    cleanly. Evaluating platforms by features you don't
+                    need is how teams end up with overpriced identity
+                    stacks.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="when-weldforge">
+    <div class="container">
+        <h2>The four moments you outgrow Clerk</h2>
+        <p class="lead">Every Clerk customer who moves to WeldForge tells us it was one of these.</p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">#1 — Enterprise sales</span>
+                <h3>"Our buyer requires SAML SSO"</h3>
+                <p>
+                    Your first serious B2B customer audit asks for
+                    SAML 2.0 SSO against their Okta tenant. Clerk supports
+                    SAML only on their Enterprise tier (custom pricing).
+                    WeldForge's SAML IdP is in every paid tier from
+                    $29/mo &mdash; you ship the compliance answer
+                    instead of calling sales.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">#2 — SCIM</span>
+                <h3>"Our buyer wants Okta to provision users"</h3>
+                <p>
+                    Same customer, same audit, next question: "Can Okta
+                    push our users into your app via SCIM?" Again,
+                    Clerk Enterprise only. Same $29/mo WeldForge tier
+                    ships full SCIM 2.0 with group-to-role binding.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">#3 — Self-host requirement</span>
+                <h3>"The customer won't let us run identity in third-party SaaS"</h3>
+                <p>
+                    Regulated industries (banking, healthcare, government)
+                    routinely refuse to accept third-party-hosted auth for
+                    their users. Clerk has no self-host story. WeldForge's
+                    Self-Host Supported tier ($249/mo) is exactly this.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">#4 — Scale economics</span>
+                <h3>"At 50 000 MAU Clerk costs more than our hosting bill"</h3>
+                <p>
+                    Clerk's per-MAU overage above 10 000 ($0.02/MAU)
+                    makes it $825/mo at 50 000 MAU. WeldForge Cloud
+                    Business caps at $699/mo for 50 000 MAU. Modest
+                    saving on its own, but crossover compounds as you grow.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="pricing">
+    <div class="container">
+        <h2>Pricing at common MAU tiers</h2>
+        <p class="lead">Clerk's free tier is genuinely generous. We'll credit that up front.</p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Monthly Active Users</th>
+                    <th>WeldForge</th>
+                    <th>Clerk</th>
+                    <th>Winner on price</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>500</strong></td>
+                    <td class="price">$0</td>
+                    <td class="price">$0 <span class="overage">Free tier</span></td>
+                    <td>Tie</td>
+                </tr>
+                <tr>
+                    <td><strong>1 000</strong></td>
+                    <td class="price">$29 <span class="overage">Cloud Starter</span></td>
+                    <td class="price">$0 <span class="overage">Free tier</span></td>
+                    <td><strong>Clerk</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>10 000</strong></td>
+                    <td class="price">$149 <span class="overage">Cloud Team</span></td>
+                    <td class="price">$0 <span class="overage">Free tier cap</span></td>
+                    <td><strong>Clerk</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>25 000</strong></td>
+                    <td class="price">$524 <span class="overage">Cloud Team + overage</span></td>
+                    <td class="price">$325 <span class="overage">Pro + overage</span></td>
+                    <td><strong>Clerk</strong> (by $199)</td>
+                </tr>
+                <tr>
+                    <td><strong>50 000</strong></td>
+                    <td class="price">$699 <span class="overage">Cloud Business</span></td>
+                    <td class="price">$825 <span class="overage">Pro + overage</span></td>
+                    <td><strong>WeldForge</strong> (by $126)</td>
+                </tr>
+                <tr>
+                    <td><strong>100 000</strong></td>
+                    <td class="price">$1 699 <span class="overage">Cloud Business + overage</span></td>
+                    <td class="price">$1 825 <span class="overage">Pro + overage</span></td>
+                    <td><strong>WeldForge</strong> (by $126)</td>
+                </tr>
+                <tr>
+                    <td><strong>250 000</strong></td>
+                    <td class="price">$2 499 <span class="overage">Cloud Scale</span></td>
+                    <td class="price">Enterprise only</td>
+                    <td><strong>WeldForge</strong> (transparent)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout">
+            <span class="kicker">The honest crossover</span>
+            Below ~30 000 MAU, Clerk is cheaper and their DX is better
+            for React-first teams. Above ~50 000 MAU we start matching or
+            beating them on price while bundling SAML IdP + SCIM + PKI
+            that Clerk gates behind custom-priced Enterprise contracts.
+            The crossover is around 40 000 MAU or whenever your first
+            SAML-requiring B2B customer signs &mdash; whichever comes first.
+        </div>
+    </div>
+</section>
+
+<section id="features">
+    <div class="container">
+        <h2>Feature-for-feature</h2>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Capability</th>
+                    <th>Clerk Pro ($25/mo)</th>
+                    <th>WeldForge Cloud Team ($149/mo)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>OAuth 2.0 / OpenID Connect</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>Drop-in React / Next.js components</td><td><strong>&check; best in class</strong></td><td>&mdash; backend-only, you build the UI</td></tr>
+                <tr><td>MFA — TOTP / passkeys / SMS</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>Social logins</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>User profile widget</td><td>&check; hosted</td><td>&mdash; you build or use the admin portal</td></tr>
+                <tr><td>Organisations / B2B multi-tenancy</td><td>&check; Pro tier</td><td>&check; tenant-scoped from DB up</td></tr>
+                <tr><td><strong>SAML 2.0 Identity Provider</strong></td><td>Enterprise tier only</td><td><strong>&check;</strong></td></tr>
+                <tr><td><strong>SAML 2.0 Service Provider (upstream IdP federation)</strong></td><td>Enterprise tier only</td><td><strong>&check;</strong></td></tr>
+                <tr><td><strong>SCIM 2.0 inbound provisioning</strong></td><td>Enterprise tier only</td><td><strong>&check;</strong></td></tr>
+                <tr><td>LDAP / Active Directory upstream</td><td>&mdash;</td><td>&check;</td></tr>
+                <tr><td>Internal PKI (CA / CRL / OCSP)</td><td>&mdash;</td><td>&check;</td></tr>
+                <tr><td>HMAC-signed audit webhooks</td><td>Pro tier (basic)</td><td>&check; with retry + DLQ</td></tr>
+                <tr><td>Scoped API keys (path + method)</td><td>&mdash;</td><td>&check;</td></tr>
+                <tr><td>Service-account tokens</td><td>JWT-only M2M</td><td>&check;</td></tr>
+                <tr><td>Self-host</td><td>&mdash;</td><td>&check; Developer (free) + Self-Host Supported</td></tr>
+                <tr><td>Source-available</td><td>&mdash;</td><td>&check;</td></tr>
+                <tr><td>POPIA-native data residency</td><td>US / EU only</td><td>&check; Cape Town region</td></tr>
+                <tr><td>Custom domains</td><td>Pro tier</td><td>&check;</td></tr>
+            </tbody>
+        </table>
+
+        <p class="lead" style="margin-top: 2rem;">
+            The short version: Clerk's strength is the pre-built React
+            UI and their generous free tier. WeldForge's strength is
+            backend-identity breadth &mdash; every protocol enterprise
+            buyers ask for is in the base paid tier, plus a self-host
+            path and ZA residency.
+        </p>
+    </div>
+</section>
+
+<section id="migrate">
+    <div class="container">
+        <h2>Migrating from Clerk</h2>
+        <p class="lead">Clerk's export API makes user migration straightforward; the bigger lift is replacing the React components.</p>
+
+        <h3>Step 1 &mdash; Export users from Clerk</h3>
+        <pre><code>curl https://api.clerk.com/v1/users?limit=500 \
+    -H "Authorization: Bearer $CLERK_SECRET_KEY" \
+    &gt; clerk-users.json</code></pre>
+        <p>
+            Clerk exports email, phone, external IDs, metadata and
+            <em>hashed</em> passwords (bcrypt / scrypt). WeldForge accepts
+            these natively.
+        </p>
+
+        <h3>Step 2 &mdash; Export organisations and memberships</h3>
+        <p>If you use Clerk Organisations, export them with the members endpoint:</p>
+        <pre><code>curl https://api.clerk.com/v1/organizations \
+    -H "Authorization: Bearer $CLERK_SECRET_KEY" \
+    &gt; clerk-organisations.json</code></pre>
+
+        <h3>Step 3 &mdash; Import into WeldForge</h3>
+        <pre><code>curl -X POST $HOST/api/admin/migrate/clerk \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary @clerk-users.json</code></pre>
+        <p>
+            Clerk organisations map to WeldForge tenants or to a single
+            tenant's SCIM groups &mdash; you choose during import based on
+            your B2B model.
+        </p>
+
+        <h3>Step 4 &mdash; Swap the React integration</h3>
+        <p>
+            This is the part that differs from the Keycloak / Auth0 / FusionAuth
+            migrations: Clerk's SDKs deeply integrate React rendering.
+            Replacing <code>&lt;SignIn /&gt;</code> with a bring-your-own-UI
+            OIDC flow is real work &mdash; typically 2&ndash;5 days for a
+            mature app. The tradeoff is you no longer have vendor-specific
+            components in your tree.
+        </p>
+        <pre><code>// Before (Clerk)
+import { SignIn } from '@clerk/nextjs';
+export default function Page() { return &lt;SignIn /&gt;; }
+
+// After (standard OIDC, e.g. next-auth or oidc-client-ts)
+// Redirect to /t/acme/oauth2/authorize?client_id=... on click.</code></pre>
+
+        <div class="callout">
+            <span class="kicker">Professional services</span>
+            Clerk &rarr; WeldForge migration, including the React
+            component swap, is <a href="/pricing.html#services">$4 500 flat</a>.
+            Typically 1&ndash;2 weeks elapsed.
+        </div>
+    </div>
+</section>
+
+<section id="faq">
+    <div class="container">
+        <h2>FAQ</h2>
+
+        <h3>Why would I give up Clerk's React components?</h3>
+        <p>Because they're a lock-in surface. Clerk components assume Clerk's session model, Clerk's user shape, Clerk's organisations API. If you want portability or you're tired of a vendor-shaped hole in your React tree, you build a lightweight sign-in yourself on top of standard OIDC.</p>
+
+        <h3>Does WeldForge have pre-built components?</h3>
+        <p>Not React-branded ones, no. We intentionally stop at the protocol boundary &mdash; `oidc-client-ts`, `next-auth`, `@auth0/auth0-react` and every other OIDC client library works against WeldForge out of the box. You own the UI.</p>
+
+        <h3>Is Clerk really cheaper below 30k MAU?</h3>
+        <p>Yes, and we're not going to pretend otherwise. Their free tier up to 10 000 MAU is unusually generous; between 10k and 30k, the $25 base + $0.02/MAU is structurally cheaper than our Cloud Team $149 + $0.025/MAU. The crossover comes when enterprise sales demand SAML, not a moment sooner.</p>
+
+        <h3>What about Clerk Organisations?</h3>
+        <p>Clerk Organisations map to WeldForge's tenants (one-to-one) or to SCIM groups inside a single tenant, depending on your B2B shape. The migration tool will ask.</p>
+
+        <h3>Will Clerk's passkey credentials carry over?</h3>
+        <p>WebAuthn credentials are tied to the relying party. Passkeys registered against Clerk cannot be re-used against WeldForge &mdash; users will re-enrol on first login. Not a blocker; a one-time friction point.</p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Next step</span>
+            If you're still pre-10k MAU and React-first, stay on Clerk
+            and come back when a customer asks about SAML. If you're
+            past that or sell B2B, try the
+            <a href="/calculator.html">cost calculator</a> and read the
+            <a href="/compare/auth0.html">Auth0 comparison</a> for the
+            enterprise-identity lens.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="/weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html">Get Started</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

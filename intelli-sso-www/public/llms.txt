@@ -52,6 +52,8 @@ End-user authentication is separate: `POST /api/auth/login`, `POST /api/auth/reg
 - [Comparisons index](https://www.weldforge.org/compare/): directory of vendor-by-vendor comparisons
 - [Auth0 comparison](https://www.weldforge.org/compare/auth0.html): feature-by-feature, price-by-MAU, migration guide
 - [Keycloak comparison](https://www.weldforge.org/compare/keycloak.html): TCO comparison, when to keep Keycloak, when to switch, migration guide
+- [FusionAuth comparison](https://www.weldforge.org/compare/fusionauth.html): honest price comparison (FusionAuth wins at scale), feature deltas, migration guide
+- [Clerk comparison](https://www.weldforge.org/compare/clerk.html): when React-first teams outgrow Clerk (enterprise SAML, SCIM, self-host), feature matrix, migration guide
 - [For AI agents & bots](https://www.weldforge.org/agents.html): machine-readable integration guide
 - [Service manifest (machine-readable)](https://www.weldforge.org/ai-manifest.json)
 - [Schema.org structured data](https://www.weldforge.org/ld.json)

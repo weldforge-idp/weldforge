@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeldForge vs FusionAuth — Honest Price Comparison</title>
+<meta name="description" content="FusionAuth wins on flat-rate pricing at scale. Here's when WeldForge beats it on built-in features (SAML IdP, PKI, POPIA residency) and when FusionAuth is the right call.">
+<meta name="keywords" content="WeldForge vs FusionAuth, FusionAuth alternative, FusionAuth pricing, FusionAuth SAML IdP, FusionAuth SCIM, identity platform flat rate pricing">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/styles.css">
+<link rel="alternate" type="application/ld+json" href="/ld.json">
+<link rel="canonical" href="https://www.weldforge.org/compare/fusionauth.html">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="/weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html" class="nav-cta">Get Started</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>FusionAuth is <span class="accent">cheaper at scale.</span></h1>
+        <p class="lead">
+            And we're not going to pretend otherwise. Their flat-rate
+            pricing beats every per-MAU vendor including us once you hit
+            roughly 10 000 monthly active users. So this page isn't about
+            beating them on price &mdash; it's about telling you honestly
+            when the extra built-ins (SAML IdP, PKI, POPIA residency,
+            audit webhooks) are worth paying more for, and when they
+            aren't.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="#when-weldforge">When WeldForge wins</a>
+            <a class="btn ghost" href="#when-fusionauth">When FusionAuth wins</a>
+        </div>
+    </div>
+</section>
+
+<section id="when-fusionauth">
+    <div class="container">
+        <h2>Pick FusionAuth if …</h2>
+        <p class="lead">Being honest about where they're the better answer.</p>
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Scale</span>
+                <h3>You're above 25 000 MAU and price is the decision</h3>
+                <p>
+                    FusionAuth Essentials is $225/mo <em>flat</em> up to
+                    100 000 MAU. WeldForge Cloud Team at 25 000 MAU is
+                    ~$524/mo. We lose that contest, cleanly.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">Self-host</span>
+                <h3>You're self-hosting and happy</h3>
+                <p>
+                    FusionAuth's community edition is genuinely free and
+                    unlimited. If their ops model fits your team &mdash;
+                    single JAR, single Postgres, good enough docs &mdash;
+                    stay. Our self-host tier matches them but doesn't
+                    materially beat them.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">Breadth</span>
+                <h3>You need their specific feature inventory</h3>
+                <p>
+                    FusionAuth has a few things we don't: passwordless
+                    "magic link" flows, a very rich theming engine, and
+                    WebAuthn as a passwordless primary factor. If those
+                    are must-haves, they are the call.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="when-weldforge">
+    <div class="container">
+        <h2>Pick WeldForge if …</h2>
+        <p class="lead">Where the extra monthly spend pays for itself.</p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">Compliance</span>
+                <h3>Data residency matters — especially POPIA</h3>
+                <p>
+                    FusionAuth Cloud runs in US and EU. WeldForge Cloud
+                    includes Cape Town (AWS af-south-1). If your data has
+                    to stay in South Africa for POPIA or banking-sector
+                    reasons, FusionAuth requires you to self-host in ZA
+                    yourself.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">Protocol</span>
+                <h3>You need first-class SAML IdP mode</h3>
+                <p>
+                    Both platforms speak SAML. The difference is
+                    emphasis &mdash; WeldForge treats per-tenant SAML IdP
+                    as a core capability, with every tenant automatically
+                    exposing <code>/t/{slug}/saml2/idp/metadata</code>
+                    signed with the tenant's own key. FusionAuth supports
+                    SAML IdP but the ergonomics are less tenant-native.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">PKI</span>
+                <h3>You need to issue client certificates</h3>
+                <p>
+                    FusionAuth does not ship internal PKI. WeldForge
+                    issues per-tenant CAs, CRLs and OCSP responses in the
+                    base tier &mdash; if you need mTLS or client-cert
+                    auth for a zero-trust rollout, this is the difference
+                    between writing Bouncy Castle yourself and not.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">Audit</span>
+                <h3>You need HMAC-signed audit webhooks, not log tail</h3>
+                <p>
+                    FusionAuth emits events; integrating them with a SIEM
+                    or webhook receiver is your problem. WeldForge's
+                    outbound webhook subscription with HMAC-SHA256
+                    signatures + retry queue + dead-letter is built in.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">API keys</span>
+                <h3>You want scoped API keys (path + method)</h3>
+                <p>
+                    FusionAuth has API keys, but they are either full-access
+                    or tenant-scoped &mdash; no per-endpoint restriction.
+                    WeldForge keys carry <code>{path, methods}</code>
+                    scopes so a reporting integration can be locked to
+                    read-only on specific endpoints.
+                </p>
+            </div>
+            <div class="card">
+                <span class="kicker">Managed</span>
+                <h3>You just don't want to run an IdP</h3>
+                <p>
+                    Both offer managed hosting. The honest tie-breaker is
+                    support responsiveness, residency, and whether you
+                    want a smaller vendor that answers emails directly
+                    (us) or a larger one with paid premium tiers
+                    (FusionAuth).
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="pricing">
+    <div class="container">
+        <h2>Pricing at common MAU tiers</h2>
+        <p class="lead">
+            Retail list prices for roughly equivalent plans, 2026 Q2.
+            Credit where credit is due: FusionAuth's flat-rate model
+            genuinely wins at scale.
+        </p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Monthly Active Users</th>
+                    <th>WeldForge</th>
+                    <th>FusionAuth</th>
+                    <th>Winner on price</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>500</strong></td>
+                    <td class="price">$0 <span class="overage">Cloud Starter free</span></td>
+                    <td class="price">$125 <span class="overage">Cloud Starter minimum</span></td>
+                    <td><strong>WeldForge</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>1 000</strong></td>
+                    <td class="price">$29 <span class="overage">Cloud Starter</span></td>
+                    <td class="price">$125 <span class="overage">Cloud Starter</span></td>
+                    <td><strong>WeldForge</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>10 000</strong></td>
+                    <td class="price">$149 <span class="overage">Cloud Team</span></td>
+                    <td class="price">$125 <span class="overage">Cloud Starter cap</span></td>
+                    <td><strong>FusionAuth</strong> (by $24)</td>
+                </tr>
+                <tr>
+                    <td><strong>25 000</strong></td>
+                    <td class="price">$524 <span class="overage">Cloud Team + overage</span></td>
+                    <td class="price">$225 <span class="overage">Cloud Essentials</span></td>
+                    <td><strong>FusionAuth</strong> (by $299)</td>
+                </tr>
+                <tr>
+                    <td><strong>100 000</strong></td>
+                    <td class="price">$1 699 <span class="overage">Cloud Business + overage</span></td>
+                    <td class="price">$225 <span class="overage">Cloud Essentials cap</span></td>
+                    <td><strong>FusionAuth</strong> (by $1 474)</td>
+                </tr>
+                <tr>
+                    <td><strong>250 000</strong></td>
+                    <td class="price">$2 499 <span class="overage">Cloud Scale</span></td>
+                    <td class="price">$425 <span class="overage">Cloud Premium</span></td>
+                    <td><strong>FusionAuth</strong> (by $2 074)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout">
+            <span class="kicker">Honest call</span>
+            FusionAuth is the price leader once you cross ~10 000 MAU.
+            If your identity platform is a cost-centre and SAML IdP /
+            PKI / POPIA residency aren't hard requirements, they are the
+            right call. If any of those <em>are</em> hard requirements,
+            the per-MAU pricing on our side buys real capability.
+        </div>
+
+        <div class="cta-row" style="margin-top: 1.5rem;">
+            <a class="btn primary" href="/calculator.html">Run the numbers for your MAU</a>
+        </div>
+    </div>
+</section>
+
+<section id="features">
+    <div class="container">
+        <h2>Feature-for-feature</h2>
+        <p class="lead">Both platforms cover the OIDC + SAML + MFA core; the deltas are in what sits on top.</p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Capability</th>
+                    <th>FusionAuth Essentials</th>
+                    <th>WeldForge Cloud Team</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>OAuth 2.0 / OpenID Connect issuer</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>SAML 2.0 Service Provider + Identity Provider</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>MFA — TOTP / WebAuthn / SMS / backup</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>Passwordless magic links</td><td>&check;</td><td>Via MFA + email only</td></tr>
+                <tr><td>Social logins</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>LDAP / AD upstream</td><td>Enterprise tier</td><td>&check;</td></tr>
+                <tr><td><strong>SCIM 2.0</strong></td><td>Enterprise tier</td><td><strong>&check;</strong></td></tr>
+                <tr><td><strong>Internal PKI (per-tenant CA, CRL, OCSP)</strong></td><td>&mdash;</td><td><strong>&check;</strong></td></tr>
+                <tr><td>HMAC-signed outbound audit webhooks</td><td>Events + custom integration</td><td>&check; built in with retry + DLQ</td></tr>
+                <tr><td>Scoped API keys (path + method)</td><td>Tenant-scoped only</td><td>&check;</td></tr>
+                <tr><td>Service-account tokens with admin role</td><td>API keys only</td><td>&check;</td></tr>
+                <tr><td>Multi-tenancy</td><td>&check; tenants feature</td><td>&check; tenant-scoped queries</td></tr>
+                <tr><td>Themes / login UI customisation</td><td>&check; rich templating</td><td>&check; CSS + logo</td></tr>
+                <tr><td>Kickstart / JSON provisioning</td><td>&check;</td><td>Via admin API</td></tr>
+                <tr><td>POPIA-native data residency</td><td>Self-host in ZA yourself</td><td><strong>&check; Cape Town region</strong></td></tr>
+                <tr><td>Self-host (unlimited, free)</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>Source-available</td><td>Free tier EULA-restricted</td><td>&check;</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="migrate">
+    <div class="container">
+        <h2>Migrating from FusionAuth</h2>
+        <p class="lead">FusionAuth has a solid export API; both systems speak the same wire protocols, so the migration is straightforward.</p>
+
+        <h3>Step 1 &mdash; Export users from FusionAuth</h3>
+        <pre><code>curl -X POST https://fusionauth.example.com/api/user/search \
+    -H "Authorization: $FUSIONAUTH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"search":{"queryString":"*","numberOfResults":10000}}' \
+    &gt; fusionauth-users.json</code></pre>
+        <p>FusionAuth exports bcrypt or PBKDF2 hashes which WeldForge accepts natively &mdash; no password resets.</p>
+
+        <h3>Step 2 &mdash; Export tenants and applications</h3>
+        <pre><code>curl https://fusionauth.example.com/api/tenant \
+    -H "Authorization: $FUSIONAUTH_API_KEY" &gt; tenants.json
+
+curl https://fusionauth.example.com/api/application \
+    -H "Authorization: $FUSIONAUTH_API_KEY" &gt; applications.json</code></pre>
+
+        <h3>Step 3 &mdash; Import to WeldForge</h3>
+        <pre><code>curl -X POST $HOST/api/admin/migrate/fusionauth \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary @tenants.json</code></pre>
+        <p>The converter maps FusionAuth tenants &rarr; WeldForge tenants, applications &rarr; OIDC clients, identity providers &rarr; SAML SPs or social providers, and preserves role assignments.</p>
+
+        <h3>Step 4 &mdash; Update issuer URLs</h3>
+        <p>
+            Change OIDC issuer from
+            <code>https://fusionauth.example.com/</code> to
+            <code>https://sso.weldforge.org/t/&lt;slug&gt;/</code>. The
+            discovery document shape is identical.
+        </p>
+
+        <div class="callout">
+            <span class="kicker">Professional services</span>
+            FusionAuth &rarr; WeldForge migration done by our engineering team:
+            <a href="/pricing.html#services">$3 500 flat</a>, typically 1 week elapsed.
+        </div>
+    </div>
+</section>
+
+<section id="faq">
+    <div class="container">
+        <h2>FAQ</h2>
+
+        <h3>Is FusionAuth really open source?</h3>
+        <p>Not strictly &mdash; the community edition is free but governed by their EULA with specific usage restrictions. WeldForge's self-host tier is similarly source-available under a commercial licence. Call it a tie on that axis.</p>
+
+        <h3>Why does FusionAuth beat you on price?</h3>
+        <p>They charge flat-rate tiers; we charge per-MAU overage above each tier. Our model gives smaller customers a genuinely cheap entry ($29 vs their $125 minimum) and bets that mid-market customers will value the extra built-ins enough to justify the crossover. Above ~25 000 MAU, their model wins on pure dollars.</p>
+
+        <h3>Do you support passwordless magic-link login?</h3>
+        <p>Partially &mdash; via email-based MFA flow, not as a primary-factor replacement. If passwordless-first is central to your UX, FusionAuth is stronger.</p>
+
+        <h3>Will my FusionAuth theme carry over?</h3>
+        <p>No. FusionAuth themes use their own templating engine; WeldForge login customisation is CSS + logo + custom claims. Deep theme work in FusionAuth does not transfer 1:1.</p>
+
+        <h3>Can I use FusionAuth and WeldForge together?</h3>
+        <p>Yes &mdash; federate FusionAuth into WeldForge as an upstream OIDC IdP, or vice versa. Useful during a gradual migration.</p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Next step</span>
+            Use the <a href="/calculator.html">cost calculator</a> to see
+            the dollar delta at your actual MAU. If the price gap matters
+            more than the built-in features, FusionAuth is the right
+            answer &mdash; we'll say so. If the features matter, read the
+            <a href="/pricing.html">pricing page</a> or start on a paid tier at
+            <a href="/order.html?tier=cloud-team">$149/mo</a>.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="/weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html">Get Started</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>
