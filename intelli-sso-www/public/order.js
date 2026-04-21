@@ -1,33 +1,28 @@
 /* ============================================================
    WeldForge order funnel — client wiring.
 
-   Replace the placeholder Stripe Payment Link URLs in CHECKOUT_URLS
-   below with the real ones from the Stripe dashboard once the
-   WeldForge (Pty) Ltd Stripe account is live.
+   Self-serve tiers POST to the backend order endpoint on
+   sso.weldforge.org, which creates a pending_orders row, picks the
+   cheapest configured gateway, creates a checkout session with it,
+   and returns the hosted-checkout URL. We then redirect.
 
-   ORDERS_WEBHOOK can optionally be pointed at a Formspree / Basin /
-   Getform endpoint that will email the full order metadata to the
-   sales inbox — Stripe Checkout alone does not surface the tenant
-   slug, region and billing-cycle fields back to the provisioning
-   script, so this is how those reach the operator today (Phase 1).
-   Phase 2 replaces the mailto fallback + Formspree hop with a real
-   backend webhook on sso.weldforge.org.
-
-   Until Stripe URLs are filled in, every self-serve click falls back
-   to a mailto: so no button is ever dead.
+   While BACKEND_ENABLED is false (no live Stripe account + no Pty
+   Ltd yet) every self-serve click degrades cleanly to a mailto: so
+   no button on the marketing site is ever dead. Flip the flag the
+   day Stripe is live.
    ============================================================ */
 (function () {
     'use strict';
 
-    /* ---- Config (edit when Stripe goes live) ---- */
-    var CHECKOUT_URLS = {
-        'self-host-supported':  'https://buy.stripe.com/PLACEHOLDER_SELF_HOST_SUPPORTED',
-        'cloud-starter':        'https://buy.stripe.com/PLACEHOLDER_CLOUD_STARTER',
-        'cloud-team':           'https://buy.stripe.com/PLACEHOLDER_CLOUD_TEAM',
-        'cloud-business':       'https://buy.stripe.com/PLACEHOLDER_CLOUD_BUSINESS'
-    };
-    var OSS_URL = 'https://github.com/christiaanwvermaak/intelli-sso';
-    var SALES_EMAIL = 'sales@weldforge.org';
+    /* ---- Config ---------------------------------------------- */
+
+    // Flip to true once the WeldForge (Pty) Ltd Stripe account is
+    // live and the sso.weldforge.org backend has a gateway configured.
+    var BACKEND_ENABLED = false;
+
+    var API_BASE      = 'https://sso.weldforge.org';
+    var OSS_URL       = 'https://github.com/christiaanwvermaak/intelli-sso';
+    var SALES_EMAIL   = 'sales@weldforge.org';
     var ORDERS_WEBHOOK = '';
 
     /* ---- State ---- */
@@ -108,24 +103,68 @@
         return 'mailto:' + SALES_EMAIL + '?subject=' + subject + '&body=' + body;
     }
 
+    function postOrderToBackend(payload) {
+        // Shape matches CreateOrderRequest in the Spring Boot backend.
+        // billingCountry defaults to ZA — refinement once we add a
+        // country selector to the form.
+        var body = {
+            tier:           payload.tier,
+            organisation:   payload.organisation,
+            contactName:    payload.contactName,
+            contactEmail:   payload.contactEmail,
+            tenantSlug:     payload.tenantSlug,
+            region:         payload.region || null,
+            billingCycle:   payload.billingCycle || 'MONTHLY',
+            currency:       'USD',
+            billingCountry: 'ZA',
+            termsAccepted:  payload.termsAccepted
+        };
+        return fetch(API_BASE + '/api/public/orders', {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(function (resp) {
+            if (!resp.ok) {
+                return resp.json()
+                    .catch(function () { return { message: 'order failed (HTTP ' + resp.status + ')' }; })
+                    .then(function (err) {
+                        throw new Error(err.message || 'order failed (HTTP ' + resp.status + ')');
+                    });
+            }
+            return resp.json();
+        });
+    }
+
     function redirectToCheckout(tier, payload) {
-        var url = CHECKOUT_URLS[tier];
-        if (!url || url.indexOf('PLACEHOLDER') !== -1) {
+        if (!BACKEND_ENABLED) {
+            // Backend not yet wired — degrade to mailto so no button
+            // on the site is dead while we finish business setup.
             window.location.href = buildMailtoFallback(tier, payload);
             return;
         }
-        var sep = url.indexOf('?') === -1 ? '?' : '&';
-        var params = new URLSearchParams({
-            prefilled_email: payload.contactEmail || '',
-            client_reference_id: encodeURIComponent(JSON.stringify({
-                organisation: payload.organisation,
-                contactName:  payload.contactName,
-                tenantSlug:   payload.tenantSlug,
-                region:       payload.region,
-                billingCycle: payload.billingCycle
-            })).slice(0, 200)
-        });
-        window.location.href = url + sep + params.toString();
+        $('submit-btn').disabled = true;
+        $('submit-btn').textContent = 'Creating your order\u2026';
+        postOrderToBackend(payload)
+            .then(function (resp) {
+                if (resp && resp.checkoutUrl) {
+                    window.location.href = resp.checkoutUrl;
+                } else {
+                    throw new Error('backend did not return a checkout URL');
+                }
+            })
+            .catch(function (e) {
+                $('submit-btn').disabled = false;
+                $('submit-btn').textContent = 'Continue to checkout';
+                var banner = document.createElement('div');
+                banner.className = 'field-error';
+                banner.textContent = 'Sorry — ' + (e.message || 'could not start checkout') +
+                    '. Falling back to email us directly\u2026';
+                $('order-form').prepend(banner);
+                setTimeout(function () {
+                    window.location.href = buildMailtoFallback(tier, payload);
+                }, 1500);
+            });
     }
 
     /* ---- Tier-select click ---- */

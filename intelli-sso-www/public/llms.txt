@@ -54,6 +54,8 @@ End-user authentication is separate: `POST /api/auth/login`, `POST /api/auth/reg
 - [Keycloak comparison](https://www.weldforge.org/compare/keycloak.html): TCO comparison, when to keep Keycloak, when to switch, migration guide
 - [FusionAuth comparison](https://www.weldforge.org/compare/fusionauth.html): honest price comparison (FusionAuth wins at scale), feature deltas, migration guide
 - [Clerk comparison](https://www.weldforge.org/compare/clerk.html): when React-first teams outgrow Clerk (enterprise SAML, SCIM, self-host), feature matrix, migration guide
+- [Blog](https://www.weldforge.org/blog/): technical essays from the WeldForge team
+- [Self-hosting SSO in 2026 — a pragmatic guide](https://www.weldforge.org/blog/self-hosting-sso-in-2026.html): 2500-word deep-dive on when to self-host, which OSS options (Keycloak, Authentik, Zitadel, Ory, FusionAuth CE) hold up, and operational traps
 - [For AI agents & bots](https://www.weldforge.org/agents.html): machine-readable integration guide
 - [Service manifest (machine-readable)](https://www.weldforge.org/ai-manifest.json)
 - [Schema.org structured data](https://www.weldforge.org/ld.json)

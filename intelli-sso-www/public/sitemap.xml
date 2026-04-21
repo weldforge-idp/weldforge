@@ -85,4 +85,14 @@
         <priority>0.9</priority>
         <changefreq>monthly</changefreq>
     </url>
+    <url>
+        <loc>https://www.weldforge.org/blog/</loc>
+        <priority>0.85</priority>
+        <changefreq>weekly</changefreq>
+    </url>
+    <url>
+        <loc>https://www.weldforge.org/blog/self-hosting-sso-in-2026.html</loc>
+        <priority>0.9</priority>
+        <changefreq>monthly</changefreq>
+    </url>
 </urlset>

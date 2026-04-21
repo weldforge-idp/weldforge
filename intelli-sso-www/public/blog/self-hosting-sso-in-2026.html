@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Self-hosting SSO in 2026 — a pragmatic guide · WeldForge</title>
+<meta name="description" content="What self-hosting an identity platform actually costs in 2026, which open-source options are real contenders (Keycloak, Authentik, Zitadel, FusionAuth CE, WeldForge, Ory), and the operational traps you will hit in month three.">
+<meta name="keywords" content="self-hosted SSO, self-hosted IdP, Keycloak alternative, Authentik, Zitadel, Ory Hydra, FusionAuth Community, self-hosted identity platform, Auth0 alternative 2026, multi-tenant SSO self-host">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/styles.css">
+<link rel="alternate" type="application/ld+json" href="/ld.json">
+<link rel="canonical" href="https://www.weldforge.org/blog/self-hosting-sso-in-2026.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Self-hosting SSO in 2026 — a pragmatic guide">
+<meta property="og:description" content="What self-hosting SSO actually costs in 2026, which OSS options hold up, and the operational traps you hit in month three.">
+<meta property="og:url" content="https://www.weldforge.org/blog/self-hosting-sso-in-2026.html">
+<meta property="article:published_time" content="2026-04-21T12:00:00+02:00">
+<meta property="article:author" content="WeldForge">
+<meta property="article:tag" content="SSO">
+<meta property="article:tag" content="self-hosted">
+<meta property="article:tag" content="identity">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="/weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html" class="nav-cta">Get Started</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<article class="blog-post">
+
+<section class="hero">
+    <div class="container">
+        <div class="blog-meta">
+            <span class="blog-date">2026-04-21</span>
+            <span class="blog-tags">self-host &middot; SSO &middot; OIDC &middot; SAML &middot; Keycloak &middot; Authentik &middot; Zitadel</span>
+        </div>
+        <h1>Self-hosting SSO in 2026 &mdash;<br><span class="accent">a pragmatic guide.</span></h1>
+        <p class="lead">
+            Every identity platform vendor tells you that self-hosting is
+            hard. They are not wrong, but they are also selling you
+            something. Here is what self-hosting an identity platform
+            actually costs in 2026, which open-source options are real
+            contenders, and the specific operational traps you will hit
+            in month three.
+        </p>
+    </div>
+</section>
+
+<section>
+    <div class="container narrow-content">
+
+<h2>The honest reason you are reading this</h2>
+<p>
+    You are almost certainly here because someone in a meeting brought up
+    the Auth0 bill, or because a compliance question landed on your desk
+    and "we are on third-party-hosted identity" was the wrong answer, or
+    because your platform team wants to keep shipping product instead of
+    negotiating Okta seat licences.
+</p>
+<p>
+    So: should you self-host?
+</p>
+<p>
+    Maybe. Probably not. Definitely not for the reasons you think.
+</p>
+
+<h2>When self-hosting is the right call</h2>
+<p>
+    There are four genuinely good reasons to self-host an identity platform
+    in 2026:
+</p>
+<ul>
+    <li>
+        <strong>Regulatory or contractual data-residency constraints.</strong>
+        POPIA, GDPR, HIPAA, PCI-DSS, or a customer that contractually forbids
+        third-party-hosted auth. If the data literally cannot leave your
+        infrastructure, self-host is not a choice; it is the constraint.
+    </li>
+    <li>
+        <strong>Your user volume makes managed cloud uneconomic.</strong>
+        Above roughly 250 000 MAU, every per-MAU-priced vendor starts to
+        look painful. Flat-rate vendors (FusionAuth, Stytch) remain
+        reasonable; Auth0, Clerk and WorkOS do not. If you are at that
+        scale and price-sensitive, self-host pays back in a year.
+    </li>
+    <li>
+        <strong>You genuinely have a platform team.</strong> If identity
+        is a first-class concern for two or more engineers in your org,
+        and those engineers enjoy operating backend infrastructure, the
+        control you get from self-host compounds over time. Custom
+        claim transforms, bespoke MFA flows, unusual federation patterns
+        all get easier.
+    </li>
+    <li>
+        <strong>Your identity stack is a differentiator.</strong> If you
+        are building a product in a regulated industry where identity is
+        the product (banking, healthcare, government), you want to own
+        the audit surface, the key material, and the upgrade cadence.
+        Third-party hosting is a rough fit.
+    </li>
+</ul>
+
+<h2>When self-hosting is the wrong call</h2>
+<p>
+    The reasons people choose self-host that turn into regret within 18
+    months:
+</p>
+<ul>
+    <li>
+        <strong>"It is free."</strong> It is not. The open-source licence
+        is free. The engineering time to run it in production is not.
+        More on this below.
+    </li>
+    <li>
+        <strong>"Auth0 is expensive."</strong> Yes, and the calculator at
+        <a href="/calculator.html">weldforge.org/calculator</a> will tell
+        you <em>exactly</em> how much you save vs Auth0 on a managed
+        alternative that is not Auth0. Moving to Clerk or FusionAuth is
+        almost always cheaper and faster than self-hosting.
+    </li>
+    <li>
+        <strong>"We need full control."</strong> Most teams that say this
+        mean "we want the option to customise one specific thing." Almost
+        every managed vendor supports that one specific thing via
+        webhooks or custom claims. Ask them first.
+    </li>
+    <li>
+        <strong>"We will just run Keycloak in Kubernetes."</strong>
+        Keycloak is real software and Kubernetes is a real platform.
+        Neither of them solves the problems you are self-hosting to
+        solve by themselves. You still need backup, monitoring, upgrade
+        testing, TLS rotation, database sizing, Infinispan cache tuning,
+        and someone to answer pages at 3am.
+    </li>
+</ul>
+
+<h2>What self-hosting actually costs in 2026</h2>
+<p>
+    Let us run the numbers for a typical mid-market workload: 25 000
+    monthly active users, two availability zones, Postgres backing
+    store, 99.9% SLA target. 2026 prices.
+</p>
+
+<table class="pricing">
+    <thead>
+        <tr>
+            <th>Cost driver</th>
+            <th>Year 1 (setup + ops)</th>
+            <th>Year 2 onwards</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Cloud infrastructure (2 × t3.medium + db.t4g.micro RDS + ALB + storage)</td>
+            <td class="price">~$3 600 / yr</td>
+            <td class="price">~$3 600 / yr</td>
+        </tr>
+        <tr>
+            <td>Engineering time &mdash; initial deployment + hardening</td>
+            <td class="price">~3 weeks of 1 FTE = <strong>~$17 000</strong></td>
+            <td>&mdash;</td>
+        </tr>
+        <tr>
+            <td>Engineering time &mdash; ongoing ops (upgrades, monitoring, on-call)</td>
+            <td class="price">~15% of 1 FTE = <strong>~$30 000</strong></td>
+            <td class="price">~15% of 1 FTE = <strong>~$30 000</strong></td>
+        </tr>
+        <tr>
+            <td>Engineering time &mdash; feature gaps you build yourself (SCIM SPIs, webhook plumbing, custom themes)</td>
+            <td class="price">~4&ndash;10 weeks = <strong>~$22&ndash;55 000</strong></td>
+            <td class="price">~1 week / yr maintenance</td>
+        </tr>
+        <tr>
+            <td>Commercial support (optional)</td>
+            <td class="price">$3 000 &ndash; $18 000 / yr depending on vendor</td>
+            <td class="price">same</td>
+        </tr>
+        <tr>
+            <td><strong>Total (first year, mid-estimate)</strong></td>
+            <td class="price"><strong>~$73 600</strong></td>
+            <td class="price"><strong>~$37 000 / yr</strong></td>
+        </tr>
+    </tbody>
+</table>
+
+<p>
+    Managed cloud equivalents for the same workload (25k MAU, 2026 list
+    prices): Auth0 ~$13 200/yr, WeldForge Cloud Team ~$6 300/yr, Clerk
+    ~$3 900/yr, FusionAuth Cloud Essentials ~$2 700/yr. The price delta
+    is real. <strong>Before you self-host, you are deliberately choosing
+    to pay 2&ndash;10&times; more per year for control you may not need.</strong>
+</p>
+
+<h2>The open-source options that are real contenders in 2026</h2>
+<p>
+    Here is the honest field. None of these are bad software; they have
+    different shapes and different audiences.
+</p>
+
+<h3>Keycloak</h3>
+<p>
+    The default answer. Red Hat-backed, Apache 2.0, massive community,
+    battle-tested in serious production. SAML and OIDC are first-class,
+    user federation is comprehensive (LDAP, Kerberos, custom storage
+    SPIs), the admin UI was recently replaced and is noticeably improved.
+    You will run into three specific pain points over time:
+</p>
+<ul>
+    <li>
+        <strong>Upgrade pain.</strong> The Quarkus migration broke custom
+        themes and SPIs for a lot of teams. Major version jumps routinely
+        require theme rewrites and occasionally data-model fixes. If your
+        only Keycloak person leaves, the next upgrade becomes terrifying.
+    </li>
+    <li>
+        <strong>Missing things you will build.</strong> SCIM 2.0 is via
+        community extensions. Internal PKI is not offered. HMAC-signed
+        audit webhooks require an SPI. Your team will spend months
+        building this infrastructure.
+    </li>
+    <li>
+        <strong>Memory footprint.</strong> Each Keycloak pod wants 1.5&ndash;2 GB
+        minimum. With HA (2 pods) plus Infinispan cache and a Postgres
+        backing, you are at 4 GB of RAM before any real load.
+    </li>
+</ul>
+<p>Still the right call for most mature platform teams. See the <a href="/compare/keycloak.html">full Keycloak comparison</a>.</p>
+
+<h3>Authentik</h3>
+<p>
+    Newer, Python-based, more opinionated. Much cleaner admin UI than
+    Keycloak ever was. Strong on OIDC + SAML, good MFA coverage (TOTP,
+    WebAuthn, Duo, SMS). Community edition is unlimited and free.
+</p>
+<ul>
+    <li>
+        Good fit if you like Django-shaped software and your team reads
+        Python more comfortably than Java.
+    </li>
+    <li>
+        Smaller community than Keycloak &mdash; if you have a weird
+        federation scenario, you are more likely to end up reading source
+        code yourself.
+    </li>
+    <li>
+        SCIM is supported. PKI is not. Audit events are there but
+        webhook export is DIY.
+    </li>
+</ul>
+
+<h3>Zitadel</h3>
+<p>
+    Rust + Go, event-sourced architecture, cloud-native-first. Probably
+    the most modern of the pack. Good performance characteristics,
+    solid multi-tenancy (they call it "instances" and "organizations").
+    Apache 2.0.
+</p>
+<ul>
+    <li>
+        If you want event-sourcing semantics out of the box and your
+        team appreciates that style of design, Zitadel is the pick.
+    </li>
+    <li>
+        Still maturing. Some edge-case protocol features (SAML
+        encryption variants, exotic OIDC flows) lag Keycloak.
+    </li>
+    <li>
+        First-party cloud (zitadel.cloud) is a real option too &mdash;
+        unusual for an OSS identity vendor.
+    </li>
+</ul>
+
+<h3>Ory (Kratos / Hydra / Keto / Oathkeeper)</h3>
+<p>
+    The power-user option. A set of composable services that together
+    form an identity platform &mdash; Kratos for user management, Hydra
+    for OAuth2 / OIDC, Keto for permissions, Oathkeeper for API
+    gateway. Apache 2.0.
+</p>
+<ul>
+    <li>
+        The composability is both the feature and the burden. If you
+        want a full IdP you are running four services plus their data
+        stores.
+    </li>
+    <li>
+        No admin UI out of the box &mdash; the implication is that you
+        build one, or use Ory's commercial console.
+    </li>
+    <li>
+        Best fit for teams that want a build-it-yourself architecture
+        with strong primitives. Worst fit for teams that want an
+        out-of-the-box SSO.
+    </li>
+</ul>
+
+<h3>FusionAuth Community Edition</h3>
+<p>
+    Single Java binary, single Postgres, free for unlimited users on
+    community tier. Strong on OIDC + SAML, passwordless magic-link
+    flows are first class, themes are rich.
+</p>
+<ul>
+    <li>
+        Not strictly open-source &mdash; community edition is free under
+        a permissive EULA with specific usage restrictions. Most teams
+        that do not care about OSS-vs-source-available also do not run
+        into the EULA limits.
+    </li>
+    <li>
+        Flat-rate cloud tier is genuinely the price leader at scale. If
+        you are self-hosting to save money at 100k+ MAU, check the cloud
+        numbers first.
+    </li>
+    <li>
+        SCIM is Enterprise-tier only even for self-host.
+    </li>
+</ul>
+
+<h3>WeldForge self-host (Developer tier)</h3>
+<p>
+    Full disclosure: we make this one. Source-available, free for
+    self-host evaluation and development. Spring Boot + Postgres +
+    Angular admin console. Per-tenant OIDC issuer, SAML SP + IdP,
+    SCIM 2.0, internal PKI, HMAC-signed audit webhooks, scoped API
+    keys &mdash; all in the base binary, no extensions required.
+</p>
+<ul>
+    <li>
+        Newer entrant than Keycloak. Fewer production deployments at
+        the time of writing. If extreme maturity is a non-negotiable,
+        Keycloak wins.
+    </li>
+    <li>
+        Has a first-party managed cloud option if you decide self-host
+        is not worth it after all &mdash; smooth upgrade path.
+    </li>
+    <li>
+        POPIA-native data residency out of the box in Cape Town.
+    </li>
+</ul>
+
+<h2>The operational traps you will hit</h2>
+<p>
+    Independent of which platform you pick, these are the problems that
+    bite every self-hosted IdP team somewhere around month three:
+</p>
+
+<h3>1. Signing-key rotation</h3>
+<p>
+    JWT signing keys rotate on a schedule, and downstream clients cache
+    the JWKS for minutes to hours. If you rotate without overlap (both
+    old and new keys served in JWKS simultaneously), clients fail to
+    verify valid tokens issued during the transition window. Every
+    serious IdP supports key rotation with overlap; every self-hosted
+    IdP team has broken production exactly once by forgetting the
+    overlap flag.
+</p>
+
+<h3>2. Session invalidation on role change</h3>
+<p>
+    User gets promoted to admin; the session JWT is still the old one
+    with the old role. JWTs are stateless and cannot be revoked without
+    a shared state. You need a token-version stored per user that the
+    filter chain checks. Keycloak has "not-before policies" for this;
+    most implementations you build yourself do not.
+</p>
+
+<h3>3. The break-glass account</h3>
+<p>
+    When LDAP is unreachable because of a DNS failure, or Postgres
+    fails over, or Keycloak itself crashes, you need a way in that does
+    not depend on the broken system. A local admin account on a
+    hardcoded backup path. Every mature IdP has one. Teams building
+    their own usually forget until the incident.
+</p>
+
+<h3>4. Cache consistency across nodes</h3>
+<p>
+    Your IdP runs multi-pod behind a load balancer. User logs in, hits
+    pod A, gets a session. On the next request, load balancer sends
+    them to pod B. Does pod B know about the session? Depends on your
+    cache layer. Keycloak uses Infinispan; Authentik uses Redis;
+    whatever you build yourself probably uses database polls until it
+    falls over under load.
+</p>
+
+<h3>5. Password-hash migration</h3>
+<p>
+    You migrated from Auth0 (bcrypt cost 10) to self-host. A year later
+    you want to bump to bcrypt cost 12. Users who have not logged in
+    since the migration still have their old hash. You cannot bulk
+    rehash without knowing the plaintext. The solution is a lazy
+    migration: on successful login, rehash and update the row. Most
+    teams do not remember to do this and end up with a hash-cost fleet
+    that takes years to fully migrate.
+</p>
+
+<h3>6. SAML metadata signature</h3>
+<p>
+    Your IdP publishes SAML metadata at
+    <code>/saml2/idp/metadata</code>. Downstream SPs (Okta, Azure AD,
+    Salesforce) cache it. You rotate the signing cert; the metadata
+    updates; the SPs do not refresh; every SSO login starts failing.
+    Mature IdPs publish metadata with multiple signing certificates in
+    parallel during rotation. Self-built ones rotate hard and break
+    everything.
+</p>
+
+<h2>A minimal self-host stack that actually runs</h2>
+<p>
+    If you are going to do this, here is the shape that works in
+    practice:
+</p>
+<pre><code># docker-compose.yml — the minimum viable self-hosted SSO
+version: '3.8'
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: change_me
+      POSTGRES_DB: sso
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+
+  sso:
+    image: &lt;your-idp-image&gt;
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/sso
+      DB_USER: postgres
+      DB_PASS: change_me
+      JWT_SECRET: &lt;rotate-me&gt;
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - "443:443"
+    depends_on: [sso]
+
+volumes:
+  pgdata:
+</code></pre>
+<p>
+    Anything less than this does not survive a restart. Anything
+    massively more than this is probably overengineered. When you go
+    to Kubernetes, the shape is the same &mdash; add a StatefulSet for
+    Postgres, a Deployment for the IdP pods, a Service + Ingress, and
+    cert-manager for TLS.
+</p>
+
+<h2>How to decide</h2>
+<p>
+    A useful heuristic: count the number of engineers on your team who
+    have shipped a production identity integration in the last two
+    years. Multiply by two. If that number is at least one, you can
+    self-host. If it is zero, you cannot.
+</p>
+<p>
+    Another useful heuristic: if the managed-cloud cost for your
+    workload is under $10 000 per year, self-hosting is almost always
+    the wrong answer. The ops time alone costs more than the
+    subscription.
+</p>
+<p>
+    Above $50 000 per year on managed cloud, self-hosting starts to
+    look interesting &mdash; but only if you have the team. Without the
+    team, you end up with a half-operated production system and an
+    identity story that is worse than what you left.
+</p>
+
+<h2>The portability question</h2>
+<p>
+    Ask this before you commit to any platform &mdash; self-hosted or
+    managed: <strong>if I want to leave you in two years, how does the
+    data come out?</strong>
+</p>
+<p>
+    Good answers:
+</p>
+<ul>
+    <li>"We export everything as a standard SCIM dump plus password hashes in PHC format."</li>
+    <li>"Here is the Postgres schema. Dump it yourself."</li>
+    <li>"We support every standard wire protocol &mdash; if you change IdPs, your downstream apps do not change."</li>
+</ul>
+<p>
+    Bad answers:
+</p>
+<ul>
+    <li>"We have a proprietary export format."</li>
+    <li>"Passwords are hashed with our internal algorithm."</li>
+    <li>"Your integration uses our SDK, so you would need to rewrite."</li>
+</ul>
+<p>
+    Keycloak, Authentik, Zitadel, FusionAuth and WeldForge all give good
+    answers here. Some commercial platforms give bad ones. Check before
+    you sign.
+</p>
+
+<h2>What we would actually do if starting fresh</h2>
+<p>
+    If someone asked us today: "we are 20 engineers, 15 000 MAU, one
+    platform engineer, no special compliance constraints &mdash; what
+    identity platform?"
+</p>
+<p>
+    The honest answer: pay Clerk or FusionAuth for the first two years.
+    The managed-cloud cost is a rounding error compared to what your
+    platform engineer's time is worth, and you will ship faster.
+</p>
+<p>
+    At 100 000 MAU, revisit. By then, you will know which features you
+    actually use, which you wish you had, and which you never touched.
+    Self-hosting at that point is an informed decision, not a cost
+    optimisation based on spreadsheet projections.
+</p>
+
+<h2>Where WeldForge fits</h2>
+<p>
+    We built WeldForge because the existing options had a specific
+    shape we did not love: Auth0 was expensive, Keycloak was
+    operationally heavy, Clerk was React-first, FusionAuth did not
+    include SAML IdP emphasis or internal PKI. We wanted a platform
+    where the base paid tier included every protocol enterprise buyers
+    ask for, hosted in a region that satisfies POPIA natively, with an
+    honest self-host option for teams that genuinely want one.
+</p>
+<p>
+    If that shape matches your problem, the <a href="/pricing.html">pricing
+    page</a> explains the tiers and the <a href="/deployment.html">deployment
+    models</a> page covers where it can run. The <a href="/compare/">comparison
+    index</a> has honest head-to-head write-ups against the alternatives
+    &mdash; including ones where we admit the other option wins.
+</p>
+<p>
+    And if the shape does not match, one of the six alternatives above
+    almost certainly does. The point of this post was never to sell
+    WeldForge; it was to help you self-host well if you go that route,
+    or to help you decide honestly that you should not.
+</p>
+
+<p style="margin-top: 3rem; color: var(--ink-dim); font-size: 0.95rem;">
+    <em>Discuss on <a href="https://news.ycombinator.com">Hacker News</a>,
+    <a href="https://reddit.com/r/selfhosted">r/selfhosted</a>, or
+    <a href="https://dev.to">Dev.to</a>. Corrections and follow-up
+    questions to <a href="mailto:hello@weldforge.org">hello@weldforge.org</a>.</em>
+</p>
+
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Next up on the blog</span>
+            Writing a SAML IdP in Java with OpenSAML 4; the economics of
+            multi-tenancy at the database layer; what we learned building
+            a payment-gateway abstraction that picks the cheapest provider
+            per transaction. Watch the <a href="/blog/">blog index</a> or
+            the <a href="https://github.com/christiaanwvermaak/intelli-sso">GitHub repo</a>.
+        </div>
+    </div>
+</section>
+
+</article>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="/weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html">Get Started</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>
