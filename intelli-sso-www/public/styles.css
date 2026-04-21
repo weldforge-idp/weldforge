@@ -313,6 +313,248 @@ table.pricing td .overage {
     margin-bottom: 0.5rem;
 }
 
+/* ---- Cost calculator --------------------------------------- */
+
+.calc-controls {
+    background: var(--forge-card);
+    border: 1px solid var(--forge-border);
+    border-radius: 6px;
+    padding: 1.75rem;
+    margin: 1rem 0 2rem;
+}
+.calc-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 0.75rem;
+}
+.calc-label .calc-value {
+    color: var(--amber-weld);
+    font-family: 'Space Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+.calc-controls input[type="range"] {
+    width: 100%;
+    accent-color: var(--blue-steel);
+    height: 6px;
+    margin: 0.5rem 0;
+}
+.calc-slider-ticks {
+    display: flex;
+    justify-content: space-between;
+    color: var(--ink-faint);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+    margin-bottom: 1.25rem;
+}
+.calc-cycle {
+    border: none;
+    padding: 0;
+    margin-top: 0.5rem;
+    color: var(--ink-dim);
+    font-size: 0.92rem;
+}
+.calc-cycle legend {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    padding: 0;
+    margin-bottom: 0.5rem;
+}
+.calc-cycle label {
+    display: inline-block;
+    margin-right: 1.5rem;
+    cursor: pointer;
+}
+
+.calc-results { margin: 1rem 0 1.5rem; }
+.calc-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 120px 140px;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.8rem 1rem;
+    background: var(--forge-card);
+    border: 1px solid var(--forge-border);
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    transition: border-color 0.2s;
+}
+.calc-row.is-weldforge {
+    border-color: var(--blue-steel-dim);
+    background: rgba(74, 143, 245, 0.05);
+}
+.calc-row.is-cheapest .calc-row-monthly {
+    color: var(--amber-weld);
+}
+.calc-row-label {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    color: #fff;
+    font-size: 1rem;
+}
+.calc-row-bar {
+    height: 12px;
+    background: var(--forge-border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.calc-row.is-weldforge .calc-row-bar-fill {
+    background: linear-gradient(90deg, var(--blue-steel), #6EA7FF);
+}
+.calc-row-bar-fill {
+    display: block;
+    height: 100%;
+    background: var(--ink-faint);
+    transition: width 0.25s;
+}
+.calc-row-monthly {
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    color: var(--ink);
+    font-size: 1.05rem;
+    text-align: right;
+}
+.calc-row-unit { color: var(--ink-faint); font-weight: 400; font-size: 0.85rem; }
+.calc-row-annual {
+    font-family: 'Space Mono', monospace;
+    color: var(--ink-dim);
+    font-size: 0.9rem;
+    text-align: right;
+}
+.calc-savings {
+    margin-top: 1.25rem;
+    padding: 1rem 1.25rem;
+    background: rgba(232, 146, 31, 0.08);
+    border-left: 3px solid var(--amber-weld);
+    border-radius: 3px;
+    color: var(--ink);
+    font-size: 1.05rem;
+}
+.calc-savings strong { color: var(--amber-weld); }
+
+.calc-share {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+.calc-feedback {
+    color: var(--amber-weld);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.9rem;
+}
+
+@media (max-width: 720px) {
+    .calc-row {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto auto;
+    }
+    .calc-row-bar { grid-column: 1 / -1; order: 3; }
+    .calc-row-annual { order: 4; }
+}
+
+/* ---- Nav CTA button ---------------------------------------- */
+
+nav.primary a.nav-cta {
+    border: 1px solid var(--amber-weld);
+    color: var(--amber-weld);
+    padding: 0.35rem 0.85rem;
+    border-radius: 3px;
+    transition: all 0.15s;
+}
+nav.primary a.nav-cta:hover,
+nav.primary a.nav-cta.active {
+    background: var(--amber-weld);
+    color: var(--forge);
+    border-bottom: 1px solid var(--amber-weld);
+    padding-bottom: 0.35rem;
+}
+
+/* ---- Order form layout ------------------------------------- */
+
+.tier-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    margin: 1.5rem 0;
+}
+.tier-option {
+    background: var(--forge-card);
+    border: 1px solid var(--forge-border);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.tier-option:hover,
+.tier-option.highlighted,
+.tier-option.selected {
+    border-color: var(--blue-steel-dim);
+    transform: translateY(-2px);
+}
+.tier-option.selected { background: rgba(74, 143, 245, 0.06); }
+.tier-option .price {
+    font-family: 'Space Mono', monospace;
+    color: var(--amber-weld);
+    font-weight: 700;
+    margin: 0.75rem 0;
+}
+
+.order-form { max-width: 600px; margin-top: 1rem; }
+.form-row { margin-bottom: 1.25rem; }
+.form-row label {
+    display: block;
+    font-weight: 500;
+    color: #fff;
+    margin-bottom: 0.4rem;
+    font-size: 0.95rem;
+}
+.form-row .hint {
+    font-weight: 400;
+    color: var(--ink-dim);
+    font-size: 0.85rem;
+}
+.form-row input[type="text"],
+.form-row input[type="email"],
+.form-row select,
+.form-row textarea {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    background: var(--forge);
+    border: 1px solid var(--forge-border);
+    border-radius: 3px;
+    color: var(--ink);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+}
+.form-row input:focus,
+.form-row select:focus,
+.form-row textarea:focus {
+    outline: 1px solid var(--blue-steel);
+    border-color: var(--blue-steel);
+}
+.form-row.checkbox label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-weight: 400;
+    color: var(--ink);
+}
+.form-row .field-error {
+    color: #ff6b6b;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+    min-height: 1em;
+}
+
 /* ---- Footer ------------------------------------------------ */
 
 footer.site-footer {

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Identity Platform Cost Calculator — WeldForge vs Auth0, Clerk, FusionAuth</title>
+<meta name="description" content="Estimate your monthly identity-platform bill. Enter your MAU and see WeldForge vs Auth0, Clerk, and FusionAuth side by side, with annual savings and shareable URL.">
+<meta name="keywords" content="Auth0 pricing calculator, Clerk pricing calculator, identity platform cost calculator, WeldForge vs Auth0, MAU pricing, IdP cost comparison">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/styles.css">
+<link rel="alternate" type="application/ld+json" href="/ld.json">
+<link rel="canonical" href="https://www.weldforge.org/calculator.html">
+<script src="/calculator.js" defer></script>
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="/weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html" class="nav-cta">Get Started</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>What do you actually <span class="accent">pay per month</span> for an IdP?</h1>
+        <p class="lead">
+            Drag the slider to your MAU count. We compute each vendor's
+            monthly list-price bill using publicly-documented pricing as of
+            2026&nbsp;Q2. Your URL updates as you move &mdash; copy it to
+            share the exact figures with your CFO.
+        </p>
+    </div>
+</section>
+
+<section id="calc">
+    <div class="container">
+        <div class="calc-controls">
+            <label for="mau-input" class="calc-label">
+                Monthly Active Users
+                <span class="calc-value" id="mau-display">10 000</span>
+            </label>
+            <input type="range"
+                   id="mau-input"
+                   min="100"
+                   max="500000"
+                   step="100"
+                   value="10000"
+                   aria-describedby="mau-display">
+            <div class="calc-slider-ticks">
+                <span>100</span>
+                <span>1k</span>
+                <span>10k</span>
+                <span>50k</span>
+                <span>250k</span>
+                <span>500k</span>
+            </div>
+
+            <fieldset class="calc-cycle">
+                <legend>Billing cycle</legend>
+                <label><input type="radio" name="cycle" value="annual" checked> Annual</label>
+                <label><input type="radio" name="cycle" value="monthly"> Monthly (+20% on WeldForge)</label>
+            </fieldset>
+        </div>
+
+        <div class="calc-results" id="calc-results" aria-live="polite">
+            <!-- rows injected by /calculator.js -->
+        </div>
+
+        <div class="calc-share">
+            <button id="copy-link" class="btn ghost" type="button">Copy link to these numbers</button>
+            <span id="copy-feedback" class="calc-feedback" aria-live="polite"></span>
+        </div>
+    </div>
+</section>
+
+<section id="explain">
+    <div class="container">
+        <h2>How we're computing each number</h2>
+        <p class="lead">Every figure is list price from the vendor's own pricing page, no discounts, no contract negotiation, no "call us for Enterprise."</p>
+
+        <div class="card-grid">
+            <div class="card">
+                <span class="kicker">WeldForge</span>
+                <h3>Cloud tiers + overage</h3>
+                <p>
+                    Starter $29/mo &le; 1 000 MAU. Team $149/mo + $0.025/MAU over 10 000.
+                    Business $699/mo + $0.02/MAU over 50 000. Scale $2 499/mo + $0.012/MAU over 250 000.
+                    Annual billing; +20% if you pay monthly.
+                </p>
+                <p><a href="/pricing.html">Full pricing &rarr;</a></p>
+            </div>
+            <div class="card">
+                <span class="kicker">Auth0</span>
+                <h3>B2C Essentials / Professional</h3>
+                <p>
+                    $240/mo up to 1 000 MAU, then ~$0.028/MAU overage to 7 500. Tier jumps to
+                    B2C Professional around 10 000 MAU at $1 500/mo base with its own overage
+                    curve. Enterprise required for SAML IdP, SCIM, custom domain on most plans.
+                </p>
+                <p><a href="https://auth0.com/pricing">auth0.com/pricing</a></p>
+            </div>
+            <div class="card">
+                <span class="kicker">Clerk</span>
+                <h3>Pro tier + MAU overage</h3>
+                <p>
+                    Free &le; 10 000 MAU. $25/mo base on Pro + $0.02/MAU over 10 000.
+                    SAML IdP + SCIM locked behind Enterprise.
+                </p>
+                <p><a href="https://clerk.com/pricing">clerk.com/pricing</a></p>
+            </div>
+            <div class="card">
+                <span class="kicker">FusionAuth</span>
+                <h3>Flat-rate Cloud Essentials</h3>
+                <p>
+                    Free unlimited self-host. Cloud Essentials ~$125/mo up to 10 000 MAU,
+                    ~$225/mo up to 100 000 MAU. FusionAuth is the price leader at scale &mdash;
+                    we credit them honestly below.
+                </p>
+                <p><a href="https://fusionauth.io/pricing">fusionauth.io/pricing</a></p>
+            </div>
+        </div>
+
+        <div class="callout">
+            <span class="kicker">Honest disclaimer</span>
+            These are <em>list</em> prices for roughly equivalent configurations. Every
+            vendor negotiates on volume; Enterprise contracts for all four platforms
+            typically come in 20–40% below list. What the calculator shows is the
+            self-serve ceiling &mdash; what you pay if you never get on the phone with
+            their sales team.
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Convinced?</span>
+            Start on <a href="/order.html?tier=cloud-starter">Cloud Starter</a>
+            (free under 500 MAU) or read the
+            <a href="/compare/auth0.html">full Auth0 feature comparison</a>
+            if you want the side-by-side.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="/weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html">Get Started</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>

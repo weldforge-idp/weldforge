@@ -50,4 +50,19 @@
         <priority>0.9</priority>
         <changefreq>monthly</changefreq>
     </url>
+    <url>
+        <loc>https://www.weldforge.org/calculator.html</loc>
+        <priority>0.95</priority>
+        <changefreq>monthly</changefreq>
+    </url>
+    <url>
+        <loc>https://www.weldforge.org/compare/auth0.html</loc>
+        <priority>0.95</priority>
+        <changefreq>monthly</changefreq>
+    </url>
+    <url>
+        <loc>https://www.weldforge.org/order.html</loc>
+        <priority>0.9</priority>
+        <changefreq>monthly</changefreq>
+    </url>
 </urlset>

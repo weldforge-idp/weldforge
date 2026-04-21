@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeldForge vs Auth0 — Pricing, Features, Migration</title>
+<meta name="description" content="WeldForge vs Auth0 compared: per-MAU pricing, SAML IdP, SCIM, PKI, self-host option, data residency. Monthly cost at 1K / 10K / 25K / 50K MAU side by side.">
+<meta name="keywords" content="WeldForge vs Auth0, Auth0 alternative, cheaper than Auth0, open source Auth0 alternative, self-hosted Auth0, leave Auth0, Auth0 pricing 2026, Auth0 SAML IdP">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="/styles.css">
+<link rel="alternate" type="application/ld+json" href="/ld.json">
+<link rel="canonical" href="https://www.weldforge.org/compare/auth0.html">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="/weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html" class="nav-cta">Get Started</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+
+<section class="hero">
+    <div class="container">
+        <h1>Leaving Auth0? <span class="accent">Your monthly bill just dropped.</span></h1>
+        <p class="lead">
+            WeldForge is a source-available identity platform that ships
+            every protocol Auth0 charges Enterprise-tier money for &mdash;
+            SAML IdP, SCIM, audit webhooks, custom domains &mdash; in the
+            base paid tier. At 25 000 MAU you pay roughly <strong>50% less</strong>
+            than Auth0 for the same shape of workload, and you can self-host
+            for free forever if you want to.
+        </p>
+        <div class="cta-row">
+            <a class="btn primary" href="/calculator.html">See your monthly savings &rarr;</a>
+            <a class="btn ghost" href="#migrate">Migration guide</a>
+        </div>
+    </div>
+</section>
+
+<section id="pricing-at-mau">
+    <div class="container">
+        <h2>Monthly cost at common MAU tiers</h2>
+        <p class="lead">
+            Retail list prices for roughly equivalent plans. Auth0 figures
+            are from auth0.com/pricing as of 2026-Q2 and include the base
+            fee plus per-MAU overage where the tier caps out. WeldForge
+            pricing is from <a href="/pricing.html">our pricing page</a>
+            (annual billing).
+        </p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Monthly Active Users</th>
+                    <th>WeldForge</th>
+                    <th>Auth0</th>
+                    <th>Savings / mo</th>
+                    <th>Savings / yr</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>500 MAU</strong></td>
+                    <td class="price">$0 <span class="overage">Cloud Starter, free under 500</span></td>
+                    <td class="price">$0 <span class="overage">Free tier</span></td>
+                    <td>&mdash;</td><td>&mdash;</td>
+                </tr>
+                <tr>
+                    <td><strong>1 000 MAU</strong></td>
+                    <td class="price">$29 <span class="overage">Cloud Starter</span></td>
+                    <td class="price">$240 <span class="overage">B2C Essentials, base fee</span></td>
+                    <td class="price">$211</td>
+                    <td class="price">$2 532</td>
+                </tr>
+                <tr>
+                    <td><strong>10 000 MAU</strong></td>
+                    <td class="price">$149 <span class="overage">Cloud Team, MAU included</span></td>
+                    <td class="price">~$540 <span class="overage">B2C Essentials + MAU overage</span></td>
+                    <td class="price">$391</td>
+                    <td class="price">$4 692</td>
+                </tr>
+                <tr>
+                    <td><strong>25 000 MAU</strong></td>
+                    <td class="price">$524 <span class="overage">Cloud Team + overage</span></td>
+                    <td class="price">~$1 100 <span class="overage">B2C Essentials + MAU overage</span></td>
+                    <td class="price">$576</td>
+                    <td class="price">$6 912</td>
+                </tr>
+                <tr>
+                    <td><strong>50 000 MAU</strong></td>
+                    <td class="price">$699 <span class="overage">Cloud Business, MAU included</span></td>
+                    <td class="price">~$1 800 <span class="overage">B2C Professional, base + overage</span></td>
+                    <td class="price">$1 101</td>
+                    <td class="price">$13 212</td>
+                </tr>
+                <tr>
+                    <td><strong>250 000 MAU</strong></td>
+                    <td class="price">$2 499 <span class="overage">Cloud Scale, MAU included</span></td>
+                    <td class="price">~$5 500+ <span class="overage">B2C Professional + overage</span></td>
+                    <td class="price">$3 001+</td>
+                    <td class="price">$36 000+</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="callout">
+            <span class="kicker">See the numbers for your workload</span>
+            The <a href="/calculator.html">interactive cost calculator</a>
+            lets you enter your actual MAU count and shows the delta
+            against Auth0, Clerk and FusionAuth together &mdash;
+            shareable with your CFO via a URL.
+        </div>
+    </div>
+</section>
+
+<section id="features">
+    <div class="container">
+        <h2>Feature-for-feature</h2>
+        <p class="lead">
+            What's in the base paid tier on each side. &check; means
+            "included with the plan you bought." Auth0 figures reflect the
+            base B2C Essentials unless noted.
+        </p>
+
+        <table class="pricing">
+            <thead>
+                <tr>
+                    <th>Capability</th>
+                    <th>WeldForge Cloud Starter ($29)</th>
+                    <th>Auth0 B2C Essentials ($240)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>OAuth 2.0 / OIDC issuer</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>SAML 2.0 Service Provider (federate upstream)</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td><strong>SAML 2.0 Identity Provider</strong> (issue assertions downstream)</td><td><strong>&check;</strong></td><td>Enterprise tier only</td></tr>
+                <tr><td><strong>SCIM 2.0</strong> (inbound &amp; outbound)</td><td><strong>&check;</strong></td><td>Enterprise tier only</td></tr>
+                <tr><td>LDAP / Active Directory upstream</td><td>&check;</td><td>Enterprise tier only</td></tr>
+                <tr><td>MFA — TOTP / WebAuthn / SMS / backup codes</td><td>&check;</td><td>&check;</td></tr>
+                <tr><td>Social logins</td><td>&check;</td><td>Up to 2 connections (more = Professional)</td></tr>
+                <tr><td>Custom domain</td><td>&check;</td><td>Professional tier only</td></tr>
+                <tr><td>Multi-tenant isolation (one install, many customers)</td><td>&check;</td><td>&check; (Organisations add-on)</td></tr>
+                <tr><td><strong>Internal PKI</strong> — per-tenant CA, CRL, OCSP</td><td><strong>&check;</strong></td><td>Not offered</td></tr>
+                <tr><td>HMAC-signed outbound audit webhooks</td><td>&check;</td><td>Enterprise tier only</td></tr>
+                <tr><td>Scoped API keys with path/method restrictions</td><td>&check;</td><td>M2M tokens, no scoping on paths</td></tr>
+                <tr><td>Service-account tokens with admin role</td><td>&check;</td><td>Via Management API only</td></tr>
+                <tr><td><strong>Self-host option</strong></td><td><strong>&check; (Developer tier, free)</strong></td><td>Not offered</td></tr>
+                <tr><td>Source-available</td><td>&check;</td><td>Closed source</td></tr>
+                <tr><td>POPIA-native data residency (Cape Town)</td><td>&check;</td><td>US/EU/AU only</td></tr>
+                <tr><td>Audit retention</td><td>30 days (Starter) &rarr; 7 years (Scale)</td><td>30 days (Essentials) &rarr; 2 years (Professional)</td></tr>
+                <tr><td>BYO KMS for JWT signing</td><td>Cloud Dedicated tier</td><td>Enterprise tier only</td></tr>
+            </tbody>
+        </table>
+
+        <p class="lead" style="margin-top: 2rem;">
+            The short version: WeldForge's $29 tier covers what Auth0
+            typically gates behind its $800–$1 500/mo tiers, and every
+            WeldForge hosted tier includes capabilities Auth0 reserves for
+            custom-priced Enterprise contracts.
+        </p>
+    </div>
+</section>
+
+<section id="migrate">
+    <div class="container">
+        <h2>Migrating from Auth0</h2>
+        <p class="lead">
+            Most Auth0 deployments we see are 80% OIDC clients, 20% SAML
+            SPs, plus a handful of rules / actions. The transition below
+            takes a typical product team a week of real work.
+        </p>
+
+        <h3>Step 1 &mdash; Export your Auth0 tenant</h3>
+        <p>
+            Auth0 Management API exports users (with password hashes),
+            connections, rules, and tenant settings. For a one-off
+            migration:
+        </p>
+        <pre><code>curl -X POST https://YOUR-DOMAIN.auth0.com/api/v2/jobs/users-exports \
+    -H "Authorization: Bearer $AUTH0_MGMT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"format":"json","fields":[{"name":"user_id"},{"name":"email"},{"name":"email_verified"},{"name":"username"},{"name":"user_metadata"},{"name":"app_metadata"},{"name":"identities"}]}'</code></pre>
+
+        <h3>Step 2 &mdash; Create the WeldForge tenant</h3>
+        <pre><code>curl -X POST $HOST/api/admin/tenants \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"slug":"acme","name":"Acme Corporation"}'</code></pre>
+
+        <h3>Step 3 &mdash; Import users</h3>
+        <p>
+            Auth0 exports bcrypt hashes for password-based users. WeldForge
+            accepts bcrypt-compatible hashes directly &mdash; users keep
+            their current passwords and do not need to reset them. For
+            users created via social or SAML connections, import with no
+            password and the federation will rebuild on next login.
+        </p>
+        <pre><code>curl -X POST $HOST/api/admin/users/bulk \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary @auth0-users-export.json</code></pre>
+
+        <h3>Step 4 &mdash; Re-register OIDC clients</h3>
+        <p>
+            Each Auth0 Application becomes a WeldForge OIDC client. The
+            redirect URIs carry across unchanged. Update your application's
+            OIDC issuer URL from <code>https://YOUR-DOMAIN.auth0.com/</code>
+            to <code>https://sso.weldforge.org/t/&lt;your-slug&gt;/</code>
+            and the rest of the OIDC wire protocol is identical.
+        </p>
+
+        <h3>Step 5 &mdash; Port any Auth0 Rules / Actions</h3>
+        <p>
+            WeldForge's equivalent is a combination of JSONPath claim
+            transforms and group-to-role bindings. Most Rules fit cleanly;
+            complex logic that needed JavaScript in Auth0 maps to an
+            outbound webhook that your backend responds to.
+        </p>
+
+        <div class="callout">
+            <span class="kicker">Hand it to us</span>
+            A full Auth0 &rarr; WeldForge migration, done by the team that
+            wrote the platform, is
+            <a href="/pricing.html#services">$5 500 flat</a>. Covers data
+            import, OIDC client re-registration, SAML SP carry-over, MFA
+            enrolment preservation, and a go-live window. Typically 2
+            weeks elapsed.
+        </div>
+    </div>
+</section>
+
+<section id="faq">
+    <div class="container">
+        <h2>FAQ</h2>
+
+        <h3>Will my users have to reset their passwords?</h3>
+        <p>No. Auth0 uses bcrypt; WeldForge accepts bcrypt hashes directly on import. Passwords carry across invisibly.</p>
+
+        <h3>Does WeldForge support Universal Login-style customisation?</h3>
+        <p>Yes &mdash; the hosted login and admin portal both support per-tenant branding (logo, colours, fonts). Starter tier includes it; Auth0 historically charged extra for custom-branded login screens.</p>
+
+        <h3>What about Auth0 Rules and Actions?</h3>
+        <p>Declarative transforms (add a claim, route based on email domain) are expressed as JSONPath rules in WeldForge. Actions that ran arbitrary JavaScript in Auth0 are expressed as outbound webhooks your backend handles &mdash; same behaviour, stronger audit trail.</p>
+
+        <h3>Can I self-host during the migration and move to WeldForge Cloud later?</h3>
+        <p>Yes. The data model is identical across self-host and cloud tiers. A migration is a <code>pg_dump | restore</code> + DNS cut-over.</p>
+
+        <h3>What happens to refresh tokens in flight?</h3>
+        <p>In-flight Auth0 refresh tokens invalidate on issuer change. Your SPA / mobile apps will see a one-time re-login on cut-over day; every session after that runs against WeldForge cleanly.</p>
+
+        <h3>Do you have a Hacker News thread or case studies?</h3>
+        <p>Not yet &mdash; we're a new entrant. The platform itself has been in production internally since 2024 and passed a full security audit in April 2026. <a href="https://github.com/christiaanwvermaak/intelli-sso">Browse the source</a>.</p>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="callout">
+            <span class="kicker">Next step</span>
+            Enter your MAU count on the <a href="/calculator.html">cost
+            calculator</a> to see your exact savings, or just
+            <a href="/order.html?tier=cloud-starter">start on Cloud Starter</a>
+            and migrate at your own pace.
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="/weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+            <div style="margin-top: .5rem;">Federated identity platform.</div>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+            <a href="/order.html">Get Started</a>
+        </nav>
+    </div>
+</footer>
+
+</body>
+</html>
