@@ -207,10 +207,11 @@ public class OrderService {
 
     @Transactional
     public int expireStaleCheckouts() {
-        List<PendingOrder> stale = pendingOrderRepository
-                .findByStatusAndSlugReservationExpiresBefore(OrderStatus.CHECKOUT_STARTED, LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        List<PendingOrder> stale = new java.util.ArrayList<>(pendingOrderRepository
+                .findByStatusAndSlugReservationExpiresBefore(OrderStatus.CHECKOUT_STARTED, now));
         stale.addAll(pendingOrderRepository
-                .findByStatusAndSlugReservationExpiresBefore(OrderStatus.CREATED, LocalDateTime.now()));
+                .findByStatusAndSlugReservationExpiresBefore(OrderStatus.CREATED, now));
         for (PendingOrder o : stale) {
             o.setStatus(OrderStatus.EXPIRED);
         }

@@ -99,6 +99,12 @@ public class WebhookService {
         switch (event.type()) {
             case CHECKOUT_COMPLETED, PAYMENT_SUCCEEDED -> {
                 PendingOrder order = orderService.markPaid(event.orderToken(), event);
+                // Skip re-provisioning on duplicate-delivery webhooks — the
+                // first delivery already drove the order to PROVISIONED.
+                if (order.getStatus() == tech.cwvermaak.intellisso.model.payment.OrderStatus.PROVISIONED
+                        || order.getStatus() == tech.cwvermaak.intellisso.model.payment.OrderStatus.REFUNDED) {
+                    return Result.ACCEPTED;
+                }
                 try {
                     provisioningService.provision(order.getId());
                 } catch (TenantProvisioningService.ProvisioningException e) {
