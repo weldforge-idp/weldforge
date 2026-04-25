@@ -86,6 +86,30 @@ public class AdminController {
         return ResponseEntity.ok(adminService.setAdminRole(id, role));
     }
 
+    /**
+     * Assign (or clear) the application-level Role that flows into the JWT
+     * {@code roles} claim — the one downstream apps drive their RBAC off.
+     * Body: {@code {"roleId": 42}} or {@code {"roleId": null}} to clear.
+     */
+    @PostMapping("/users/{id}/role")
+    public ResponseEntity<UserResponseDto> setUserRole(@PathVariable Long id,
+                                                       @RequestBody java.util.Map<String, Object> body) {
+        Object raw = body == null ? null : body.get("roleId");
+        Long roleId = null;
+        if (raw != null) {
+            if (raw instanceof Number n) {
+                roleId = n.longValue();
+            } else {
+                try {
+                    roleId = Long.parseLong(raw.toString());
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("roleId must be a number or null");
+                }
+            }
+        }
+        return ResponseEntity.ok(adminService.setUserRole(id, roleId));
+    }
+
     // Environments -----------------------------------------------------
     @GetMapping("/environments")
     public ResponseEntity<List<EnvironmentDto>> listEnvironments() {

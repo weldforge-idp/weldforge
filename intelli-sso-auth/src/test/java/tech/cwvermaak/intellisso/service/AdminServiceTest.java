@@ -109,4 +109,70 @@ class AdminServiceTest {
         assertThat(removed).isEqualTo(3);
         verify(mfaService).adminReset(any(), eq(target));
     }
+
+    // ─────────────────────────── setUserRole ──────────────────────────────
+
+    @Test
+    @DisplayName("setUserRole assigns a tenant-scoped role and bumps tokenVersion to invalidate stale JWTs")
+    void setUserRole_happyPath_bumpsTokenVersion() {
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").tokenVersion(3).build();
+        Role role = Role.builder().id(11L).tenant(tenant).name("SUPERADMIN").build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepo.findByIdAndTenantId(11L, 7L)).thenReturn(Optional.of(role));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        admin.setUserRole(42L, 11L);
+
+        assertThat(target.getRole()).isSameAs(role);
+        assertThat(target.getTokenVersion()).isEqualTo(4);
+        verify(userRepo).save(target);
+        verify(auditService).recordAdmin(eq("user.role.assigned"), any(), any(), eq("42"), any());
+    }
+
+    @Test
+    @DisplayName("setUserRole(null) clears the assignment so an admin can demote a user")
+    void setUserRole_nullClearsAssignment() {
+        Role oldRole = Role.builder().id(11L).tenant(tenant).name("SUPERADMIN").build();
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").role(oldRole).tokenVersion(1).build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        admin.setUserRole(42L, null);
+
+        assertThat(target.getRole()).isNull();
+        assertThat(target.getTokenVersion()).isEqualTo(2);
+        // A null roleId means we MUST NOT touch roleRepo.
+        verify(roleRepo, never()).findByIdAndTenantId(any(), any());
+    }
+
+    @Test
+    @DisplayName("setUserRole refuses cross-tenant role assignment — role lookup is tenant-scoped")
+    void setUserRole_rolesFromOtherTenantAreInvisible() {
+        User target = User.builder().id(42L).tenant(tenant).email("alice@acme.test").build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepo.findByIdAndTenantId(99L, 7L)).thenReturn(Optional.empty()); // role belongs to a different tenant
+
+        assertThatThrownBy(() -> admin.setUserRole(42L, 99L))
+                .isInstanceOf(EntityNotFoundException.class);
+
+        verify(userRepo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("setUserRole refuses cross-tenant user lookup — user must live in the caller's tenant")
+    void setUserRole_crossTenantUserIsHidden() {
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> admin.setUserRole(42L, 11L))
+                .isInstanceOf(EntityNotFoundException.class);
+
+        verify(roleRepo, never()).findByIdAndTenantId(any(), any());
+        verify(userRepo, never()).save(any());
+    }
 }

@@ -170,6 +170,47 @@ public class AdminService {
         return toDto(target);
     }
 
+    /**
+     * Assign (or clear) the application-level {@link Role} on a user — the role
+     * whose {@code name} flows into the JWT {@code roles} claim. Tenant-scoped
+     * by construction: both the user and the role must live in the caller's
+     * tenant. Pass {@code roleId == null} to clear the assignment.
+     *
+     * <p>Bumps {@code token_version} so any in-flight access token loses
+     * authority on its next request — role changes never lag behind the
+     * token cache.</p>
+     */
+    @Transactional
+    public UserResponseDto setUserRole(Long targetUserId, Long roleId) {
+        tenantAccessor.requireAnyAdmin();
+        Long tid = tenantAccessor.requireTenantId();
+
+        User target = userRepository.findByIdAndTenantId(targetUserId, tid)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "User " + targetUserId + " not found in this tenant"));
+
+        Role role = null;
+        if (roleId != null) {
+            role = roleRepository.findByIdAndTenantId(roleId, tid)
+                    .orElseThrow(() -> new EntityNotFoundException(
+                            "Role " + roleId + " not found in this tenant"));
+        }
+
+        target.setRole(role);
+        target.setTokenVersion(target.getTokenVersion() + 1);
+        userRepository.save(target);
+
+        User actor = currentActor();
+        auditService.recordAdmin("user.role.assigned", actor,
+                AuditEventTypes.TARGET_USER, String.valueOf(target.getId()),
+                AuditService.meta(
+                        "target_email", target.getEmail(),
+                        "role_id", roleId,
+                        "role_name", role != null ? role.getName() : null,
+                        "tenant", target.getTenant() != null ? target.getTenant().getSlug() : null));
+        return toDto(target);
+    }
+
     private User currentActor() {
         // The JwtAuthenticationFilter sets the principal to the caller's
         // email; look them up in the current tenant so audit rows carry
