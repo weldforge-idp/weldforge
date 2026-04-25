@@ -107,6 +107,13 @@ public class OidcTokenService {
             claims.put("sub", String.valueOf(user.getId()));
             claims.put("email", user.getEmail());
             if (user.getName() != null) claims.put("name", user.getName());
+            // Tenant-scoped role propagation: relying parties read this claim
+            // to drive their own RBAC (e.g. Spring Security's
+            // hasRole('SUPERADMIN')). Emitted as an array so users can grow
+            // multiple roles in future without breaking the contract. The
+            // is_super_admin boolean is collapsed into the same array as
+            // "SUPERADMIN" so apps need only one check.
+            claims.put("roles", rolesFor(user));
         } else {
             // Client credentials grant — there's no end-user.
             claims.put("sub", client.getClientId());
@@ -136,6 +143,7 @@ public class OidcTokenService {
         claims.put("sub", String.valueOf(user.getId()));
         claims.put("email", user.getEmail());
         if (user.getName() != null) claims.put("name", user.getName());
+        claims.put("roles", rolesFor(user));
         if (nonce != null && !nonce.isBlank()) claims.put("nonce", nonce);
         return Jwts.builder()
                 .header().keyId(kid).and()
@@ -149,9 +157,26 @@ public class OidcTokenService {
     private static boolean isReservedOidcClaim(String name) {
         return switch (name) {
             case "iss", "aud", "sub", "exp", "iat", "nbf", "jti",
-                 "client_id", "scope", "token_type", "email", "name", "nonce" -> true;
+                 "client_id", "scope", "token_type", "email", "name", "nonce", "roles" -> true;
             default -> false;
         };
+    }
+
+    /**
+     * Collapses {@link User#getRole()} (the tenant-scoped application role —
+     * e.g. {@code SUPERADMIN}, {@code SITE_ADMIN}) and the legacy
+     * {@link User#isSuperAdmin()} boolean into a single deduplicated list
+     * relying parties can drive RBAC from. Always returns at least an
+     * empty list so consumers don't have to null-check.
+     */
+    private static List<String> rolesFor(User user) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (user.isSuperAdmin()) out.add("SUPERADMIN");
+        if (user.getRole() != null && user.getRole().getName() != null
+                && !user.getRole().getName().isBlank()) {
+            out.add(user.getRole().getName());
+        }
+        return new java.util.ArrayList<>(out);
     }
 
     public record IssuedTokens(String accessToken, String idToken, long expiresIn) {}
