@@ -1,6 +1,5 @@
 package tech.cwvermaak.intellisso.service.payment;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import tech.cwvermaak.intellisso.model.payment.GatewayProvider;
@@ -28,7 +27,6 @@ import java.util.Optional;
  * response is 400, consistent with Stripe's own reference behaviour.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class WebhookService {
 

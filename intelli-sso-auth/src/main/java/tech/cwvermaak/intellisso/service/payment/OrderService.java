@@ -1,7 +1,6 @@
 package tech.cwvermaak.intellisso.service.payment;
 
 import jakarta.persistence.EntityNotFoundException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -35,7 +34,6 @@ import java.util.Map;
  * user-visible conflict.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class OrderService {
 

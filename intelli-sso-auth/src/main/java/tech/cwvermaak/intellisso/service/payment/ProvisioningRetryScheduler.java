@@ -1,6 +1,5 @@
 package tech.cwvermaak.intellisso.service.payment;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,7 +26,6 @@ import java.util.Map;
  * will pick the row up again next cycle.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class ProvisioningRetryScheduler {
 
