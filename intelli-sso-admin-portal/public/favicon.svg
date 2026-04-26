@@ -1,0 +1,80 @@
+<svg viewBox="0 0 56 84" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="shieldBody" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%"   stop-color="#1A2645"/>
+      <stop offset="35%"  stop-color="#0B1226"/>
+      <stop offset="70%"  stop-color="#060A18"/>
+      <stop offset="100%" stop-color="#02050E"/>
+    </linearGradient>
+
+    <linearGradient id="shieldBevel" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="20%"  stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="55%"  stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.55"/>
+    </linearGradient>
+
+    <radialGradient id="shieldGloss" cx="28%" cy="18%" r="55%">
+      <stop offset="0%"   stop-color="#7AA8FF" stop-opacity="0.22"/>
+      <stop offset="60%"  stop-color="#3D7EF5" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#3D7EF5" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="forgeInterior" cx="28" cy="41" r="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#E8921F" stop-opacity="0.34"/>
+      <stop offset="35%"  stop-color="#E8921F" stop-opacity="0.12"/>
+      <stop offset="70%"  stop-color="#C06010" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#070C18"  stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="sparkCore" cx="40%" cy="35%" r="60%">
+      <stop offset="0%"   stop-color="#FFE8A0"/>
+      <stop offset="45%"  stop-color="#FFAA30"/>
+      <stop offset="100%" stop-color="#E8721F"/>
+    </radialGradient>
+
+    <clipPath id="shieldClip">
+      <path d="M 3 10 C 8 20 18 20 28 2 C 38 20 48 20 53 10 L 53 34 C 53 58 44 72 28 80 C 12 72 3 58 3 34 Z"/>
+    </clipPath>
+
+    <filter id="rayGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="coreGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Shield body with curvature gradient -->
+  <path d="M 3 10 C 8 20 18 20 28 2 C 38 20 48 20 53 10 L 53 34 C 53 58 44 72 28 80 C 12 72 3 58 3 34 Z"
+        fill="url(#shieldBody)" stroke="#3D7EF5" stroke-width="2" stroke-linejoin="round"/>
+
+  <g clip-path="url(#shieldClip)">
+    <rect x="0" y="0" width="56" height="84" fill="url(#shieldBevel)"/>
+    <rect x="0" y="0" width="56" height="84" fill="url(#shieldGloss)"/>
+    <rect x="0" y="0" width="56" height="84" fill="url(#forgeInterior)"/>
+
+    <!-- Cardinal rays -->
+    <line x1="28" y1="29" x2="28" y2="10" stroke="#E8921F" stroke-width="2.4"
+          stroke-linecap="round" filter="url(#rayGlow)" opacity="0.9"/>
+    <line x1="28" y1="51" x2="28" y2="72" stroke="#E8921F" stroke-width="2.4"
+          stroke-linecap="round" filter="url(#rayGlow)" opacity="0.9"/>
+    <line x1="18" y1="40" x2="5"  y2="40" stroke="#E8921F" stroke-width="2.4"
+          stroke-linecap="round" filter="url(#rayGlow)" opacity="0.9"/>
+    <line x1="38" y1="40" x2="51" y2="40" stroke="#E8921F" stroke-width="2.4"
+          stroke-linecap="round" filter="url(#rayGlow)" opacity="0.9"/>
+
+    <!-- Spark core -->
+    <circle cx="28" cy="40" r="9" fill="rgba(232,146,31,0.4)"
+            filter="url(#coreGlow)"/>
+    <circle cx="28" cy="40" r="6.5" fill="url(#sparkCore)"/>
+    <circle cx="27" cy="39" r="2.6" fill="#FFF0B0" opacity="0.95"/>
+
+    <!-- W letterform — centred in shield, original W proportions, 10% smaller -->
+    <polyline points="12.7,29.3 19.9,52.7 28,40 36.1,52.7 43.3,29.3"
+              fill="none" stroke="#F0E8D8" stroke-width="2"
+              stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+</svg>
