@@ -73,11 +73,21 @@ public class OidcAuthorizationController {
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
 
         // ---- Step 1: not authenticated → redirect to login ---------
-        if (email == null || email.isBlank()) {
+        // Spring Security materialises the principal as the string
+        // "anonymousUser" for unauthenticated requests (see
+        // AnonymousAuthenticationToken), so a null/blank check alone
+        // misses the common case of an unauthenticated browser.
+        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
             String returnTo = currentUrl(request);
             String encoded = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(returnTo.getBytes(StandardCharsets.UTF_8));
-            String loginUrl = "/login?oidcReturnTo=" + encoded;
+            // Carry tenant slug as a query param so the TenantResolverFilter
+            // resolves to this tenant on the POST /login form submission
+            // (the /login path itself has no /t/{slug}/... prefix).
+            // Trailing slash matches the nginx /login/ proxy block so the
+            // browser doesn't pick up a 301 → /login/ on the way through.
+            String loginUrl = "/login/?tenant=" + URLEncoder.encode(slug, StandardCharsets.UTF_8)
+                    + "&oidcReturnTo=" + encoded;
             return ResponseEntity.status(302).location(URI.create(loginUrl)).build();
         }
 
