@@ -91,6 +91,51 @@ public class AuthController {
                 .build());
     }
 
+    @PutMapping("/me")
+    public ResponseEntity<UserResponseDto> updateMe(@AuthenticationPrincipal String email,
+                                                     @RequestBody Map<String, String> body) {
+        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
+            return ResponseEntity.status(401).build();
+        }
+        try {
+            User user = authService.updateMe(email,
+                    body.get("name"), body.get("email"), body.get("cellPhoneNumber"));
+            return ResponseEntity.ok(UserResponseDto.builder()
+                    .id(user.getId())
+                    .name(user.getName())
+                    .email(user.getEmail())
+                    .imageUrl(user.getImageUrl())
+                    .provider(user.getProvider())
+                    .role(user.getRole() != null ? user.getRole().getName() : null)
+                    .build());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(400)
+                    .body(UserResponseDto.builder().email(e.getMessage()).build());
+        }
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<Map<String, String>> changePassword(@AuthenticationPrincipal String email,
+                                                               @RequestBody Map<String, String> body) {
+        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
+            return ResponseEntity.status(401).body(Map.of("error", "Not signed in"));
+        }
+        String current = body.get("currentPassword");
+        String next = body.get("newPassword");
+        if (current == null || next == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "currentPassword and newPassword are required"));
+        }
+        try {
+            authService.changePassword(email, current, next);
+            return ResponseEntity.ok(Map.of("message", "Password changed."));
+        } catch (org.springframework.security.authentication.BadCredentialsException e) {
+            return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PostMapping("/verify-email")
     public ResponseEntity<Map<String, String>> verifyEmail(@RequestBody Map<String, String> body) {
         String token = body.get("token");

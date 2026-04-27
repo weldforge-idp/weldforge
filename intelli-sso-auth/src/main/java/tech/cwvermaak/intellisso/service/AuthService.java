@@ -303,6 +303,69 @@ public class AuthService {
         return "enroll-" + user.getId() + "-" + UUID.randomUUID();
     }
 
+    /**
+     * Self-service password change for the signed-in user. Verifies the
+     * current password, validates the new one against the tenant policy,
+     * and bumps {@code token_version} so any other live sessions die on
+     * their next request — only the caller's session keeps working.
+     */
+    @Transactional
+    public void changePassword(String email, String currentPassword, String newPassword) {
+        Tenant tenant = currentTenant();
+        User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenant.getSlug(), email)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        if (user.getPassword() == null
+                || !passwordEncoder.matches(currentPassword, user.getPassword())) {
+            auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_CHANGE_FAILED, user,
+                    AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                    AuditService.meta("reason", "bad_current_password"));
+            throw new BadCredentialsException("Current password is incorrect");
+        }
+        passwordPolicyService.validate(newPassword);
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        userRepository.save(user);
+        auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_CHANGED, user,
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
+    }
+
+    /**
+     * Self-service profile update — name, email, cell phone. Email changes
+     * flip {@code emailVerified} back to false so the user has to verify
+     * the new address; phone changes do the same with {@code cellPhoneVerified}.
+     */
+    @Transactional
+    public User updateMe(String email, String newName, String newEmail, String newCellPhone) {
+        Tenant tenant = currentTenant();
+        User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenant.getSlug(), email)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+
+        if (newName != null && !newName.isBlank() && !newName.equals(user.getName())) {
+            user.setName(newName.trim());
+        }
+        if (newEmail != null && !newEmail.isBlank()
+                && !newEmail.trim().equalsIgnoreCase(user.getEmail())) {
+            // Make sure the new email isn't already used in this tenant.
+            userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), newEmail.trim())
+                    .ifPresent(other -> {
+                        if (!other.getId().equals(user.getId())) {
+                            throw new IllegalArgumentException(
+                                    "That email is already used by another account");
+                        }
+                    });
+            user.setEmail(newEmail.trim());
+            user.setEmailVerified(false);
+        }
+        if (newCellPhone != null && !newCellPhone.equals(user.getCellPhoneNumber())) {
+            user.setCellPhoneNumber(newCellPhone.isBlank() ? null : newCellPhone.trim());
+            user.setCellPhoneVerified(false);
+        }
+        userRepository.save(user);
+        auditService.recordUserAction(AuditEventTypes.AUTH_PROFILE_UPDATED, user,
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
+        return user;
+    }
+
     // ---- internals ---------------------------------------------------
 
     private Tenant currentTenant() {

@@ -115,6 +115,27 @@ public class PasswordResetService {
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant: " + slug));
     }
 
+    /**
+     * Persist a reset token tied to a freshly-created (invited) user.
+     * Used by the admin-invite path so we can return the raw token to
+     * the caller (regular {@link #requestReset} only logs it).
+     */
+    @Transactional
+    public PasswordResetToken persistInviteToken(User user, String rawToken) {
+        // Any outstanding unused tokens for this user should be wiped —
+        // the freshly-issued one is authoritative.
+        resetTokenRepository.deleteByUserIdAndUsedFalse(user.getId());
+        PasswordResetToken token = PasswordResetToken.builder()
+                .tenant(user.getTenant())
+                .user(user)
+                .tokenHash(sha256Hex(rawToken))
+                // Invitation links can sit in an inbox a while — give them
+                // a longer life than a self-service reset.
+                .expiresAt(LocalDateTime.now().plusDays(7))
+                .build();
+        return resetTokenRepository.save(token);
+    }
+
     public static String generateToken() {
         byte[] bytes = new byte[TOKEN_BYTE_LENGTH];
         new SecureRandom().nextBytes(bytes);

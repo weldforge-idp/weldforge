@@ -35,6 +35,7 @@ public class AdminService {
     private final AppClientRepository appClientRepository;
     private final MfaService mfaService;
     private final AuditService auditService;
+    private final PasswordResetService passwordResetService;
 
     private static final SecureRandom RNG = new SecureRandom();
 
@@ -99,6 +100,13 @@ public class AdminService {
                 .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found")));
     }
 
+    /**
+     * Soft-delete a user — flips {@code active} to false and bumps
+     * {@code token_version} so any outstanding access token is rejected
+     * on its next request. The row stays in the DB so audit references
+     * remain intact and an admin can restore later. Use {@link #restoreUser}
+     * to undo.
+     */
     @Transactional
     public void deleteUser(Long id) {
         tenantAccessor.requireTenantAdmin();
@@ -108,11 +116,36 @@ public class AdminService {
         if (user.isSuperAdmin() && !tenantAccessor.isSuperAdmin()) {
             throw new AccessDeniedException("Cannot delete a super admin");
         }
-        userRepository.delete(user);
+        if (!user.isActive()) {
+            // Already soft-deleted — no-op (idempotent).
+            return;
+        }
+        user.setActive(false);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        userRepository.save(user);
         User actor = currentActor();
         auditService.recordAdmin(AuditEventTypes.USER_DELETE, actor,
                 AuditEventTypes.TARGET_USER, String.valueOf(id),
-                AuditService.meta("deleted_email", user.getEmail()));
+                AuditService.meta("deleted_email", user.getEmail(),
+                                  "kind", "soft_delete"));
+    }
+
+    /** Reactivate a previously soft-deleted user. */
+    @Transactional
+    public UserResponseDto restoreUser(Long id) {
+        tenantAccessor.requireTenantAdmin();
+        Long tid = tenantAccessor.requireTenantId();
+        User user = userRepository.findByIdAndTenantId(id, tid)
+                .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found"));
+        if (!user.isActive()) {
+            user.setActive(true);
+            userRepository.save(user);
+            User actor = currentActor();
+            auditService.recordAdmin("user.restored", actor,
+                    AuditEventTypes.TARGET_USER, String.valueOf(id),
+                    AuditService.meta("email", user.getEmail()));
+        }
+        return toDto(user);
     }
 
     /**
@@ -210,6 +243,90 @@ public class AdminService {
                         "tenant", target.getTenant() != null ? target.getTenant().getSlug() : null));
         return toDto(target);
     }
+
+    /**
+     * SUPERADMIN-only: create a user in the current tenant in an
+     * "invited / no password yet" state and mint a password-reset token
+     * the recipient can use to choose a password and complete sign-in.
+     *
+     * <p>Delivery (email / SMS / WhatsApp) is the caller's responsibility —
+     * this method returns the raw token + a ready-built reset URL so the
+     * caller can fan out to whichever channel the operator picked. We
+     * deliberately keep messaging out of Weldforge core to avoid coupling
+     * the IDP to a per-tenant outreach platform.</p>
+     */
+    @Transactional
+    public InviteResult inviteUser(InviteRequest req) {
+        tenantAccessor.requireSuperAdmin();
+        Tenant tenant = tenantAccessor.requireTenant();
+
+        if (req.email() == null || req.email().isBlank()) {
+            throw new IllegalArgumentException("email is required");
+        }
+        String email = req.email().trim();
+
+        // Reject if a user with this email already exists in the tenant —
+        // the caller should soft-restore + re-invite rather than collide.
+        userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)
+                .ifPresent(u -> { throw new IllegalArgumentException(
+                        "A user with that email already exists in this tenant"); });
+
+        Role role = null;
+        if (req.roleId() != null) {
+            role = roleRepository.findByIdAndTenantId(req.roleId(), tenant.getId())
+                    .orElseThrow(() -> new EntityNotFoundException(
+                            "Role " + req.roleId() + " not found in this tenant"));
+        }
+
+        // Create the user with no password — they must complete a reset
+        // to log in. emailVerified stays false until they click the link.
+        User user = User.builder()
+                .tenant(tenant)
+                .username(email)
+                .email(email)
+                .name(req.name() != null && !req.name().isBlank() ? req.name().trim() : null)
+                .cellPhoneNumber(req.cellPhoneNumber())
+                .password(null)
+                .provider(tech.cwvermaak.intellisso.model.AuthProvider.LOCAL)
+                .providerId(email)
+                .emailVerified(false)
+                .cellPhoneVerified(false)
+                .superAdmin(req.isSuperAdmin())
+                .adminRole(req.isSuperAdmin()
+                        ? tech.cwvermaak.intellisso.model.AdminRole.SUPER_ADMIN
+                        : tech.cwvermaak.intellisso.model.AdminRole.NONE)
+                .role(role)
+                .active(true)
+                .tokenVersion(0)
+                .build();
+        userRepository.save(user);
+
+        // Mint a password-reset token. PasswordResetService.requestReset
+        // looks up by email, so we can reuse it — the side effect is the
+        // token is created + persisted.
+        passwordResetService.requestReset(email);
+        // Re-fetch the just-created token's raw value isn't possible (the
+        // service stores the hash) — instead we mint a *new* one directly
+        // so we can return it to the caller.
+        String rawToken = PasswordResetService.generateToken();
+        passwordResetService.persistInviteToken(user, rawToken);
+
+        User actor = currentActor();
+        auditService.recordAdmin(AuditEventTypes.USER_INVITED, actor,
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                AuditService.meta(
+                        "invitee_email", email,
+                        "channel", req.channel(),
+                        "role_id", req.roleId(),
+                        "is_super_admin", req.isSuperAdmin()));
+        return new InviteResult(toDto(user), rawToken);
+    }
+
+    public record InviteRequest(
+            String email, String name, String cellPhoneNumber,
+            String channel, Long roleId, boolean isSuperAdmin) {}
+
+    public record InviteResult(UserResponseDto user, String resetToken) {}
 
     private User currentActor() {
         // The JwtAuthenticationFilter sets the principal to the caller's

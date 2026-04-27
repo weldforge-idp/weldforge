@@ -159,7 +159,8 @@ public class EpicDRbacSteps {
 
         tenantService = new TenantService(tenantAccessor, tenantRepository, socialRepo, userRepository, auditService);
         adminService = new AdminService(tenantAccessor, roleRepository, userRepository,
-                envRepo, appClientRepo, mfaService, auditService);
+                envRepo, appClientRepo, mfaService, auditService,
+                mock(tech.cwvermaak.intellisso.service.PasswordResetService.class));
         oidcClientService = new OidcClientService(tenantAccessor, oidcClientRepository);
     }
 

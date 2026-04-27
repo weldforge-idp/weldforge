@@ -109,9 +109,13 @@ public final class AuditEventTypes {
     // Password reset
     public static final String AUTH_PASSWORD_RESET_REQUESTED = "auth.password_reset.requested";
     public static final String AUTH_PASSWORD_RESET_COMPLETED = "auth.password_reset.completed";
+    public static final String AUTH_PASSWORD_CHANGED         = "auth.password.changed";
+    public static final String AUTH_PASSWORD_CHANGE_FAILED   = "auth.password.change_failed";
+    public static final String AUTH_PROFILE_UPDATED          = "auth.profile.updated";
 
     // User administration
     public static final String USER_DELETE            = "user.delete";
+    public static final String USER_INVITED           = "user.invited";
 
     // Target types
     public static final String TARGET_USER               = "user";

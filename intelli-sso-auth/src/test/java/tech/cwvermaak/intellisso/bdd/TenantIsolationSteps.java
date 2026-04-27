@@ -52,7 +52,8 @@ public class TenantIsolationSteps {
         mfaService = mock(MfaService.class);
         auditService = mock(AuditService.class);
         admin = new AdminService(tenantAccessor, roleRepo, userRepo, envRepo,
-                appClientRepo, mfaService, auditService);
+                appClientRepo, mfaService, auditService,
+                mock(tech.cwvermaak.intellisso.service.PasswordResetService.class));
     }
 
     @Given("tenants {string} and {string} exist")

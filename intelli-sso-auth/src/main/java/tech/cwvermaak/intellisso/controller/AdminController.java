@@ -86,6 +86,39 @@ public class AdminController {
         return ResponseEntity.ok(adminService.setAdminRole(id, role));
     }
 
+    @PostMapping("/users/{id}/restore")
+    public ResponseEntity<UserResponseDto> restoreUser(@PathVariable Long id) {
+        return ResponseEntity.ok(adminService.restoreUser(id));
+    }
+
+    /**
+     * SUPERADMIN-only: invite a new user. Creates the row in an "invited"
+     * state, mints a 7-day reset token, returns both so the caller can
+     * dispatch via email/SMS/WhatsApp through their own channel of choice.
+     */
+    @PostMapping("/users/invite")
+    public ResponseEntity<java.util.Map<String, Object>> inviteUser(
+            @RequestBody java.util.Map<String, Object> body) {
+        String email = body.get("email") == null ? null : body.get("email").toString();
+        String name = body.get("name") == null ? null : body.get("name").toString();
+        String phone = body.get("cellPhoneNumber") == null ? null : body.get("cellPhoneNumber").toString();
+        String channel = body.get("channel") == null ? "email" : body.get("channel").toString();
+        boolean isSuperAdmin = Boolean.TRUE.equals(body.get("isSuperAdmin"))
+                || "true".equalsIgnoreCase(String.valueOf(body.get("isSuperAdmin")));
+        Long roleId = null;
+        Object rawRole = body.get("roleId");
+        if (rawRole instanceof Number n) roleId = n.longValue();
+        else if (rawRole != null && !rawRole.toString().isBlank()) {
+            try { roleId = Long.parseLong(rawRole.toString()); } catch (NumberFormatException ignored) {}
+        }
+        var result = adminService.inviteUser(new tech.cwvermaak.intellisso.service.AdminService.InviteRequest(
+                email, name, phone, channel, roleId, isSuperAdmin));
+        return ResponseEntity.ok(java.util.Map.of(
+                "user", result.user(),
+                "channel", channel,
+                "resetToken", result.resetToken()));
+    }
+
     /**
      * Assign (or clear) the application-level Role that flows into the JWT
      * {@code roles} claim — the one downstream apps drive their RBAC off.
