@@ -37,6 +37,7 @@ class AdminServiceTest {
     private AppClientRepository appClientRepo;
     private MfaService mfaService;
     private AuditService auditService;
+    private tech.cwvermaak.intellisso.service.PasswordResetService passwordResetService;
 
     private AdminService admin;
     private Tenant tenant;
@@ -50,9 +51,10 @@ class AdminServiceTest {
         appClientRepo = mock(AppClientRepository.class);
         mfaService = mock(MfaService.class);
         auditService = mock(AuditService.class);
+        passwordResetService = mock(tech.cwvermaak.intellisso.service.PasswordResetService.class);
 
         admin = new AdminService(tenantAccessor, roleRepo, userRepo, envRepo,
-                appClientRepo, mfaService, auditService);
+                appClientRepo, mfaService, auditService, passwordResetService);
 
         tenant = Tenant.builder().id(7L).slug("acme").name("Acme").build();
     }
