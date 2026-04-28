@@ -3,15 +3,16 @@ kind: Service
 metadata:
   name: sso-frontend
   namespace: {{ .Values.global.namespace }}
-  {{- if .Values.frontend.service.annotations }}
   annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    {{- if .Values.frontend.service.annotations }}
     {{- toYaml .Values.frontend.service.annotations | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   selector:
     app: sso-frontend
   ports:
-    - name: https
-      port: 443
+    - name: http
+      port: 80
       targetPort: 80
-  type: {{ .Values.frontend.service.type }}
+  type: ClusterIP

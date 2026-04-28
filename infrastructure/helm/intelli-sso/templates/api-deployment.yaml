@@ -17,6 +17,9 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: "/actuator/prometheus"
     spec:
+      {{- if .Values.api.serviceAccount.create }}
+      serviceAccountName: {{ .Values.api.serviceAccount.name }}
+      {{- end }}
       terminationGracePeriodSeconds: 45
       containers:
         - name: sso-api
@@ -51,6 +54,24 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 5
             failureThreshold: 20
+        {{- if .Values.api.cloudsql.enabled }}
+        - name: cloudsql-proxy
+          image: {{ .Values.api.cloudsql.proxyImage }}
+          args:
+            - "--structured-logs"
+            - "--port={{ .Values.api.cloudsql.port }}"
+            - {{ .Values.api.cloudsql.connectionName | quote }}
+          securityContext:
+            runAsNonRoot: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+        {{- end }}
+      {{- if not .Values.api.cloudsql.enabled }}
       initContainers:
         - name: wait-for-postgres
           image: busybox:1.36
@@ -58,3 +79,4 @@ spec:
             - sh
             - -c
             - "until nc -z sso-postgres 5432; do echo waiting for postgres; sleep 2; done"
+      {{- end }}

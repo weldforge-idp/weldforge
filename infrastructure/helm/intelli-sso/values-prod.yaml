@@ -1,10 +1,8 @@
-# Production environment overrides
+# Production environment overrides (GKE Autopilot)
 global:
   namespace: sso
 
 api:
-  image:
-    tag: latest
   replicas: 2
   autoscaling:
     enabled: true
@@ -15,12 +13,7 @@ api:
     APP_KEY_ROTATION_MAX_AGE_DAYS: "90"
 
 frontend:
-  image:
-    tag: latest
   replicas: 2
 
-postgres:
-  storage: 10Gi
-
 cors:
-  allowedOrigins: "https://sso.cwvermaak.tech"
+  allowedOrigins: "https://sso.weldforge.org,https://app.wellspring.org.za"

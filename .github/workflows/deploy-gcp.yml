@@ -1,0 +1,86 @@
+name: deploy-gcp
+
+# Builds intelli-sso-auth + intelli-sso-admin-portal images, pushes to GCP
+# Artifact Registry, then Helm-upgrades the GKE Autopilot release.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'intelli-sso-auth/**'
+      - 'intelli-sso-admin-portal/**'
+      - 'infrastructure/helm/intelli-sso/**'
+      - '.github/workflows/deploy-gcp.yml'
+  workflow_dispatch:
+
+env:
+  REGION: africa-south1
+  AR_HOST: africa-south1-docker.pkg.dev
+  GCP_PROJECT: weldforge
+  AR_BACKEND: weldforge/images/intelli-sso-auth
+  AR_FRONTEND: weldforge/images/intelli-sso-admin-portal
+  GKE_CLUSTER: weldforge-gke
+  K8S_NAMESPACE: sso
+  HELM_RELEASE: intelli-sso
+  WIF_PROVIDER: projects/42633983307/locations/global/workloadIdentityPools/github-actions/providers/github-actions
+  WIF_SA: gha-deployer@weldforge.iam.gserviceaccount.com
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        run: echo "value=$(echo ${{ github.sha }} | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.WIF_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for AR
+        run: gcloud auth configure-docker ${{ env.AR_HOST }} --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build & push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: intelli-sso-auth
+          push: true
+          tags: |
+            ${{ env.AR_HOST }}/${{ env.AR_BACKEND }}:${{ steps.tag.outputs.value }}
+            ${{ env.AR_HOST }}/${{ env.AR_BACKEND }}:latest
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: intelli-sso-admin-portal
+          push: true
+          tags: |
+            ${{ env.AR_HOST }}/${{ env.AR_FRONTEND }}:${{ steps.tag.outputs.value }}
+            ${{ env.AR_HOST }}/${{ env.AR_FRONTEND }}:latest
+
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.REGION }}
+
+      - name: Helm upgrade
+        run: |
+          helm upgrade --install ${{ env.HELM_RELEASE }} infrastructure/helm/intelli-sso \
+            --namespace ${{ env.K8S_NAMESPACE }} --create-namespace \
+            -f infrastructure/helm/intelli-sso/values-prod.yaml \
+            --set api.image.repository=${{ env.AR_HOST }}/${{ env.AR_BACKEND }} \
+            --set api.image.tag=${{ steps.tag.outputs.value }} \
+            --set frontend.image.repository=${{ env.AR_HOST }}/${{ env.AR_FRONTEND }} \
+            --set frontend.image.tag=${{ steps.tag.outputs.value }} \
+            --wait --timeout=10m

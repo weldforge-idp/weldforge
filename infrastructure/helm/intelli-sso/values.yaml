@@ -1,6 +1,6 @@
 # ============================================================
-# Default values for intelli-sso.
-# Override per environment with values-staging.yaml, values-prod.yaml, etc.
+# Default values for intelli-sso (GKE Autopilot).
+# Override per environment with values-staging.yaml, values-prod.yaml.
 # ============================================================
 
 global:
@@ -9,8 +9,8 @@ global:
 # --- API (Spring Boot backend) ---
 api:
   image:
-    repository: 650539477525.dkr.ecr.af-south-1.amazonaws.com/intelli-sso-auth
-    tag: latest
+    repository: africa-south1-docker.pkg.dev/weldforge/images/intelli-sso-auth
+    tag: "0.7.0-user-mgmt"
     pullPolicy: IfNotPresent
   replicas: 2
   resources:
@@ -26,23 +26,33 @@ api:
     maxReplicas: 6
     targetCPUUtilizationPercentage: 70
   env:
-    SPRING_DATASOURCE_URL: "jdbc:postgresql://sso-postgres:5432/intelli_sso"
-    SPRING_DATASOURCE_USERNAME: "postgres-admin"
+    # Datasource hits the Cloud SQL Auth Proxy sidecar on localhost.
+    SPRING_DATASOURCE_URL: "jdbc:postgresql://127.0.0.1:5432/intelli_sso"
+    SPRING_DATASOURCE_USERNAME: "wfuser"
     JWT_EXPIRATION_MS: "300000"
     REFRESH_TOKEN_EXPIRATION_MS: "604800000"
     APP_KEY_ROTATION_ENABLED: "true"
     APP_KEY_ROTATION_MAX_AGE_DAYS: "90"
     SHUTDOWN_TIMEOUT: "30s"
   secrets:
-    SPRING_DATASOURCE_PASSWORD: "changeme-sso-db-password"
+    SPRING_DATASOURCE_PASSWORD: "changeme-cloud-sql-password"
     JWT_SECRET: "changeme-generate-a-256-bit-secret-key-here"
     APP_CRYPTO_SECRET: "changeme-source-from-kms-or-hsm"
+  cloudsql:
+    enabled: true
+    connectionName: weldforge:africa-south1:weldforge-db
+    proxyImage: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+    port: 5432
+  serviceAccount:
+    create: true
+    name: sso-api
+    gcpServiceAccount: sso-api@weldforge.iam.gserviceaccount.com
 
 # --- Frontend (Angular + nginx) ---
 frontend:
   image:
-    repository: 650539477525.dkr.ecr.af-south-1.amazonaws.com/intelli-sso-admin-portal
-    tag: latest
+    repository: africa-south1-docker.pkg.dev/weldforge/images/intelli-sso-admin-portal
+    tag: "prod-6"
     pullPolicy: IfNotPresent
   replicas: 2
   resources:
@@ -53,33 +63,29 @@ frontend:
       cpu: 250m
       memory: 256Mi
   service:
-    type: LoadBalancer
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    type: ClusterIP
+    annotations: {}
+  ingress:
+    enabled: true
+    staticIpName: ""
+    managedCert:
+      enabled: true
+      name: sso-frontend-cert
+      domains:
+        - sso.weldforge.org
 
 # --- PostgreSQL ---
+# Disabled — replaced by Cloud SQL via the Auth Proxy sidecar.
 postgres:
-  enabled: true
-  image: postgres:16-alpine
-  storage: 10Gi
-  storageClass: gp2
-  resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      cpu: 500m
-      memory: 1Gi
+  enabled: false
 
 # --- Monitoring ---
 monitoring:
   serviceMonitor:
-    enabled: true
-    interval: 30s
+    enabled: false
   prometheusRules:
-    enabled: true
+    enabled: false
 
 # --- CORS ---
 cors:
-  allowedOrigins: "https://sso.cwvermaak.tech"
+  allowedOrigins: "https://sso.weldforge.org,https://app.wellspring.org.za"
