@@ -67,7 +67,7 @@ frontend:
     annotations: {}
   ingress:
     enabled: true
-    staticIpName: ""
+    staticIpName: sso-frontend-ip
     managedCert:
       enabled: true
       name: sso-frontend-cert
