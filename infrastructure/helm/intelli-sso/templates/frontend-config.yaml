@@ -1,0 +1,23 @@
+{{- if .Values.frontend.ingress.enabled }}
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: sso-frontend
+  namespace: {{ .Values.global.namespace }}
+spec:
+  redirectToHttps:
+    enabled: true
+    responseCodeName: MOVED_PERMANENTLY_DEFAULT
+{{- end }}
+---
+{{- if .Values.frontend.ingress.enabled }}
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: sso-frontend
+  namespace: {{ .Values.global.namespace }}
+spec:
+  customResponseHeaders:
+    headers:
+      - "Strict-Transport-Security: max-age=31536000; includeSubDomains"
+{{- end }}

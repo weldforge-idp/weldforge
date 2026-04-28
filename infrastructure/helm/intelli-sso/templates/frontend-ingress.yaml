@@ -12,6 +12,7 @@ metadata:
     {{- if .Values.frontend.ingress.staticIpName }}
     kubernetes.io/ingress.global-static-ip-name: {{ .Values.frontend.ingress.staticIpName | quote }}
     {{- end }}
+    networking.gke.io/v1beta1.FrontendConfig: "sso-frontend"
 spec:
   defaultBackend:
     service:
