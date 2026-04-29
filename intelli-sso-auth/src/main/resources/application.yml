@@ -1,6 +1,11 @@
 server:
   port: 8080
   shutdown: graceful
+  # Honour X-Forwarded-* from the GCP HTTPS load balancer (and any other
+  # TLS-terminating proxy) so generated absolute URLs — OIDC issuer,
+  # authorize/token endpoints, redirect URIs — carry the original https
+  # scheme and host instead of the LB-internal http://podname.
+  forward-headers-strategy: framework
 
 spring:
   application:
