@@ -45,8 +45,8 @@ AWSCLIV2.pkg
 .env
 .env.local
 .env.*.local
-intelli-sso-auth/.env
-intelli-sso-admin-portal/.env
+weldforge-auth/.env
+weldforge-admin-portal/.env
 
 # Test output
 test-output/

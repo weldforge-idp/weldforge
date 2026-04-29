@@ -2,7 +2,7 @@
 # ============================================================
 # WeldForge marketing site deployer.
 #
-# Uploads everything under intelli-sso-www/public/ to the
+# Uploads everything under weldforge-www/public/ to the
 # Xneelo shared-hosting web root.
 #
 # ---- SECURITY CONTEXT ----

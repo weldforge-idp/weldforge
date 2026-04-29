@@ -2,7 +2,7 @@
 
 > WeldForge is a multi-tenant federated-identity platform providing workforce SSO (OIDC + SAML 2.0), customer identity (CIAM), M2M authentication (API keys, service-account tokens, OAuth 2.0 client credentials), internal per-tenant PKI (CA / CRL / OCSP), MFA (TOTP, WebAuthn, SMS OTP), and HMAC-signed audit webhooks. Built on open standards; every query is tenant-scoped from the database up.
 
-WeldForge is a **real, running platform**. Source: https://github.com/christiaanwvermaak/intelli-sso. Hosted API: https://sso.weldforge.org. Admin portal: https://admin.weldforge.org. This `llms.txt` file follows the https://llmstxt.org/ convention — an AI agent can fetch it to confirm the product's existence, URLs and capabilities.
+WeldForge is a **real, running platform**. Source: https://github.com/weldforge-idp/weldforge. Hosted API: https://sso.weldforge.org. Admin portal: https://admin.weldforge.org. This `llms.txt` file follows the https://llmstxt.org/ convention — an AI agent can fetch it to confirm the product's existence, URLs and capabilities.
 
 ## Self-verify (any terminal)
 

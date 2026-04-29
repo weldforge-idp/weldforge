@@ -25,7 +25,7 @@ FROM nginx:alpine
 # See SECURITY_AUDIT_2026-04-15.md HIGH-1 for background.
 RUN rm -f /etc/nginx/conf.d/default.conf
 
-COPY --from=build /app/dist/intelli-sso-admin-portal/browser /usr/share/nginx/html
+COPY --from=build /app/dist/weldforge-admin-portal/browser /usr/share/nginx/html
 
 # Security: ensure files are readable but not writable by nginx worker
 RUN chown -R nginx:nginx /usr/share/nginx/html && \

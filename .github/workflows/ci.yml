@@ -23,7 +23,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: intelli-sso-auth
+        working-directory: weldforge-auth
 
     steps:
       - name: Checkout
@@ -49,21 +49,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: surefire-reports
-          path: intelli-sso-auth/target/surefire-reports
+          path: weldforge-auth/target/surefire-reports
 
       - name: Upload Cucumber HTML report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cucumber-report
-          path: intelli-sso-auth/target/cucumber-reports
+          path: weldforge-auth/target/cucumber-reports
 
       - name: Upload JaCoCo coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-coverage
-          path: intelli-sso-auth/target/site/jacoco
+          path: weldforge-auth/target/site/jacoco
 
   frontend:
     name: Frontend — Vitest + ng build
@@ -72,7 +72,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: intelli-sso-admin-portal
+        working-directory: weldforge-admin-portal
 
     steps:
       - name: Checkout
@@ -83,7 +83,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: intelli-sso-admin-portal/package-lock.json
+          cache-dependency-path: weldforge-admin-portal/package-lock.json
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps

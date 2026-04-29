@@ -21,7 +21,7 @@
     var BACKEND_ENABLED = false;
 
     var API_BASE      = 'https://sso.weldforge.org';
-    var OSS_URL       = 'https://github.com/christiaanwvermaak/intelli-sso';
+    var OSS_URL       = 'https://github.com/weldforge-idp/weldforge';
     var SALES_EMAIL   = 'sales@weldforge.org';
     var ORDERS_WEBHOOK = '';
 

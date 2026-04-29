@@ -1,7 +1,7 @@
 # WeldForge marketing site — TeamCity deployment
 
 The `www.weldforge.org` static site is deployed to Xneelo shared hosting by
-the `intelli-sso-www/scripts/deploy.sh` script. This document describes the
+the `weldforge-www/scripts/deploy.sh` script. This document describes the
 TeamCity build configuration that runs that script automatically on every
 push that touches the marketing site.
 
@@ -28,16 +28,16 @@ it is cheap — do it routinely if in doubt.
 ## TeamCity build configuration
 
 Create a new build configuration inside whichever project already hosts the
-backend deploys (e.g. `intelli-sso / WWW`). Settings below assume TeamCity
+backend deploys (e.g. `weldforge / WWW`). Settings below assume TeamCity
 2024.x or later.
 
 ### 1. Version Control Settings
 
-- **VCS Root**: the existing `intelli-sso` Git root (or a new one pointed at
+- **VCS Root**: the existing `weldforge` Git root (or a new one pointed at
   the same repo). No special clone settings — a shallow clone is fine.
 - **Checkout mode**: On Agent.
 - **Clean build**: no (faster; the deploy script only reads files under
-  `intelli-sso-www/public/`).
+  `weldforge-www/public/`).
 
 ### 2. Build Triggers
 
@@ -45,7 +45,7 @@ backend deploys (e.g. `intelli-sso / WWW`). Settings below assume TeamCity
 marketing site actually changes:
 
 ```
-+:root=<VCS root name>:intelli-sso-www/**
++:root=<VCS root name>:weldforge-www/**
 ```
 
 This stops every backend commit from triggering an unnecessary redeploy.
@@ -71,8 +71,8 @@ One command-line step:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-chmod +x intelli-sso-www/scripts/deploy.sh
-./intelli-sso-www/scripts/deploy.sh --insecure-ftp
+chmod +x weldforge-www/scripts/deploy.sh
+./weldforge-www/scripts/deploy.sh --insecure-ftp
 ```
 
 Name it `Deploy www.weldforge.org`, runner type `Command Line`, format
@@ -110,8 +110,8 @@ plain-FTP mode — curl is sufficient.
 ## Local preview without deploying
 
 ```bash
-./intelli-sso-www/scripts/deploy.sh --dry-run         # what would be sent
-python3 -m http.server 8000 --directory intelli-sso-www/public    # preview
+./weldforge-www/scripts/deploy.sh --dry-run         # what would be sent
+python3 -m http.server 8000 --directory weldforge-www/public    # preview
 ```
 
 ## Rolling back
@@ -120,9 +120,9 @@ Because the script uploads in-place and Xneelo has no atomic swap, a rollback
 is a re-deploy of an older commit:
 
 ```bash
-git checkout <previous-good-sha> -- intelli-sso-www/public
-./intelli-sso-www/scripts/deploy.sh
-git checkout HEAD -- intelli-sso-www/public
+git checkout <previous-good-sha> -- weldforge-www/public
+./weldforge-www/scripts/deploy.sh
+git checkout HEAD -- weldforge-www/public
 ```
 
 Or, more cleanly, revert the commit in git and let TeamCity re-deploy from

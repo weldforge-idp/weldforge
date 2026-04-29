@@ -7,7 +7,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "intelli-sso-admin-portal": {
+    "weldforge-admin-portal": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -90,10 +90,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "intelli-sso-admin-portal:build:production"
+              "buildTarget": "weldforge-admin-portal:build:production"
             },
             "development": {
-              "buildTarget": "intelli-sso-admin-portal:build:development"
+              "buildTarget": "weldforge-admin-portal:build:development"
             }
           },
           "defaultConfiguration": "development"
@@ -102,7 +102,7 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "tsconfig.spec.json",
-            "buildTarget": "intelli-sso-admin-portal:build:development",
+            "buildTarget": "weldforge-admin-portal:build:development",
             "runner": "vitest"
           }
         }

@@ -1,5 +1,5 @@
 {
-  "name": "intelli-sso-admin-portal",
+  "name": "weldforge-admin-portal",
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",

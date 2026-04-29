@@ -1,5 +1,5 @@
 # ============================================================
-# Prometheus alerting rules for intelli-sso.
+# Prometheus alerting rules for weldforge.
 #
 # Add to your Prometheus config:
 #   rule_files:
@@ -9,7 +9,7 @@
 # ============================================================
 
 groups:
-  - name: intelli-sso
+  - name: weldforge
     rules:
 
       # ---------- Authentication -----------------------------------
@@ -76,24 +76,24 @@ groups:
       # ---------- Health -------------------------------------------
 
       - alert: HealthCheckDown
-        expr: up{job="intelli-sso"} == 0
+        expr: up{job="weldforge"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "intelli-sso instance is down"
+          summary: "weldforge instance is down"
           description: >-
-            Prometheus cannot reach the intelli-sso health endpoint.
+            Prometheus cannot reach the weldforge health endpoint.
             The service may have crashed or the network path is broken.
 
       - alert: ReadinessProbeDown
         expr: |
-          probe_success{job="intelli-sso-readiness"} == 0
+          probe_success{job="weldforge-readiness"} == 0
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: "intelli-sso readiness probe failing"
+          summary: "weldforge readiness probe failing"
           description: >-
             The /actuator/health/readiness endpoint is returning non-200.
             The database connection or disk space check may be failing.

@@ -1,5 +1,5 @@
 apiVersion: v2
-name: intelli-sso
+name: weldforge
 description: Multi-tenant SSO / IAM platform — authentication, OIDC, SAML, SCIM, MFA
 type: application
 version: 1.0.0

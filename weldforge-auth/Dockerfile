@@ -24,7 +24,7 @@ FROM bellsoft/liberica-openjre-debian:21
 RUN groupadd -r sso && useradd -r -g sso -d /app -s /sbin/nologin sso
 WORKDIR /app
 
-COPY --from=build /app/target/intelli-sso-auth-*.jar app.jar
+COPY --from=build /app/target/weldforge-auth-*.jar app.jar
 RUN chown -R sso:sso /app
 
 USER sso

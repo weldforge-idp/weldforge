@@ -5,7 +5,7 @@
             "@type": "SoftwareApplication",
             "@id": "https://www.weldforge.org/#software",
             "name": "WeldForge",
-            "alternateName": "intelli-sso",
+            "alternateName": "weldforge",
             "applicationCategory": "SecurityApplication",
             "applicationSubCategory": "IdentityProvider",
             "operatingSystem": "Linux (self-hosted), Web (hosted)",

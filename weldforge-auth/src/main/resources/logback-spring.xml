@@ -19,7 +19,7 @@
 -->
 <configuration>
 
-    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="intelli-sso-auth"/>
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="weldforge-auth"/>
 
     <!-- ==== Pretty console (dev) ============================== -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">

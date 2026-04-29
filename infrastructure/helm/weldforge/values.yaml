@@ -1,5 +1,5 @@
 # ============================================================
-# Default values for intelli-sso (GKE Autopilot).
+# Default values for weldforge (GKE Autopilot).
 # Override per environment with values-staging.yaml, values-prod.yaml.
 # ============================================================
 
@@ -9,7 +9,7 @@ global:
 # --- API (Spring Boot backend) ---
 api:
   image:
-    repository: africa-south1-docker.pkg.dev/weldforge/images/intelli-sso-auth
+    repository: africa-south1-docker.pkg.dev/weldforge/images/weldforge-auth
     tag: "0.7.0-user-mgmt"
     pullPolicy: IfNotPresent
   replicas: 2
@@ -51,7 +51,7 @@ api:
 # --- Frontend (Angular + nginx) ---
 frontend:
   image:
-    repository: africa-south1-docker.pkg.dev/weldforge/images/intelli-sso-admin-portal
+    repository: africa-south1-docker.pkg.dev/weldforge/images/weldforge-admin-portal
     tag: "prod-6"
     pullPolicy: IfNotPresent
   replicas: 2

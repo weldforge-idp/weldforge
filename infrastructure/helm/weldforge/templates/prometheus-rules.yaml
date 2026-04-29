@@ -9,7 +9,7 @@ metadata:
     release: prometheus
 spec:
   groups:
-    - name: intelli-sso
+    - name: weldforge
       rules:
         - alert: HighLoginFailureRate
           expr: |

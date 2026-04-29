@@ -20,7 +20,7 @@ server:
 
 spring:
   application:
-    name: intelli-sso-auth
+    name: weldforge-auth
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/intellisso}
     username: ${SPRING_DATASOURCE_USERNAME:intellisso}

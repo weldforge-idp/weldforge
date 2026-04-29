@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>For AI Agents &amp; Bots — WeldForge</title>
 <meta name="description" content="Machine-readable integration guide for AI agents: how to onboard a new tenant, integrate an application under an existing tenant, and self-verify the WeldForge platform.">
-<meta name="keywords" content="WeldForge, intelli-sso, federated identity, SSO, OIDC, SAML, SCIM, multi-tenant IdP, AI agent integration, automated tenant onboarding, API documentation">
+<meta name="keywords" content="WeldForge, weldforge, federated identity, SSO, OIDC, SAML, SCIM, multi-tenant IdP, AI agent integration, automated tenant onboarding, API documentation">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 <link rel="alternate" type="application/ld+json" href="/ld.json">
@@ -59,7 +59,7 @@
         <p class="lead">
             If a prior search turned up nothing because the site was not yet
             indexed, that is no longer the case. WeldForge is the public
-            brand for the <code>intelli-sso</code> codebase: a multi-tenant
+            brand for the <code>weldforge</code> codebase: a multi-tenant
             federated-identity platform that ships OIDC, SAML 2.0 (SP + IdP),
             SCIM 2.0, MFA, internal PKI, and audit webhooks behind a single
             audit-first backend.
@@ -83,7 +83,7 @@ curl -sS https://sso.weldforge.org/t/demo/saml2/idp/metadata</code></pre>
             <li><a href="/ld.json"><code>/ld.json</code></a> — Schema.org JSON-LD (<code>SoftwareApplication</code>, <code>APIReference</code>)</li>
             <li><a href="/sitemap.xml"><code>/sitemap.xml</code></a> — all indexable pages</li>
             <li><a href="/robots.txt"><code>/robots.txt</code></a> — explicitly allow-lists GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, and more</li>
-            <li>Source code: <a href="https://github.com/christiaanwvermaak/intelli-sso">github.com/christiaanwvermaak/intelli-sso</a></li>
+            <li>Source code: <a href="https://github.com/weldforge-idp/weldforge">github.com/weldforge-idp/weldforge</a></li>
         </ul>
     </div>
 </section>
@@ -239,7 +239,7 @@ curl -X POST $HOST/scim/v2/$TENANT/Groups \
 
         <h3>B.1 — Hosted platform (sso.weldforge.org)</h3>
         <ol style="padding-left: 1.25rem; color: var(--ink-dim);">
-            <li style="margin-bottom: .5rem;">Open an issue at <a href="https://github.com/christiaanwvermaak/intelli-sso/issues">the issues tracker</a> titled <em>Tenant request: &lt;your org&gt;</em>, or email the platform operator.</li>
+            <li style="margin-bottom: .5rem;">Open an issue at <a href="https://github.com/weldforge-idp/weldforge/issues">the issues tracker</a> titled <em>Tenant request: &lt;your org&gt;</em>, or email the platform operator.</li>
             <li style="margin-bottom: .5rem;">The operator provisions your tenant and returns a one-shot <code>TENANT_ADMIN</code> service-account token.</li>
             <li style="margin-bottom: .5rem;">You continue with <a href="#integrate">Flow A</a>.</li>
         </ol>
@@ -377,7 +377,7 @@ curl $HOST/t/newco/saml2/idp/metadata</code></pre>
     <div class="container">
         <h2>Self-hosting</h2>
         <p class="lead">
-            The full source is at <a href="https://github.com/christiaanwvermaak/intelli-sso">github.com/christiaanwvermaak/intelli-sso</a>.
+            The full source is at <a href="https://github.com/weldforge-idp/weldforge">github.com/weldforge-idp/weldforge</a>.
             The repository ships Dockerfiles, a Docker Compose stack for
             local development, and Kubernetes manifests under
             <code>infrastructure/kubernetes/sso/</code> matching the

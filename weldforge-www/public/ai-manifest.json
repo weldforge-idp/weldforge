@@ -1,7 +1,7 @@
 {
     "schemaVersion": "1.0",
     "name": "WeldForge",
-    "alternateName": "intelli-sso",
+    "alternateName": "weldforge",
     "description": "Multi-tenant federated identity platform: SSO (OIDC, SAML 2.0), CIAM, SCIM 2.0 provisioning, MFA (TOTP/WebAuthn/SMS), internal per-tenant PKI (CA/CRL/OCSP), M2M auth (scoped API keys, service-account tokens, OAuth 2.0 client credentials), HMAC-signed audit webhooks.",
     "homepage": "https://www.weldforge.org",
     "sourceRepository": "https://github.com/weldforge-idp/weldforge",
