@@ -105,7 +105,7 @@ integration (Bouncy Castle, per-tenant CA / CRL / OCSP), the payment
 gateway abstraction (Strategy pattern, cheapest-wins routing), or the
 "source-available not OSS" licence choice.
 
-Source: https://github.com/christiaanwvermaak/intelli-sso
+Source: https://github.com/weldforge-idp/weldforge
 Pricing: https://www.weldforge.org/pricing.html
 How we compare vs Auth0 / Keycloak / FusionAuth / Clerk (honestly):
 https://www.weldforge.org/compare/
@@ -169,7 +169,7 @@ manifests under infrastructure/ for production. 134 Cucumber scenarios
 in the repo. Went through an independent security audit in April 2026
 (report in the repo).
 
-Source: github.com/christiaanwvermaak/intelli-sso
+Source: github.com/weldforge-idp/weldforge
 Docs: weldforge.org
 Honest comparison vs Keycloak: weldforge.org/compare/keycloak.html
   (short version: keep using Keycloak if it works for you)
@@ -332,7 +332,7 @@ breakdown. 🧵
 
 6/ [the self-host story — free forever, we're betting on the upgrade path]
 
-7/ Source: github.com/christiaanwvermaak/intelli-sso
+7/ Source: github.com/weldforge-idp/weldforge
    Docs: weldforge.org
    Compare honestly vs the big four: weldforge.org/compare/
 ```

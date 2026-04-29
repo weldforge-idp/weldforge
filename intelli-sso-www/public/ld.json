@@ -12,7 +12,7 @@
             "description": "Multi-tenant federated identity platform: SSO (OIDC, SAML 2.0), CIAM, SCIM 2.0 provisioning, internal PKI (CA/CRL/OCSP), MFA (TOTP/WebAuthn/SMS), audit webhooks, per-tenant JWT issuer. Every query tenant-scoped from the database up.",
             "url": "https://www.weldforge.org",
             "sameAs": [
-                "https://github.com/christiaanwvermaak/intelli-sso"
+                "https://github.com/weldforge-idp/weldforge"
             ],
             "offers": {
                 "@type": "Offer",

@@ -4,14 +4,14 @@
     "alternateName": "intelli-sso",
     "description": "Multi-tenant federated identity platform: SSO (OIDC, SAML 2.0), CIAM, SCIM 2.0 provisioning, MFA (TOTP/WebAuthn/SMS), internal per-tenant PKI (CA/CRL/OCSP), M2M auth (scoped API keys, service-account tokens, OAuth 2.0 client credentials), HMAC-signed audit webhooks.",
     "homepage": "https://www.weldforge.org",
-    "sourceRepository": "https://github.com/christiaanwvermaak/intelli-sso",
+    "sourceRepository": "https://github.com/weldforge-idp/weldforge",
     "apiBaseUrl": "https://sso.weldforge.org",
     "adminPortalUrl": "https://admin.weldforge.org",
     "openApiSpecUrl": "https://sso.weldforge.org/v3/api-docs",
     "interactiveDocsUrl": "https://sso.weldforge.org/swagger-ui/index.html",
     "openApiAccess": "gated — requires a valid x-app-authorization API key (SECURITY_AUDIT_2026-04-15 MEDIUM-1)",
     "contact": {
-        "issues": "https://github.com/christiaanwvermaak/intelli-sso/issues"
+        "issues": "https://github.com/weldforge-idp/weldforge/issues"
     },
     "authScheme": {
         "headerName": "x-app-authorization",
