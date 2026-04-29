@@ -1,7 +1,7 @@
 # WeldForge Security Audit — 2026-04-15
 
 **Scope:** `www.weldforge.org`, `weldforge.org`, `sso.weldforge.org`,
-`admin.weldforge.org`, the deployed `intelli-sso-auth` Spring Boot
+`admin.weldforge.org`, the deployed `weldforge-auth` Spring Boot
 application, and its dependency surface.
 
 **Methodology:** Phase 1 passive analysis only. No active fuzzing, no
@@ -43,7 +43,7 @@ publicly-known credential.**
 
 **Evidence:**
 
-`intelli-sso-auth/src/main/resources/db/migration/V2__seed_app_clients.sql`
+`weldforge-auth/src/main/resources/db/migration/V2__seed_app_clients.sql`
 contains:
 
 ```sql
@@ -150,7 +150,7 @@ any client we know of. It is still in the production database.
    - Issue a fresh app client per Epic E:
      `POST /api/admin/app-clients { "clientName": "admin-portal" }`
      This returns a `wf_live_…` value once. Capture it.
-   - Move the value out of `intelli-sso-admin-portal/src/environments/`
+   - Move the value out of `weldforge-admin-portal/src/environments/`
      and into either:
      - a build-time substitution from a TeamCity password parameter, **or**
      - a server-side config endpoint that requires the user to have
@@ -241,7 +241,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://www.weldforge.org/
 
 **Remediation:**
 
-Add an `.htaccess` to `intelli-sso-www/public/` and re-deploy:
+Add an `.htaccess` to `weldforge-www/public/` and re-deploy:
 
 ```apache
 # Force HTTPS on every request
@@ -340,7 +340,7 @@ default).
 
 ```bash
 curl -sS https://sso.weldforge.org/v3/api-docs | head -c 200
-# {"openapi":"3.0.1","info":{"title":"intelli-sso API",...
+# {"openapi":"3.0.1","info":{"title":"weldforge API",...
 #  ... 95 endpoints documented including /api/admin/* and /scim/v2/* ...
 ```
 

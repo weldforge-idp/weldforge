@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="intelli-sso-www/public/weldforge-logo.svg" alt="WeldForge" width="96">
+<img src="weldforge-www/public/weldforge-logo.svg" alt="WeldForge" width="96">
 
 # WeldForge
 
@@ -47,8 +47,8 @@ customers (or many environments of a single customer) with strict isolation.
 ## 5-minute quickstart
 
 ```bash
-git clone https://github.com/christiaanwvermaak/intelli-sso
-cd intelli-sso/intelli-sso-auth
+git clone https://github.com/weldforge-idp/weldforge
+cd weldforge/weldforge-auth
 docker compose up -d postgres
 ./mvnw spring-boot:run
 # ──
@@ -139,13 +139,13 @@ Six supported topologies, [documented in full here](https://www.weldforge.org/de
 ## Repository layout
 
 ```
-intelli-sso/
-├── intelli-sso-auth/              # Spring Boot backend (Java 21)
+weldforge/
+├── weldforge-auth/              # Spring Boot backend (Java 21)
 │   ├── src/main/java/.../            # Production code
 │   ├── src/main/resources/           # application.yml + Flyway migrations
 │   └── src/test/java/.../bdd/        # Cucumber BDD coverage
-├── intelli-sso-admin-portal/      # Angular 21 admin console
-├── intelli-sso-www/               # Marketing site (github.com/cwvermaak -> weldforge.org)
+├── weldforge-admin-portal/      # Angular 21 admin console
+├── weldforge-www/               # Marketing site (github.com/cwvermaak -> weldforge.org)
 ├── infrastructure/
 │   └── kubernetes/sso/               # Production k8s manifests (AWS EKS af-south-1)
 ├── SECURITY_AUDIT_2026-04-15.md  # Independent security audit (April 2026)
@@ -183,7 +183,7 @@ Issues and pull requests are welcome for:
 - Additional LDAP dialects or CRM connectors
 
 Substantial feature additions should be discussed in an issue first so we
-can align on scope and API shape. See `intelli-sso-auth/src/test/resources/features/`
+can align on scope and API shape. See `weldforge-auth/src/test/resources/features/`
 for the BDD conventions — new features ship with Gherkin scenarios.
 
 ## License
@@ -201,7 +201,7 @@ The full LICENSE document ships separately to paying customers.
 - **Sales**: sales@weldforge.org
 - **Support**: support@weldforge.org
 - **Security**: security@weldforge.org
-- **GitHub issues**: https://github.com/christiaanwvermaak/intelli-sso/issues
+- **GitHub issues**: https://github.com/weldforge-idp/weldforge/issues
 
 ---
 
