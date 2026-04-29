@@ -16,5 +16,10 @@
       <option name="name" value="JBoss Community repository" />
       <option name="url" value="https://repository.jboss.org/nexus/content/repositories/public/" />
     </remote-repository>
+    <remote-repository>
+      <option name="id" value="shibboleth-releases" />
+      <option name="name" value="shibboleth-releases" />
+      <option name="url" value="https://build.shibboleth.net/maven/releases/" />
+    </remote-repository>
   </component>
 </project>

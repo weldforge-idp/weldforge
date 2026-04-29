@@ -5,6 +5,16 @@ metadata:
   namespace: {{ .Values.global.namespace }}
 data:
   default.conf: |
+    # Preserve X-Forwarded-Proto from upstream proxies (the GCP HTTPS LB
+    # terminates TLS and sets X-Forwarded-Proto: https, but its hop into
+    # nginx is plain http, so $scheme would clobber that to "http"). If
+    # the client/upstream sent a value, pass it through; otherwise fall
+    # back to nginx's view.
+    map $http_x_forwarded_proto $proxy_xfp {
+      default $http_x_forwarded_proto;
+      ''      $scheme;
+    }
+
     server {
         listen 80;
         server_name _;
@@ -35,7 +45,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $proxy_xfp;
             proxy_read_timeout 60s;
         }
 
@@ -44,7 +54,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $proxy_xfp;
         }
 
         location /t/ {
@@ -52,7 +62,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $proxy_xfp;
         }
 
         location /scim/ {
@@ -60,6 +70,6 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $proxy_xfp;
         }
     }
