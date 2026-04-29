@@ -5,7 +5,18 @@ server:
   # TLS-terminating proxy) so generated absolute URLs — OIDC issuer,
   # authorize/token endpoints, redirect URIs — carry the original https
   # scheme and host instead of the LB-internal http://podname.
-  forward-headers-strategy: framework
+  # `native` configures Tomcat's RemoteIpValve, which mutates
+  # request.getScheme() at the connector level so request.getScheme()
+  # returns "https" everywhere (Spring's `framework` filter wraps later
+  # in the chain and didn't reach the controller's request param).
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+      # Trust every upstream — the GKE Ingress chain hops through Google's
+      # GFE then a NEG before hitting us, and the source IP is internal RFC1918.
+      internal-proxies: ".*"
 
 spring:
   application:
