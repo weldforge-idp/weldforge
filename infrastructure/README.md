@@ -1,12 +1,12 @@
-# Infrastructure - intelli-sso
+# Infrastructure - weldforge
 
-GCP-hosted deployment for the WeldForge / intelli-sso platform.
+GCP-hosted deployment for the WeldForge platform.
 
 ## Layout
 
 ```
 infrastructure/
-└── helm/intelli-sso/   # Helm chart deployed to GKE Autopilot
+└── helm/weldforge/   # Helm chart deployed to GKE Autopilot
     ├── Chart.yaml
     ├── values.yaml         # defaults
     ├── values-prod.yaml    # production overrides
@@ -22,7 +22,7 @@ infrastructure/
 | Region | `africa-south1` |
 | GKE cluster | `weldforge-gke` (Autopilot) |
 | Cloud SQL | `weldforge-db` (Postgres 16) — accessed via Cloud SQL Auth Proxy sidecar |
-| Artifact Registry | `africa-south1-docker.pkg.dev/weldforge/images/{intelli-sso-auth,intelli-sso-admin-portal}` |
+| Artifact Registry | `africa-south1-docker.pkg.dev/weldforge/images/{weldforge-auth,weldforge-admin-portal}` |
 | Static IP | `sso-frontend-ip` (`34.120.183.117`) bound to GKE Ingress |
 | Domain | `sso.weldforge.org` (Google-managed certificate) |
 | Workload Identity | KSA `sso/sso-api` ↔ GSA `sso-api@weldforge.iam` (`roles/cloudsql.client`) |
@@ -30,10 +30,10 @@ infrastructure/
 
 ## Deploying
 
-Pushes to `main` that touch `intelli-sso-auth/**`, `intelli-sso-admin-portal/**`, or
-`infrastructure/helm/intelli-sso/**` trigger `.github/workflows/deploy-gcp.yml`,
+Pushes to `main` that touch `weldforge-auth/**`, `weldforge-admin-portal/**`, or
+`infrastructure/helm/weldforge/**` trigger `.github/workflows/deploy-gcp.yml`,
 which builds the two container images, pushes them to Artifact Registry, and
-runs `helm upgrade --install intelli-sso` against the GKE cluster.
+runs `helm upgrade --install weldforge` against the GKE cluster.
 
 CI uses Workload Identity Federation (no static AWS/GCP keys); the
 `gha-deployer@weldforge.iam` service account is bound to the WIF pool
@@ -45,9 +45,9 @@ To deploy locally (rare — the GHA workflow is the canonical path):
 gcloud container clusters get-credentials weldforge-gke \
     --location africa-south1 --project weldforge
 
-helm upgrade --install intelli-sso infrastructure/helm/intelli-sso \
+helm upgrade --install weldforge infrastructure/helm/weldforge \
     --namespace sso \
-    -f infrastructure/helm/intelli-sso/values-prod.yaml \
+    -f infrastructure/helm/weldforge/values-prod.yaml \
     --set api.image.tag=$TAG \
     --set frontend.image.tag=$TAG \
     --set-string api.secrets.SPRING_DATASOURCE_PASSWORD="$(gcloud secrets versions access latest --secret=wf-db-password)" \

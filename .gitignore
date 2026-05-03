@@ -60,3 +60,4 @@ test-output/
 # .terraform.lock.hcl should be committed
 crash.log
 crash.*.log
+RESUME.md

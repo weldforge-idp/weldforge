@@ -1,0 +1,91 @@
+package tech.cwvermaak.weldforge.model;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+
+@Entity
+@Table(name = "tenants")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Tenant {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true, length = 64)
+    private String slug;
+
+    @Column(nullable = false)
+    private String name;
+
+    @Column(name = "display_name")
+    private String displayName;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean enabled = true;
+
+    /**
+     * Per-tenant access token TTL in milliseconds. Null = use the
+     * application default. PRD SSO-03: range 1 min – 30 days.
+     */
+    @Column(name = "access_ttl_ms")
+    private Long accessTtlMs;
+
+    /** Per-tenant refresh token TTL in milliseconds. Null = default. */
+    @Column(name = "refresh_ttl_ms")
+    private Long refreshTtlMs;
+
+    /**
+     * Per-tenant custom JWT claims injected into every access + ID token.
+     * PRD OA2-07. Stored as JSONB.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "custom_claims", columnDefinition = "jsonb")
+    private Map<String, Object> customClaims;
+
+    /**
+     * Ordered list of identity-matching rules used when resolving a
+     * federated identity to a local user. PRD FED-02.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "matching_rules", columnDefinition = "jsonb")
+    private List<Map<String, Object>> matchingRules;
+
+    /**
+     * Ordered list of JSONPath-based claim transformation rules.
+     * PRD FED-04.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "claim_transforms", columnDefinition = "jsonb")
+    private List<Map<String, Object>> claimTransforms;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        if (createdAt == null) createdAt = now;
+        updatedAt = now;
+        if (enabled == null) enabled = true;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+}

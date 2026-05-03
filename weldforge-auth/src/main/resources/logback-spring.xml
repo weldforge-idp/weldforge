@@ -67,7 +67,7 @@
     <!-- Sensible defaults -->
     <logger name="org.springframework.security" level="INFO"/>
     <logger name="org.hibernate.SQL" level="WARN"/>
-    <logger name="tech.cwvermaak.intellisso" level="DEBUG"/>
+    <logger name="tech.cwvermaak.weldforge" level="DEBUG"/>
     <logger name="security.audit" level="INFO"/>
 
     <!-- Profile-scoped root: JSON in prod, console everywhere else. -->

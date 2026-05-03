@@ -22,8 +22,8 @@ spring:
   application:
     name: weldforge-auth
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/intellisso}
-    username: ${SPRING_DATASOURCE_USERNAME:intellisso}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/weldforge}
+    username: ${SPRING_DATASOURCE_USERNAME:weldforge}
     password: ${SPRING_DATASOURCE_PASSWORD:intellisso123}
   jpa:
     hibernate:

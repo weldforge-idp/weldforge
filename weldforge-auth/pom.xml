@@ -290,7 +290,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>tech.cwvermaak.intellisso.IntelliSsoAuthApplication</mainClass>
+                    <mainClass>tech.cwvermaak.weldforge.WeldforgeAuthApplication</mainClass>
                 </configuration>
             </plugin>
             <plugin>
