@@ -1,0 +1,36 @@
+name: deploy-www
+
+# Deploys the marketing site (weldforge-www/public) to Xneelo shared
+# hosting on every push to main that touches the site or this workflow.
+#
+# Xneelo only accepts plain FTP on port 21 — see weldforge-www/scripts/deploy.sh
+# for the security context. The credentials live in GitHub Actions secrets
+# (WWW_FTP_HOST / WWW_FTP_USER / WWW_FTP_PASSWORD); rotate them in the
+# repository settings if the Xneelo password changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'weldforge-www/**'
+      - '.github/workflows/deploy-www.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-www
+  cancel-in-progress: false
+
+jobs:
+  ftp-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload site over FTP
+        working-directory: weldforge-www
+        env:
+          SFTP_HOST: ${{ secrets.WWW_FTP_HOST }}
+          SFTP_USER: ${{ secrets.WWW_FTP_USER }}
+          SFTP_PASS: ${{ secrets.WWW_FTP_PASSWORD }}
+        run: ./scripts/deploy.sh --insecure-ftp

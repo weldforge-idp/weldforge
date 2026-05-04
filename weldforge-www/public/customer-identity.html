@@ -126,6 +126,22 @@
         <pre><code>https://sso.example.com/t/{tenant-slug}/.well-known/openid-configuration</code></pre>
         <p>This document lists every OAuth2 endpoint (authorize, token, userinfo, jwks, revoke, end-session) your OIDC library needs to configure itself automatically. WeldForge issues RS256-signed JWTs using a per-tenant signing key.</p>
         <p>Prefer to build your own sign-in UI? Call <code>/api/auth/login</code> and <code>/api/auth/refresh</code> directly — both return a JWT your front-end can store and present on subsequent API calls.</p>
+
+        <div class="callout">
+            <span class="kicker">Public clients use PKCE by default</span>
+            SPAs, mobile apps, and any other public client are registered with
+            <code>requirePkce: true</code> and no client secret. WeldForge
+            rejects an Authorization Code exchange from a public client that
+            doesn't present a matching <code>code_verifier</code>. Confidential
+            clients (server-to-server) keep a secret and use
+            <code>client_credentials</code>; both kinds can live under the
+            same tenant. See
+            <a href="/tutorials.html#oidc-apps">Integrating an app with OIDC</a>
+            for a worked example.
+        </div>
+
+        <h3>Custom claims for downstream services</h3>
+        <p>Most apps care about roles, not OIDC group DNs. WeldForge ships a claims-mapping engine that lifts group membership (or any other directory attribute) into a custom claim on the issued token — typically <code>"roles": [...]</code>. The mapper runs once per token issue and applies to every grant type, so a JWT minted for a SPA, a mobile app, or a backend service all carry the same role set. Downstream services validate the JWT with the standard issuer URI and read <code>roles</code> directly.</p>
     </div>
 </section>
 

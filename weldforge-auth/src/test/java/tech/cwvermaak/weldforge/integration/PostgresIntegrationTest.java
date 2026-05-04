@@ -112,9 +112,10 @@ class PostgresIntegrationTest {
     }
 
     @Test
-    @Transactional
     @DisplayName("EncryptedStringConverter writes ciphertext to disk and decrypts on read")
     void encryptedStringConverter_actuallyEncrypts() {
+        // Not @Transactional: the raw JDBC read below opens a fresh connection
+        // and would not see the row otherwise. Cleanup is in the finally block.
         Tenant tenant = tenantRepository.findBySlug("default").orElseThrow();
 
         TenantSocialProvider provider = TenantSocialProvider.builder()
@@ -125,24 +126,27 @@ class PostgresIntegrationTest {
                 .scopes("openid profile email")
                 .enabled(true)
                 .build();
-        TenantSocialProvider saved = providerRepository.save(provider);
+        Long savedId = providerRepository.save(provider).getId();
+        try {
+            // Read it back via JPA — converter should decrypt.
+            TenantSocialProvider reloaded = providerRepository.findById(savedId).orElseThrow();
+            assertThat(reloaded.getClientSecret()).isEqualTo("plaintext-secret-for-test");
 
-        // Read it back via JPA — converter should decrypt.
-        TenantSocialProvider reloaded = providerRepository.findById(saved.getId()).orElseThrow();
-        assertThat(reloaded.getClientSecret()).isEqualTo("plaintext-secret-for-test");
-
-        // Now read the raw column via JDBC: it must NOT contain the plaintext.
-        try (var conn = POSTGRES.createConnection("");
-             var stmt = conn.prepareStatement("select client_secret_enc from tenant_social_providers where id = ?")) {
-            stmt.setLong(1, saved.getId());
-            try (var rs = stmt.executeQuery()) {
-                assertThat(rs.next()).isTrue();
-                String onDisk = rs.getString(1);
-                assertThat(onDisk).isNotBlank();
-                assertThat(onDisk).doesNotContain("plaintext-secret-for-test");
+            // Now read the raw column via JDBC: it must NOT contain the plaintext.
+            try (var conn = POSTGRES.createConnection("");
+                 var stmt = conn.prepareStatement("select client_secret_enc from tenant_social_providers where id = ?")) {
+                stmt.setLong(1, savedId);
+                try (var rs = stmt.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    String onDisk = rs.getString(1);
+                    assertThat(onDisk).isNotBlank();
+                    assertThat(onDisk).doesNotContain("plaintext-secret-for-test");
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
             }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } finally {
+            providerRepository.deleteById(savedId);
         }
     }
 
