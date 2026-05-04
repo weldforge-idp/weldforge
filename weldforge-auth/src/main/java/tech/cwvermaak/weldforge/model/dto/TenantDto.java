@@ -24,4 +24,16 @@ public class TenantDto {
 
     /** PRD OA2-07: custom claims injected into every access + ID token. */
     private Map<String, Object> customClaims;
+
+    /** Self-service registration on the login page. */
+    private Boolean registrationEnabled;
+
+    /** "Forgot your password?" link on the login page. */
+    private Boolean passwordRecoveryEnabled;
+
+    /** Require email verification before a self-registered user can sign in. */
+    private Boolean emailVerificationRequired;
+
+    /** Custom-login branding (logoUrl, primaryColor, tagline, …). */
+    private Map<String, Object> branding;
 }

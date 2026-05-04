@@ -13,6 +13,7 @@ import tech.cwvermaak.weldforge.model.dto.LoginRequestDto;
 import tech.cwvermaak.weldforge.model.dto.RegisterRequestDto;
 import tech.cwvermaak.weldforge.model.dto.SamlProviderDto;
 import tech.cwvermaak.weldforge.model.dto.SocialProviderDto;
+import tech.cwvermaak.weldforge.model.dto.TenantBrandingDto;
 import tech.cwvermaak.weldforge.model.dto.UserResponseDto;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.AuthService;
@@ -173,6 +174,11 @@ public class AuthController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @GetMapping("/tenants/{slug}/branding")
+    public ResponseEntity<TenantBrandingDto> tenantBranding(@PathVariable String slug) {
+        return ResponseEntity.ok(tenantService.getBrandingForSlug(slug));
     }
 
     @GetMapping("/tenants/{slug}/social-providers")

@@ -58,6 +58,13 @@ public class AuthService {
                                     HttpServletResponse response) {
         Tenant tenant = currentTenant();
 
+        // Per-tenant feature flag: when registration is disabled the endpoint
+        // should look like it doesn't exist. EntityNotFoundException is mapped
+        // to 404 by GlobalExceptionHandler, matching how unknown tenants behave.
+        if (Boolean.FALSE.equals(tenant.getRegistrationEnabled())) {
+            throw new EntityNotFoundException("Registration is not available for this tenant");
+        }
+
         // Pre-check password policy before we allocate a user row.
         passwordPolicyService.validate(request.getPassword());
 

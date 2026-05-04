@@ -44,6 +44,13 @@ public class PasswordResetService {
     public void requestReset(String email) {
         Tenant tenant = currentTenant();
 
+        // Per-tenant feature flag: when password recovery is disabled the
+        // endpoint should look like it doesn't exist. 404 (via GlobalExceptionHandler)
+        // is more honest than 200 here — the feature is off, not the user missing.
+        if (Boolean.FALSE.equals(tenant.getPasswordRecoveryEnabled())) {
+            throw new EntityNotFoundException("Password recovery is not available for this tenant");
+        }
+
         User user = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)
                 .orElse(null);
 

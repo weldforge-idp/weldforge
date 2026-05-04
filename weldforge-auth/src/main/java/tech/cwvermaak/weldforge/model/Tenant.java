@@ -35,6 +35,31 @@ public class Tenant {
     @Builder.Default
     private Boolean enabled = true;
 
+    /** Self-service registration on the login page. */
+    @Column(name = "registration_enabled", nullable = false)
+    @Builder.Default
+    private Boolean registrationEnabled = true;
+
+    /** "Forgot your password?" link on the login page. */
+    @Column(name = "password_recovery_enabled", nullable = false)
+    @Builder.Default
+    private Boolean passwordRecoveryEnabled = true;
+
+    /** Require email verification before a self-registered user can sign in. */
+    @Column(name = "email_verification_required", nullable = false)
+    @Builder.Default
+    private Boolean emailVerificationRequired = true;
+
+    /**
+     * Free-form branding payload. The Angular login SPA reads keys like
+     * {@code logoUrl, primaryColor, accentColor, tagline, signInLabel,
+     * customCssUrl} and applies them as CSS-variable overrides. Unknown
+     * keys are ignored — additive evolution is safe.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "branding", columnDefinition = "jsonb")
+    private Map<String, Object> branding;
+
     /**
      * Per-tenant access token TTL in milliseconds. Null = use the
      * application default. PRD SSO-03: range 1 min – 30 days.
@@ -82,6 +107,9 @@ public class Tenant {
         if (createdAt == null) createdAt = now;
         updatedAt = now;
         if (enabled == null) enabled = true;
+        if (registrationEnabled == null) registrationEnabled = true;
+        if (passwordRecoveryEnabled == null) passwordRecoveryEnabled = true;
+        if (emailVerificationRequired == null) emailVerificationRequired = true;
     }
 
     @PreUpdate

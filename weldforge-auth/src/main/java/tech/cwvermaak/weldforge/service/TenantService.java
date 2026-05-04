@@ -11,6 +11,7 @@ import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.TenantSocialProvider;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.model.dto.SocialProviderDto;
+import tech.cwvermaak.weldforge.model.dto.TenantBrandingDto;
 import tech.cwvermaak.weldforge.model.dto.TenantDto;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository;
@@ -117,6 +118,10 @@ public class TenantService {
         if (dto.getAccessTtlMs() != null)  t.setAccessTtlMs(validateTtl(dto.getAccessTtlMs(), "accessTtlMs"));
         if (dto.getRefreshTtlMs() != null) t.setRefreshTtlMs(validateTtl(dto.getRefreshTtlMs(), "refreshTtlMs"));
         if (dto.getCustomClaims() != null) t.setCustomClaims(dto.getCustomClaims());
+        if (dto.getRegistrationEnabled() != null)        t.setRegistrationEnabled(dto.getRegistrationEnabled());
+        if (dto.getPasswordRecoveryEnabled() != null)    t.setPasswordRecoveryEnabled(dto.getPasswordRecoveryEnabled());
+        if (dto.getEmailVerificationRequired() != null)  t.setEmailVerificationRequired(dto.getEmailVerificationRequired());
+        if (dto.getBranding() != null)                   t.setBranding(dto.getBranding());
         // slug is immutable — changing it would break OAuth2 registration IDs.
         auditService.recordAdmin(AuditEventTypes.TENANT_UPDATE, currentActor(),
                 AuditEventTypes.TARGET_TENANT, String.valueOf(t.getId()),
@@ -226,6 +231,22 @@ public class TenantService {
      * Enabled providers for a tenant — unauthenticated callers hit this to
      * discover which social login buttons to render. No secrets are returned.
      */
+    /**
+     * Public, unauthenticated branding lookup. Used by the Angular login SPA
+     * to render a tenant-customised login screen. Returns no secrets.
+     */
+    public TenantBrandingDto getBrandingForSlug(String slug) {
+        Tenant t = tenantRepository.findBySlug(slug)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + slug + " not found"));
+        return TenantBrandingDto.builder()
+                .slug(t.getSlug())
+                .displayName(t.getDisplayName() != null ? t.getDisplayName() : t.getName())
+                .registrationEnabled(t.getRegistrationEnabled() == null ? Boolean.TRUE : t.getRegistrationEnabled())
+                .passwordRecoveryEnabled(t.getPasswordRecoveryEnabled() == null ? Boolean.TRUE : t.getPasswordRecoveryEnabled())
+                .branding(t.getBranding())
+                .build();
+    }
+
     public List<SocialProviderDto> listEnabledProvidersForSlug(String slug) {
         Tenant t = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + slug + " not found"));
@@ -251,6 +272,10 @@ public class TenantService {
                 .accessTtlMs(t.getAccessTtlMs())
                 .refreshTtlMs(t.getRefreshTtlMs())
                 .customClaims(t.getCustomClaims())
+                .registrationEnabled(t.getRegistrationEnabled())
+                .passwordRecoveryEnabled(t.getPasswordRecoveryEnabled())
+                .emailVerificationRequired(t.getEmailVerificationRequired())
+                .branding(t.getBranding())
                 .build();
     }
 
