@@ -290,7 +290,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>tech.cwvermaak.intellisso.IntelliSsoAuthApplication</mainClass>
+                    <mainClass>tech.cwvermaak.weldforge.WeldforgeAuthApplication</mainClass>
                 </configuration>
             </plugin>
             <plugin>
@@ -305,6 +305,12 @@
                         <include>**/*Tests.java</include>
                         <include>**/CucumberRunner.java</include>
                     </includes>
+                    <!-- Background schedulers (webhook retries, circuit breakers)
+                         can leave non-daemon threads alive when System.exit fires.
+                         The default 30s window kills the fork before JaCoCo's
+                         shutdown hook flushes jacoco.exec, producing a 0%-coverage
+                         false negative at jacoco:check. -->
+                    <forkedProcessExitTimeoutInSeconds>180</forkedProcessExitTimeoutInSeconds>
                     <systemPropertyVariables>
                         <cucumber.junit-platform.naming-strategy>long</cucumber.junit-platform.naming-strategy>
                         <!-- Pass through so the Postgres integration tests
@@ -321,7 +327,7 @@
                      Tighten as coverage grows. -->
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.12</version>
+                <version>0.8.14</version>
                 <executions>
                     <execution>
                         <id>prepare-agent</id>

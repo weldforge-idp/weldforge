@@ -20,6 +20,8 @@ RUN ./mvnw clean package -DskipTests -B -ntp
 # --- Runtime stage ---
 FROM bellsoft/liberica-openjre-debian:21
 
+LABEL org.opencontainers.image.source="https://github.com/weldforge-idp/weldforge"
+
 # Security: run as non-root
 RUN groupadd -r sso && useradd -r -g sso -d /app -s /sbin/nologin sso
 WORKDIR /app

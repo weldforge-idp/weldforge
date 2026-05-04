@@ -18,6 +18,8 @@ RUN npx ng build --configuration production
 # --- Runtime stage ---
 FROM nginx:alpine
 
+LABEL org.opencontainers.image.source="https://github.com/weldforge-idp/weldforge"
+
 # Strip the stock default server block. The real nginx config is
 # provided at runtime by the `frontend-nginx-config` ConfigMap,
 # mounted at /etc/nginx/templates and processed by the nginx:alpine

@@ -145,9 +145,9 @@ weldforge/
 │   ├── src/main/resources/           # application.yml + Flyway migrations
 │   └── src/test/java/.../bdd/        # Cucumber BDD coverage
 ├── weldforge-admin-portal/      # Angular 21 admin console
-├── weldforge-www/               # Marketing site (github.com/cwvermaak -> weldforge.org)
+├── weldforge-www/               # Marketing site (github.com/weldforge-idp -> weldforge.org)
 ├── infrastructure/
-│   └── kubernetes/sso/               # Production k8s manifests (AWS EKS af-south-1)
+│   └── helm/weldforge/             # Helm chart deployed to GKE Autopilot (weldforge-gke, africa-south1)
 ├── SECURITY_AUDIT_2026-04-15.md  # Independent security audit (April 2026)
 └── VALIDATION_REPORT_2026-04-17.md
 ```

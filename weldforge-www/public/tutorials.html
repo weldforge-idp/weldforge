@@ -124,6 +124,132 @@ export TOKEN=wf_live_...</code></pre>
     </div>
 </section>
 
+<section id="oidc-apps">
+    <div class="container">
+        <h2>Integrating an app with OIDC</h2>
+        <p class="lead">
+            The pattern below is what Write-Buddy uses in production: one tenant
+            owns a public SPA, a mobile app, and a backend service. The SPA and
+            mobile use PKCE; the backend uses <code>client_credentials</code> for
+            scheduled jobs. All three validate the same WeldForge-issued JWT.
+        </p>
+
+        <h3>1. Bootstrap a tenant with mixed-grant clients</h3>
+        <p>Public clients (SPA, mobile, desktop) must use Authorization Code + PKCE — no client secret is issued. Backend services keep a secret and use <code>client_credentials</code>. Register each role as a separate client under the same tenant:</p>
+        <pre><code>curl -X POST $HOST/api/admin/tenants \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"slug":"write-buddy","name":"Write-Buddy"}'
+
+# Public SPA — Authorization Code + PKCE, no secret
+curl -X POST $HOST/api/admin/tenants/write-buddy/oidc-clients \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "clientId":     "wb-admin-web",
+      "clientType":   "public",
+      "grantTypes":   ["authorization_code","refresh_token"],
+      "requirePkce":  true,
+      "redirectUris": ["https://app.write-buddy.example/oauth/callback"],
+      "scopes":       ["openid","profile","email","offline_access"]
+    }'
+
+# Mobile app — same shape, different redirect URI
+curl -X POST $HOST/api/admin/tenants/write-buddy/oidc-clients \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "clientId":     "wb-mobile",
+      "clientType":   "public",
+      "grantTypes":   ["authorization_code","refresh_token"],
+      "requirePkce":  true,
+      "redirectUris": ["online.appiary.writebuddy://oauth/callback"],
+      "scopes":       ["openid","profile","email","offline_access"]
+    }'
+
+# Backend service — confidential, client_credentials only
+curl -X POST $HOST/api/admin/tenants/write-buddy/oidc-clients \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "clientId":     "wb-backend",
+      "clientType":   "confidential",
+      "grantTypes":   ["client_credentials"],
+      "scopes":       ["wb.shapes.read","wb.shapes.write"]
+    }'</code></pre>
+        <p>The confidential client's response carries <code>clientSecret</code> once. Capture it into your secret store immediately.</p>
+
+        <h3>2. Map group membership into a custom <code>roles</code> claim</h3>
+        <p>Downstream services usually want roles, not raw group DNs. Define the groups WeldForge should mint for this tenant, then add a claims mapper that copies group membership into a <code>roles</code> claim on every issued token:</p>
+        <pre><code># Define the three roles your app cares about
+for name in wb-admins wb-parents wb-children; do
+  curl -X POST $HOST/api/admin/tenants/write-buddy/groups \
+      -H "x-app-authorization: $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"name\":\"$name\"}"
+done
+
+# Project group membership into a "roles" claim on the access token
+curl -X POST $HOST/api/admin/tenants/write-buddy/claim-mappers \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name":       "groups-to-roles",
+      "source":     "GROUP_MEMBERSHIP",
+      "claim":      "roles",
+      "tokenType":  "ACCESS_TOKEN",
+      "valueType":  "STRING_ARRAY",
+      "transform":  "STRIP_PREFIX",
+      "transformArg": "wb-"
+    }'</code></pre>
+        <p>A user in <code>wb-admins</code> and <code>wb-parents</code> now gets <code>"roles":["admins","parents"]</code> on every access token. SCIM-provisioned group membership flows through the same mapper — no extra wiring.</p>
+
+        <h3>3. Validate the JWT from a Spring Boot service</h3>
+        <p>The downstream service only needs the issuer URI; Spring discovers the JWKS endpoint and refreshes keys automatically. Add a small converter to lift the <code>roles</code> claim into Spring authorities so <code>@PreAuthorize("hasRole('admins')")</code> just works:</p>
+        <pre><code># application.yml
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://idp.weldforge.org/t/write-buddy</code></pre>
+        <pre><code>// SecurityConfig.java
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig {
+
+    @Bean
+    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -&gt; csrf.disable())
+            .sessionManagement(s -&gt; s.sessionCreationPolicy(STATELESS))
+            .authorizeHttpRequests(reg -&gt; reg
+                .requestMatchers("/actuator/health").permitAll()
+                .anyRequest().authenticated())
+            .oauth2ResourceServer(o -&gt; o
+                .jwt(j -&gt; j.jwtAuthenticationConverter(new WeldForgeJwtAuthenticationConverter())));
+        return http.build();
+    }
+}</code></pre>
+        <pre><code>// WeldForgeJwtAuthenticationConverter.java
+public final class WeldForgeJwtAuthenticationConverter
+        implements Converter&lt;Jwt, AbstractAuthenticationToken&gt; {
+
+    private final JwtGrantedAuthoritiesConverter scopes = new JwtGrantedAuthoritiesConverter();
+
+    @Override public AbstractAuthenticationToken convert(Jwt jwt) {
+        var auths = new ArrayList&lt;GrantedAuthority&gt;(scopes.convert(jwt));
+        Object roles = jwt.getClaim("roles");
+        if (roles instanceof Collection&lt;?&gt; c) {
+            for (Object r : c) auths.add(new SimpleGrantedAuthority("ROLE_" + r));
+        }
+        return new JwtAuthenticationToken(jwt, auths, jwt.getSubject());
+    }
+}</code></pre>
+        <p>That is the entire integration. Scope-based authorisation works through Spring's default <code>SCOPE_*</code> authorities; role-based authorisation works through the <code>ROLE_*</code> mapping above.</p>
+    </div>
+</section>
+
 <section id="api">
     <div class="container">
         <h2>API keys &amp; service accounts</h2>
