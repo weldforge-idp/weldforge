@@ -48,7 +48,7 @@ class PasswordResetIntegrationTest {
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("intellisso_test")
+            .withDatabaseName("weldforge_test")
             .withUsername("test")
             .withPassword("test");
 

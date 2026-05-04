@@ -24,7 +24,7 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/weldforge}
     username: ${SPRING_DATASOURCE_USERNAME:weldforge}
-    password: ${SPRING_DATASOURCE_PASSWORD:intellisso123}
+    password: ${SPRING_DATASOURCE_PASSWORD:weldforge123}
   jpa:
     hibernate:
       ddl-auto: validate
