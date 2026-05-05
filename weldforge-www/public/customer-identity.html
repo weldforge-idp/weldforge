@@ -140,8 +140,8 @@
             for a worked example.
         </div>
 
-        <h3>Custom claims for downstream services</h3>
-        <p>Most apps care about roles, not OIDC group DNs. WeldForge ships a claims-mapping engine that lifts group membership (or any other directory attribute) into a custom claim on the issued token — typically <code>"roles": [...]</code>. The mapper runs once per token issue and applies to every grant type, so a JWT minted for a SPA, a mobile app, or a backend service all carry the same role set. Downstream services validate the JWT with the standard issuer URI and read <code>roles</code> directly.</p>
+        <h3>The <code>roles</code> claim — driven by SCIM groups</h3>
+        <p>Every WeldForge access and ID token already carries a <code>roles</code> array. There is no separate claim-mapper to configure: the array is built from two existing primitives — <code>Role</code> records you create per tenant, and group-role mappings that bind a SCIM group to a role. SCIM-provisioned membership flows through automatically, so a user added to <code>wb-admins</code> in your upstream IdP gets <code>"roles":["admin"]</code> on the next token without a redeploy. The same mapping applies to every grant type, so JWTs minted for a SPA, a mobile app, or a backend service all carry the same role set. Downstream services validate the JWT with the standard issuer URI and read <code>roles</code> directly. See <a href="/tutorials.html#oidc-apps">Integrating an app with OIDC</a> for the full bootstrap.</p>
     </div>
 </section>
 

@@ -129,25 +129,39 @@ export TOKEN=wf_live_...</code></pre>
         <h2>Integrating an app with OIDC</h2>
         <p class="lead">
             The pattern below is what Write-Buddy uses in production: one tenant
-            owns a public SPA, a mobile app, and a backend service. The SPA and
-            mobile use PKCE; the backend uses <code>client_credentials</code> for
-            scheduled jobs. All three validate the same WeldForge-issued JWT.
+            owns a SPA, a mobile app, and a backend service. The SPA and mobile
+            use Authorization Code + PKCE; the backend uses
+            <code>client_credentials</code> for scheduled jobs. All three
+            validate the same WeldForge-issued JWT.
+        </p>
+        <p>
+            Every <code>/api/admin/*</code> recipe in this section assumes
+            <code>$TOKEN</code> is a service-account token
+            (<code>wf_svc_…</code>) for a TENANT_ADMIN of the
+            <code>write-buddy</code> tenant — see
+            <a href="#api">Create a service account with TENANT_ADMIN</a>
+            below for how to mint one. The token's owning tenant scopes
+            every call automatically; the slug never needs to be repeated
+            in the URL.
         </p>
 
-        <h3>1. Bootstrap a tenant with mixed-grant clients</h3>
-        <p>Public clients (SPA, mobile, desktop) must use Authorization Code + PKCE — no client secret is issued. Backend services keep a secret and use <code>client_credentials</code>. Register each role as a separate client under the same tenant:</p>
+        <h3>1. Bootstrap the tenant</h3>
+        <p>One-shot SUPER_ADMIN call against the platform's <code>default</code> tenant:</p>
         <pre><code>curl -X POST $HOST/api/admin/tenants \
-    -H "x-app-authorization: $TOKEN" \
+    -H "x-app-authorization: $SUPER_ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
-    -d '{"slug":"write-buddy","name":"Write-Buddy"}'
+    -d '{"slug":"write-buddy","name":"Write-Buddy"}'</code></pre>
+        <p>Mint a TENANT_ADMIN service account on the new tenant (recipe under <a href="#api">API keys &amp; service accounts</a>) and capture its token as <code>$TOKEN</code>. The remaining recipes use that.</p>
 
-# Public SPA — Authorization Code + PKCE, no secret
-curl -X POST $HOST/api/admin/tenants/write-buddy/oidc-clients \
+        <h3>2. Register OIDC clients</h3>
+        <p>WeldForge distinguishes public and confidential clients via the <code>requirePkce</code> flag rather than a separate type. <code>true</code> rejects any Authorization Code exchange that doesn't present a matching <code>code_verifier</code> — that is the entire mechanism that makes a SPA or mobile client safe without a secret. <code>false</code> mints a <code>clientSecret</code> on create (returned exactly once) and is appropriate for backend services using <code>client_credentials</code>.</p>
+        <pre><code># SPA — Authorization Code + PKCE, no secret
+curl -X POST $HOST/api/admin/oidc/clients \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
       "clientId":     "wb-admin-web",
-      "clientType":   "public",
+      "name":         "Write-Buddy Admin Web",
       "grantTypes":   ["authorization_code","refresh_token"],
       "requirePkce":  true,
       "redirectUris": ["https://app.write-buddy.example/oauth/callback"],
@@ -155,57 +169,57 @@ curl -X POST $HOST/api/admin/tenants/write-buddy/oidc-clients \
     }'
 
 # Mobile app — same shape, different redirect URI
-curl -X POST $HOST/api/admin/tenants/write-buddy/oidc-clients \
+curl -X POST $HOST/api/admin/oidc/clients \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
       "clientId":     "wb-mobile",
-      "clientType":   "public",
+      "name":         "Write-Buddy Mobile",
       "grantTypes":   ["authorization_code","refresh_token"],
       "requirePkce":  true,
       "redirectUris": ["online.appiary.writebuddy://oauth/callback"],
       "scopes":       ["openid","profile","email","offline_access"]
     }'
 
-# Backend service — confidential, client_credentials only
-curl -X POST $HOST/api/admin/tenants/write-buddy/oidc-clients \
+# Backend service — confidential, client_credentials
+curl -X POST $HOST/api/admin/oidc/clients \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
       "clientId":     "wb-backend",
-      "clientType":   "confidential",
+      "name":         "Write-Buddy Backend",
       "grantTypes":   ["client_credentials"],
+      "requirePkce":  false,
+      "redirectUris": ["https://write-buddy.example/oauth/unused"],
       "scopes":       ["wb.shapes.read","wb.shapes.write"]
     }'</code></pre>
-        <p>The confidential client's response carries <code>clientSecret</code> once. Capture it into your secret store immediately.</p>
+        <p>The confidential client's response carries <code>clientSecret</code> exactly once — capture it into your secret store immediately. <code>redirectUris</code> is required on every client today, so set a placeholder for back-end-only ones.</p>
 
-        <h3>2. Map group membership into a custom <code>roles</code> claim</h3>
-        <p>Downstream services usually want roles, not raw group DNs. Define the groups WeldForge should mint for this tenant, then add a claims mapper that copies group membership into a <code>roles</code> claim on every issued token:</p>
-        <pre><code># Define the three roles your app cares about
-for name in wb-admins wb-parents wb-children; do
-  curl -X POST $HOST/api/admin/tenants/write-buddy/groups \
-      -H "x-app-authorization: $TOKEN" \
-      -H "Content-Type: application/json" \
-      -d "{\"name\":\"$name\"}"
-done
-
-# Project group membership into a "roles" claim on the access token
-curl -X POST $HOST/api/admin/tenants/write-buddy/claim-mappers \
+        <h3>3. Map group membership into the <code>roles</code> claim</h3>
+        <p>Every WeldForge access and ID token already carries a <code>roles</code> array — there is no separate claim mapper to configure. The array's contents come from two records: a <code>Role</code> per role name you want a downstream service to recognise, and a group-role mapping that ties a SCIM group to that role.</p>
+        <pre><code># 3a. Define the roles your app cares about
+for role in admin parent child; do
+  curl -X POST $HOST/api/admin/roles \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
-    -d '{
-      "name":       "groups-to-roles",
-      "source":     "GROUP_MEMBERSHIP",
-      "claim":      "roles",
-      "tokenType":  "ACCESS_TOKEN",
-      "valueType":  "STRING_ARRAY",
-      "transform":  "STRIP_PREFIX",
-      "transformArg": "wb-"
-    }'</code></pre>
-        <p>A user in <code>wb-admins</code> and <code>wb-parents</code> now gets <code>"roles":["admins","parents"]</code> on every access token. SCIM-provisioned group membership flows through the same mapper — no extra wiring.</p>
+    -d "{\"name\":\"$role\",\"description\":\"Write-Buddy $role\"}"
+done
 
-        <h3>3. Validate the JWT from a Spring Boot service</h3>
-        <p>The downstream service only needs the issuer URI; Spring discovers the JWKS endpoint and refreshes keys automatically. Add a small converter to lift the <code>roles</code> claim into Spring authorities so <code>@PreAuthorize("hasRole('admins')")</code> just works:</p>
+# 3b. SCIM provisions groups from your upstream IdP. Look up the
+#     resulting group id once it is there:
+curl -G "$HOST/scim/v2/Groups" \
+    -H "x-app-authorization: $TOKEN" \
+    --data-urlencode 'filter=displayName eq "wb-admins"' | jq
+
+# 3c. Bind the SCIM group to the role
+curl -X POST $HOST/api/admin/group-role-mappings \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"scimGroupId": 42, "roleId": 7, "priority": 10}'</code></pre>
+        <p>Members of the <code>wb-admins</code> SCIM group now receive <code>"roles":["admin"]</code> on every JWT minted for any of the three clients above.</p>
+
+        <h3>4. Validate the JWT from a Spring Boot service</h3>
+        <p>The downstream service only needs the issuer URI; Spring discovers the JWKS endpoint and refreshes keys automatically. Add a small converter to lift the <code>roles</code> claim into Spring authorities so <code>@PreAuthorize("hasRole('admin')")</code> just works:</p>
         <pre><code># application.yml
 spring:
   security:
