@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -6,8 +6,9 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService, MfaFactorType } from '../../core/services/auth.service';
+import { TenantBrandingService } from '../../core/services/tenant-branding.service';
 import { catchError, tap } from 'rxjs/operators';
 import { of } from 'rxjs';
 
@@ -17,7 +18,7 @@ type Step = 'credentials' | 'mfa';
   selector: 'app-login',
   standalone: true,
   imports: [
-    CommonModule, FormsModule,
+    CommonModule, FormsModule, RouterLink,
     MatCardModule, MatFormFieldModule, MatInputModule,
     MatButtonModule, MatProgressSpinnerModule
   ],
@@ -25,10 +26,10 @@ type Step = 'credentials' | 'mfa';
     <div class="wf-login-shell">
       <div class="wf-login-card">
         <div class="wf-login-header">
-          <img src="weldforge-logo.svg" alt="WeldForge" height="44">
-          <div class="wf-eyebrow">// secure access</div>
-          <h1>{{ step() === 'credentials' ? 'Sign in to WeldForge' : 'Verify it\\'s you' }}</h1>
-          <p class="wf-sub" *ngIf="step() === 'credentials'">Federated identity, forged into one trusted layer.</p>
+          <img [src]="logoUrl()" [alt]="displayName()" height="44">
+          <div class="wf-eyebrow" *ngIf="eyebrow()">{{ eyebrow() }}</div>
+          <h1>{{ headline() }}</h1>
+          <p class="wf-sub" *ngIf="step() === 'credentials'">{{ tagline() }}</p>
           <p class="wf-sub" *ngIf="step() === 'mfa'">Enter the 6-digit code from your authenticator app, or a backup code.</p>
         </div>
 
@@ -47,8 +48,19 @@ type Step = 'credentials' | 'mfa';
           <p class="wf-error" *ngIf="error()">{{ error() }}</p>
 
           <button mat-raised-button color="primary" type="submit" [disabled]="loading()" class="wf-submit">
-            {{ loading() ? 'Authenticating…' : 'Enter the Forge' }}
+            {{ loading() ? 'Authenticating…' : ctaLabel() }}
           </button>
+
+          <div class="wf-links" *ngIf="passwordRecoveryEnabled() || registrationEnabled()">
+            <a *ngIf="passwordRecoveryEnabled()"
+               [routerLink]="['/forgot-password']" [queryParams]="forwardQueryParams()">
+              Forgot your password?
+            </a>
+            <a *ngIf="registrationEnabled()"
+               [routerLink]="['/register']" [queryParams]="forwardQueryParams()">
+              Create an account
+            </a>
+          </div>
         </form>
 
         <!-- Step 2: MFA -->
@@ -78,7 +90,7 @@ type Step = 'credentials' | 'mfa';
           </div>
         </form>
 
-        <div class="wf-footer mono">
+        <div class="wf-footer mono" *ngIf="!hideFooter()">
           <span>OAUTH2 · OIDC · SAML · X.509 · SCIM · TOTP · FIDO2</span>
         </div>
       </div>
@@ -99,7 +111,7 @@ type Step = 'credentials' | 'mfa';
       content: '';
       position: absolute;
       inset: 0;
-      background: radial-gradient(ellipse at 50% 40%, rgba(232, 146, 31, 0.08) 0%, transparent 55%);
+      background: radial-gradient(ellipse at 50% 40%, var(--wf-amber-glow, rgba(232, 146, 31, 0.08)) 0%, transparent 55%);
       pointer-events: none;
     }
     .wf-login-card {
@@ -113,9 +125,9 @@ type Step = 'credentials' | 'mfa';
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(74, 143, 245, 0.05) inset;
     }
     .wf-login-header { text-align: center; margin-bottom: 28px; }
-    .wf-login-header img { margin-bottom: 18px; }
+    .wf-login-header img { margin-bottom: 18px; max-width: 240px; }
     .wf-eyebrow {
-      font-family: 'Space Mono', monospace;
+      font-family: var(--wf-mono, 'Space Mono', monospace);
       font-size: 11px;
       letter-spacing: 0.2em;
       text-transform: uppercase;
@@ -123,7 +135,7 @@ type Step = 'credentials' | 'mfa';
       margin-bottom: 10px;
     }
     .wf-login-header h1 {
-      font-family: 'Syne', sans-serif;
+      font-family: var(--wf-display, 'Syne', sans-serif);
       font-weight: 700;
       font-size: 24px;
       margin: 0 0 8px;
@@ -136,17 +148,29 @@ type Step = 'credentials' | 'mfa';
       color: #FF6B6B;
       font-size: 12px;
       margin: 4px 0 8px;
-      font-family: 'Space Mono', monospace;
+      font-family: var(--wf-mono, 'Space Mono', monospace);
     }
     .wf-submit {
       height: 46px;
       margin-top: 12px;
-      font-family: 'Syne', sans-serif !important;
+      font-family: var(--wf-display, 'Syne', sans-serif) !important;
       font-weight: 700 !important;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       font-size: 13px !important;
     }
+    .wf-links {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+      font-size: 12px;
+    }
+    .wf-links a {
+      color: var(--wf-blue);
+      text-decoration: none;
+    }
+    .wf-links a:hover { text-decoration: underline; }
     .wf-alt {
       display: flex;
       justify-content: space-between;
@@ -163,7 +187,7 @@ type Step = 'credentials' | 'mfa';
     }
   `]
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   identifier = '';
   password = '';
   otp = '';
@@ -177,9 +201,62 @@ export class LoginComponent {
   private challengeToken: string | null = null;
   private factors: MfaFactorType[] = [];
 
+  // Branding-derived UI
+  readonly displayName = computed(() => this.branding.current()?.displayName ?? 'WeldForge');
+  readonly logoUrl = computed(() => {
+    const url = this.brandingValue<string>('logoUrl');
+    return url || 'weldforge-logo.svg';
+  });
+  readonly eyebrow = computed(() => {
+    const v = this.brandingValue<string>('eyebrow');
+    return v ?? (this.branding.current() ? null : '// secure access');
+  });
+  readonly tagline = computed(() => {
+    const v = this.brandingValue<string>('tagline');
+    return v ?? 'Federated identity, forged into one trusted layer.';
+  });
+  readonly ctaLabel = computed(() => {
+    const v = this.brandingValue<string>('ctaLabel');
+    return v ?? 'Enter the Forge';
+  });
+  readonly headline = computed(() => {
+    if (this.step() === 'mfa') return 'Verify it\'s you';
+    const v = this.brandingValue<string>('headline');
+    return v ?? `Sign in to ${this.displayName()}`;
+  });
+  readonly hideFooter = computed(() => !!this.brandingValue<boolean>('hideFooter') || !!this.branding.current());
+  readonly registrationEnabled = computed(() => {
+    const b = this.branding.current();
+    return b ? !!b.registrationEnabled : true;
+  });
+  readonly passwordRecoveryEnabled = computed(() => {
+    const b = this.branding.current();
+    return b ? !!b.passwordRecoveryEnabled : true;
+  });
+
   constructor(private authService: AuthService,
+              public branding: TenantBrandingService,
               private router: Router,
               private route: ActivatedRoute) {}
+
+  ngOnInit(): void {
+    const slug = this.route.snapshot.queryParamMap.get('tenant') || this.branding.slugFromUrl();
+    if (slug) {
+      this.branding.load(slug).subscribe();
+    }
+  }
+
+  forwardQueryParams(): Record<string, string> {
+    const slug = this.branding.current()?.slug ?? this.route.snapshot.queryParamMap.get('tenant');
+    return slug ? { tenant: slug } : {};
+  }
+
+  private brandingValue<T>(key: string): T | null {
+    const payload = this.branding.current()?.branding as Record<string, unknown> | undefined | null;
+    if (!payload) return null;
+    const v = payload[key];
+    return (v ?? null) as T | null;
+  }
 
   submitCredentials() {
     this.error.set(null);
@@ -248,18 +325,10 @@ export class LoginComponent {
   }
 
   private goToApp() {
-    // OIDC redirect flow: when /authorize bounces an unauthenticated
-    // caller to /login, it passes the original /authorize URL as
-    // base64url-encoded "oidcReturnTo". After a successful login we
-    // navigate the browser back to that absolute URL so the consent
-    // screen can render against the now-authenticated session (the
-    // wf_session cookie set by the backend on login carries it).
     const oidcReturnTo = this.route.snapshot.queryParams['oidcReturnTo'];
     if (oidcReturnTo) {
       try {
         const decoded = atob(oidcReturnTo.replace(/-/g, '+').replace(/_/g, '/'));
-        // Hard navigation, not router.navigate — the target URL is
-        // outside the Angular app's route tree.
         window.location.href = decoded;
         return;
       } catch (e) {

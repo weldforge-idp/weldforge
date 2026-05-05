@@ -6,7 +6,9 @@ name: deploy-www
 # Xneelo only accepts plain FTP on port 21 — see weldforge-www/scripts/deploy.sh
 # for the security context. The credentials live in GitHub Actions secrets
 # (WWW_FTP_HOST / WWW_FTP_USER / WWW_FTP_PASSWORD); rotate them in the
-# repository settings if the Xneelo password changes.
+# repository settings if the Xneelo password changes. WWW_FTP_DIR is
+# optional — set it to e.g. "/public_html/" if the FTP user lands in
+# its home directory rather than the web root.
 
 on:
   push:
@@ -33,4 +35,5 @@ jobs:
           SFTP_HOST: ${{ secrets.WWW_FTP_HOST }}
           SFTP_USER: ${{ secrets.WWW_FTP_USER }}
           SFTP_PASS: ${{ secrets.WWW_FTP_PASSWORD }}
+          SFTP_DIR: ${{ secrets.WWW_FTP_DIR }}
         run: ./scripts/deploy.sh --insecure-ftp

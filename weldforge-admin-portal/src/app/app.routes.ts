@@ -6,10 +6,18 @@ import { TenantsComponent } from './features/tenants/tenants.component';
 import { SecurityComponent } from './features/security/security.component';
 import { AuditComponent } from './features/audit/audit.component';
 import { GroupRoleMappingsComponent } from './features/group-role-mappings/group-role-mappings.component';
+import { ForgotPasswordComponent } from './features/auth/forgot-password.component';
+import { ResetPasswordComponent } from './features/auth/reset-password.component';
+import { RegisterComponent } from './features/auth/register.component';
+import { VerifyEmailComponent } from './features/auth/verify-email.component';
 import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
+  { path: 'forgot-password', component: ForgotPasswordComponent },
+  { path: 'reset-password', component: ResetPasswordComponent },
+  { path: 'register', component: RegisterComponent },
+  { path: 'verify-email', component: VerifyEmailComponent },
   { path: 'tenants', component: TenantsComponent, canActivate: [authGuard] },
   { path: 'users', component: UsersComponent, canActivate: [authGuard] },
   { path: 'roles', component: RolesComponent, canActivate: [authGuard] },

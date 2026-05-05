@@ -46,6 +46,28 @@ export class AuthService {
     );
   }
 
+  register(body: { name: string; email: string; password: string }): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.url}/register`, body).pipe(
+      tap(res => this.storeIfAccess(res))
+    );
+  }
+
+  forgotPassword(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.url}/forgot-password`, { email });
+  }
+
+  resetPassword(token: string, newPassword: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.url}/reset-password`, { token, newPassword });
+  }
+
+  verifyEmail(token: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.url}/verify-email`, { token });
+  }
+
+  resendVerification(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.url}/resend-verification`, { email });
+  }
+
   logout(): void {
     localStorage.removeItem('access_token');
   }
