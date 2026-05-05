@@ -22,6 +22,10 @@ export interface Tenant {
   name: string;
   displayName?: string;
   enabled: boolean;
+  registrationEnabled?: boolean;
+  passwordRecoveryEnabled?: boolean;
+  emailVerificationRequired?: boolean;
+  branding?: Record<string, unknown> | null;
 }
 
 export interface SocialProvider {

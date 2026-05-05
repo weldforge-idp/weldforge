@@ -27,6 +27,13 @@ import { TenantTwilioService, TwilioProvider } from '../../core/services/tenant-
 import { TenantMfaPolicyService, MfaPolicy, MfaEnforcement } from '../../core/services/tenant-mfa-policy.service';
 import { environment } from '../../../environments/environment';
 
+interface BrandingDraft {
+  registrationEnabled: boolean;
+  passwordRecoveryEnabled: boolean;
+  emailVerificationRequired: boolean;
+  brand: Record<string, string>;
+}
+
 interface TenantRow extends Tenant {
   providers?: SocialProvider[];
   samlProviders?: SamlProvider[];
@@ -37,6 +44,7 @@ interface TenantRow extends Tenant {
   twilio?: TwilioProvider | null;
   twilioDraft?: TwilioProvider;
   mfaPolicy?: MfaPolicy;
+  brandingDraft?: BrandingDraft;
 }
 
 @Component({
@@ -495,6 +503,115 @@ interface TenantRow extends Tenant {
               </div>
             </section>
 
+            <!-- ==================== Branding & Login ==================== -->
+            <section class="wf-section">
+              <h4>Branding &amp; login screen</h4>
+              <p class="sub">Customize how the login screen looks and which self-service flows are exposed for tenant <code>{{ t.slug }}</code>. End users land here when they navigate to <code>/login?tenant={{ t.slug }}</code>.</p>
+
+              <div class="wf-grid">
+                <div class="wf-toggle-row">
+                  <mat-slide-toggle [(ngModel)]="t.brandingDraft!.registrationEnabled">
+                    Self-registration enabled
+                  </mat-slide-toggle>
+                  <p class="sub">When off, <code>/auth/register</code> returns 404 and the "Create account" link disappears from /login.</p>
+                </div>
+                <div class="wf-toggle-row">
+                  <mat-slide-toggle [(ngModel)]="t.brandingDraft!.passwordRecoveryEnabled">
+                    Password recovery enabled
+                  </mat-slide-toggle>
+                  <p class="sub">When off, <code>/auth/forgot-password</code> returns 404 and the "Forgot password?" link disappears.</p>
+                </div>
+                <div class="wf-toggle-row">
+                  <mat-slide-toggle [(ngModel)]="t.brandingDraft!.emailVerificationRequired">
+                    Email verification required
+                  </mat-slide-toggle>
+                  <p class="sub">When on, new accounts must confirm their email before they can sign in.</p>
+                </div>
+              </div>
+
+              <div class="wf-grid wf-branding-grid">
+                <mat-form-field appearance="outline">
+                  <mat-label>Logo URL</mat-label>
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand.logoUrl"
+                         placeholder="https://cdn.example.com/logo.svg">
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Headline</mat-label>
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand.headline"
+                         [placeholder]="'Sign in to ' + (t.displayName || t.slug)">
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Tagline</mat-label>
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand.tagline"
+                         placeholder="Welcome, refreshed.">
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Eyebrow text</mat-label>
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand.eyebrow"
+                         placeholder="// secure access">
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>CTA button label</mat-label>
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand.ctaLabel"
+                         placeholder="Sign in">
+                </mat-form-field>
+              </div>
+
+              <h5 class="wf-subhead">Colors</h5>
+              <div class="wf-grid wf-color-grid">
+                <label class="wf-color-field">
+                  <span>Primary</span>
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.primaryColor">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.primaryColor" placeholder="#4A8FF5">
+                </label>
+                <label class="wf-color-field">
+                  <span>Primary (dark)</span>
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.primaryDarkColor">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.primaryDarkColor" placeholder="#2D5FA8">
+                </label>
+                <label class="wf-color-field">
+                  <span>Accent</span>
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.accentColor">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.accentColor" placeholder="#E8921F">
+                </label>
+                <label class="wf-color-field">
+                  <span>Background</span>
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.bgColor">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.bgColor" placeholder="#070B17">
+                </label>
+                <label class="wf-color-field">
+                  <span>Card background</span>
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.bg2Color">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.bg2Color" placeholder="#0C1020">
+                </label>
+                <label class="wf-color-field">
+                  <span>Text</span>
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.textColor">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.textColor" placeholder="#EEF2FF">
+                </label>
+              </div>
+
+              <h5 class="wf-subhead">Typography</h5>
+              <div class="wf-grid">
+                <mat-form-field appearance="outline">
+                  <mat-label>Display font (CSS family)</mat-label>
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand.displayFont"
+                         placeholder="'Fraunces', serif">
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Body font (CSS family)</mat-label>
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand.sansFont"
+                         placeholder="'Inter', sans-serif">
+                </mat-form-field>
+              </div>
+
+              <div class="wf-actions">
+                <span class="spacer"></span>
+                <button mat-stroked-button (click)="resetBrandingDraft(t)">Reset</button>
+                <button mat-raised-button color="primary" (click)="saveBranding(t)">Save branding</button>
+              </div>
+            </section>
+
             <div class="wf-panel-footer">
               <button mat-stroked-button color="warn" (click)="deleteTenant(t)">
                 <mat-icon>delete_forever</mat-icon> Delete Tenant
@@ -668,6 +785,55 @@ interface TenantRow extends Tenant {
     }
     .wf-twilio-status code { font-size: 11px; }
     .wf-twilio-status mat-slide-toggle { margin-left: 8px; }
+
+    .wf-toggle-row {
+      padding: 12px;
+      border: 1px solid var(--wf-border);
+      border-radius: 3px;
+      background: rgba(74, 143, 245, 0.04);
+    }
+    .wf-toggle-row .sub { margin: 8px 0 0; font-size: 12px; }
+    .wf-branding-grid { margin-top: 16px; }
+    .wf-subhead {
+      font-family: 'Syne', sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--wf-text-2);
+      margin: 16px 0 8px;
+    }
+    .wf-color-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .wf-color-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--wf-border);
+      border-radius: 3px;
+      background: rgba(74, 143, 245, 0.03);
+      font-size: 12px;
+      color: var(--wf-text-2);
+    }
+    .wf-color-field span { min-width: 100px; }
+    .wf-color-field input[type="color"] {
+      width: 36px;
+      height: 28px;
+      border: 1px solid var(--wf-border);
+      background: transparent;
+      cursor: pointer;
+      padding: 0;
+    }
+    .wf-color-field input.hex {
+      flex: 1 1 auto;
+      background: transparent;
+      border: 1px solid var(--wf-border);
+      border-radius: 2px;
+      color: var(--wf-text);
+      padding: 6px 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      min-width: 90px;
+    }
   `]
 })
 export class TenantsComponent implements OnInit {
@@ -711,6 +877,7 @@ export class TenantsComponent implements OnInit {
         ...t,
         draft: this.freshDraft(),
         samlDraft: this.freshSamlDraft(),
+        brandingDraft: this.brandingDraftFrom(t),
       }))),
       error: err => this.err('Failed to load tenants', err),
     });
@@ -732,6 +899,47 @@ export class TenantsComponent implements OnInit {
 
   private freshDraft(): SocialProvider {
     return { provider: 'GOOGLE', clientId: '', clientSecret: '', scopes: '', enabled: true };
+  }
+
+  private brandingDraftFrom(t: Tenant): BrandingDraft {
+    const brand: Record<string, string> = {};
+    const src = (t.branding as Record<string, unknown> | undefined | null) ?? {};
+    for (const [k, v] of Object.entries(src)) {
+      if (typeof v === 'string') brand[k] = v;
+    }
+    return {
+      registrationEnabled: t.registrationEnabled !== false,
+      passwordRecoveryEnabled: t.passwordRecoveryEnabled !== false,
+      emailVerificationRequired: t.emailVerificationRequired !== false,
+      brand,
+    };
+  }
+
+  resetBrandingDraft(t: TenantRow) {
+    t.brandingDraft = this.brandingDraftFrom(t);
+  }
+
+  saveBranding(t: TenantRow) {
+    if (!t.brandingDraft) return;
+    const cleaned: Record<string, string> = {};
+    for (const [k, v] of Object.entries(t.brandingDraft.brand)) {
+      const trimmed = (v ?? '').toString().trim();
+      if (trimmed) cleaned[k] = trimmed;
+    }
+    const patch: Partial<Tenant> = {
+      registrationEnabled: t.brandingDraft.registrationEnabled,
+      passwordRecoveryEnabled: t.brandingDraft.passwordRecoveryEnabled,
+      emailVerificationRequired: t.brandingDraft.emailVerificationRequired,
+      branding: cleaned,
+    };
+    this.api.update(t.id, patch).subscribe({
+      next: updated => {
+        Object.assign(t, updated);
+        t.brandingDraft = this.brandingDraftFrom(updated);
+        this.ok(`Branding saved for ${t.slug}`);
+      },
+      error: err => this.err('Failed to save branding', err),
+    });
   }
 
   private freshTwilioDraft(): TwilioProvider {
