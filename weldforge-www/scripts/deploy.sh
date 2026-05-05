@@ -89,13 +89,6 @@ fi
 : "${SFTP_USER:?SFTP_USER is required (set env or put USERNAME in .env.local)}"
 : "${SFTP_DIR:=/}"
 
-# Xneelo drops the account straight into its web root. The
-# /public_html/ REMOTE_DIR label in the supplied .env.local is
-# cosmetic — the server denies CWD on it. Coerce to /.
-if [[ "$SFTP_DIR" == "/public_html/" || "$SFTP_DIR" == "/public_html" ]]; then
-    SFTP_DIR="/"
-fi
-
 echo "deploy: host=$SFTP_HOST user=$SFTP_USER dir=$SFTP_DIR site=$SITE_DIR"
 
 # ---- Enumerate files --------------------------------------------
