@@ -532,27 +532,27 @@ interface TenantRow extends Tenant {
               <div class="wf-grid wf-branding-grid">
                 <mat-form-field appearance="outline">
                   <mat-label>Logo URL</mat-label>
-                  <input matInput [(ngModel)]="t.brandingDraft!.brand.logoUrl"
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand['logoUrl']"
                          placeholder="https://cdn.example.com/logo.svg">
                 </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>Headline</mat-label>
-                  <input matInput [(ngModel)]="t.brandingDraft!.brand.headline"
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand['headline']"
                          [placeholder]="'Sign in to ' + (t.displayName || t.slug)">
                 </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>Tagline</mat-label>
-                  <input matInput [(ngModel)]="t.brandingDraft!.brand.tagline"
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand['tagline']"
                          placeholder="Welcome, refreshed.">
                 </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>Eyebrow text</mat-label>
-                  <input matInput [(ngModel)]="t.brandingDraft!.brand.eyebrow"
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand['eyebrow']"
                          placeholder="// secure access">
                 </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>CTA button label</mat-label>
-                  <input matInput [(ngModel)]="t.brandingDraft!.brand.ctaLabel"
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand['ctaLabel']"
                          placeholder="Sign in">
                 </mat-form-field>
               </div>
@@ -561,33 +561,33 @@ interface TenantRow extends Tenant {
               <div class="wf-grid wf-color-grid">
                 <label class="wf-color-field">
                   <span>Primary</span>
-                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.primaryColor">
-                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.primaryColor" placeholder="#4A8FF5">
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand['primaryColor']">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand['primaryColor']" placeholder="#4A8FF5">
                 </label>
                 <label class="wf-color-field">
                   <span>Primary (dark)</span>
-                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.primaryDarkColor">
-                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.primaryDarkColor" placeholder="#2D5FA8">
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand['primaryDarkColor']">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand['primaryDarkColor']" placeholder="#2D5FA8">
                 </label>
                 <label class="wf-color-field">
                   <span>Accent</span>
-                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.accentColor">
-                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.accentColor" placeholder="#E8921F">
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand['accentColor']">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand['accentColor']" placeholder="#E8921F">
                 </label>
                 <label class="wf-color-field">
                   <span>Background</span>
-                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.bgColor">
-                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.bgColor" placeholder="#070B17">
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand['bgColor']">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand['bgColor']" placeholder="#070B17">
                 </label>
                 <label class="wf-color-field">
                   <span>Card background</span>
-                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.bg2Color">
-                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.bg2Color" placeholder="#0C1020">
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand['bg2Color']">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand['bg2Color']" placeholder="#0C1020">
                 </label>
                 <label class="wf-color-field">
                   <span>Text</span>
-                  <input type="color" [(ngModel)]="t.brandingDraft!.brand.textColor">
-                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand.textColor" placeholder="#EEF2FF">
+                  <input type="color" [(ngModel)]="t.brandingDraft!.brand['textColor']">
+                  <input matInput class="hex" [(ngModel)]="t.brandingDraft!.brand['textColor']" placeholder="#EEF2FF">
                 </label>
               </div>
 
@@ -595,12 +595,12 @@ interface TenantRow extends Tenant {
               <div class="wf-grid">
                 <mat-form-field appearance="outline">
                   <mat-label>Display font (CSS family)</mat-label>
-                  <input matInput [(ngModel)]="t.brandingDraft!.brand.displayFont"
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand['displayFont']"
                          placeholder="'Fraunces', serif">
                 </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>Body font (CSS family)</mat-label>
-                  <input matInput [(ngModel)]="t.brandingDraft!.brand.sansFont"
+                  <input matInput [(ngModel)]="t.brandingDraft!.brand['sansFont']"
                          placeholder="'Inter', sans-serif">
                 </mat-form-field>
               </div>
