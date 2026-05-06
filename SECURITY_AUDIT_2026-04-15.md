@@ -134,7 +134,7 @@ any client we know of. It is still in the production database.
            ('x-app-auth-1234567890abcdef',
             'x-app-auth-mobile-9876543210fedcba');
    ```
-   Run via `kubectl exec deployment/sso-postgres -- psql -U sso -d intelli_sso`
+   Run via `kubectl exec deployment/sso-postgres -- psql -U sso -d weldforge`
    then verify with `SELECT id, client_name, enabled FROM app_clients;`.
 
 2. **In the repo:**
