@@ -27,10 +27,7 @@ api:
     targetCPUUtilizationPercentage: 70
   env:
     # Datasource hits the Cloud SQL Auth Proxy sidecar on localhost.
-    # The catalog name is the historical "intelli_sso" — kept as-is to avoid
-    # an online rename of the live Cloud SQL database. Renaming requires a
-    # coordinated CREATE DATABASE / pg_dump | pg_restore / DROP migration.
-    SPRING_DATASOURCE_URL: "jdbc:postgresql://127.0.0.1:5432/intelli_sso"
+    SPRING_DATASOURCE_URL: "jdbc:postgresql://127.0.0.1:5432/weldforge"
     SPRING_DATASOURCE_USERNAME: "wfuser"
     JWT_EXPIRATION_MS: "300000"
     REFRESH_TOKEN_EXPIRATION_MS: "604800000"
