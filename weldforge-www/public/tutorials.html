@@ -191,7 +191,7 @@ curl -X POST $HOST/api/admin/oidc/clients \
       "grantTypes":   ["client_credentials"],
       "requirePkce":  false,
       "redirectUris": ["https://write-buddy.example/oauth/unused"],
-      "scopes":       ["wb.shapes.read","wb.shapes.write"]
+      "scopes":       ["wb.content.read","wb.content.write"]
     }'</code></pre>
         <p>The confidential client's response carries <code>clientSecret</code> exactly once — capture it into your secret store immediately. <code>redirectUris</code> is required on every client today, so set a placeholder for back-end-only ones.</p>
 
