@@ -92,6 +92,19 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
 
         String header = request.getHeader("x-app-authorization");
         if (header == null || header.isBlank()) {
+            // Admin endpoints are authenticated by the JWT filter, which
+            // populates SecurityContextHolder + TenantContext from the
+            // bearer token. The SPA reaches /api/admin/** from a browser
+            // and cannot safely carry an app-client key (SECURITY_AUDIT
+            // CRITICAL-1: anything baked into the JS bundle leaks). When
+            // no header is present, defer to the JWT filter and Spring
+            // Security; service accounts (wf_svc_*) still go through the
+            // header-validation path below when they DO present the
+            // header.
+            if (path.startsWith("/api/admin/")) {
+                filterChain.doFilter(request, response);
+                return;
+            }
             deny(response, "Missing or invalid x-app-authorization header");
             return;
         }
