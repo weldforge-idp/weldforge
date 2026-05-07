@@ -66,12 +66,22 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
         // MEDIUM-1 — the OpenAPI spec and interactive Swagger UI were
         // previously anonymously reachable, which handed an attacker a
         // complete map of the API. They now require a valid app-client
-        // key. Internal callers via admin.weldforge.org still work
-        // because nginx injects the header; external scanners do not.
+        // key.
+        //
+        // /api/auth/** is exempt because the SPA reaches it pre-login from
+        // a browser — login, register, refresh, forgot-password,
+        // reset-password, verify-email, and the public per-tenant
+        // branding/social-providers/saml-providers GETs that the login
+        // screen renders before the user has any credentials. The Spring
+        // Security chain matches this allowlist (SecurityConfig permits
+        // /api/auth/**); per-user authentication is enforced by the JWT
+        // filter on the endpoints inside that namespace that need it
+        // (e.g. /me, /logout-all).
         if (path.startsWith("/login")
                 || path.startsWith("/oauth2")
                 || path.equals("/error")
                 || path.startsWith("/actuator/")
+                || path.startsWith("/api/auth/")   // SPA pre-login + auth flows
                 || path.startsWith("/t/")          // per-tenant OIDC + SAML IdP
                 || path.startsWith("/saml2/")      // SAML SP login
                 || path.startsWith("/scim/v2/")    // SCIM (has its own auth filter)
