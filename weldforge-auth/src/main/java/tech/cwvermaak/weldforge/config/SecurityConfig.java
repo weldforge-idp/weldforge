@@ -113,6 +113,12 @@ public class SecurityConfig {
                                 // (Bearer token against app_clients), so the Spring
                                 // Security chain just passes them through.
                                 "/scim/v2/**",
+                                // Lightweight liveness probe for public
+                                // monitors (the actuator endpoints below
+                                // stay internal-only behind the GKE
+                                // ingress, which only proxies /api/**,
+                                // /saml2/**, /t/**, /scim/**, and /health).
+                                "/health",
                                 "/actuator/health/**",
                                 "/actuator/prometheus",
                                 "/actuator/circuitbreakers",
