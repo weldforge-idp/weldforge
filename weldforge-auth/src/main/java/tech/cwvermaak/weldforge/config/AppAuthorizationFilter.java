@@ -80,6 +80,7 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
         if (path.startsWith("/login")
                 || path.startsWith("/oauth2")
                 || path.equals("/error")
+                || path.equals("/health")          // public liveness probe
                 || path.startsWith("/actuator/")
                 || path.startsWith("/api/auth/")   // SPA pre-login + auth flows
                 || path.startsWith("/t/")          // per-tenant OIDC + SAML IdP
