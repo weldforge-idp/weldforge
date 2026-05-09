@@ -223,8 +223,12 @@ export class GroupRoleMappingsComponent implements OnInit {
     const m = this.newMapping;
     if (!m.scimGroupId || !m.roleId) return;
     this.mappingService.create(m).subscribe({
-      next: created => {
-        this.mappings.update(ms => [...ms, created]);
+      next: () => {
+        // Re-fetch rather than splicing the create response in: the
+        // server enriches the row with scimGroupName + roleName, which
+        // the create response doesn't always carry, and the table
+        // template renders those columns.
+        this.refresh();
         this.newMapping = { scimGroupId: undefined, roleId: undefined, priority: 0 };
         this.ok('Mapping created');
       },
@@ -237,7 +241,7 @@ export class GroupRoleMappingsComponent implements OnInit {
     if (!confirm(`Remove mapping for group "${m.scimGroupName || m.scimGroupId}" to role "${m.roleName || m.roleId}"?`)) return;
     this.mappingService.delete(m.id).subscribe({
       next: () => {
-        this.mappings.update(ms => ms.filter(x => x.id !== m.id));
+        this.refresh();
         this.ok('Mapping removed');
       },
       error: err => this.err('Delete failed', err),

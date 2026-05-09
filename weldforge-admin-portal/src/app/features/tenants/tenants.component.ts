@@ -1,4 +1,5 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, inject } from '@angular/core';
+import { injectQueryClient } from '@tanstack/angular-query-experimental';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -845,6 +846,14 @@ export class TenantsComponent implements OnInit {
 
   newTenant: Partial<Tenant> = { slug: '', name: '', displayName: '' };
 
+  // The TenantPickerComponent (in the Users / Roles / GroupRoleMappings
+  // pages) reads its dropdown options from the same /api/admin/tenants
+  // GET that this page hits, but caches them under the
+  // 'tenant-picker' key for one minute. Invalidating that key after any
+  // create/update/delete here keeps the dropdown in sync the moment the
+  // operator navigates to a tenant-scoped page.
+  private queryClient = injectQueryClient();
+
   // OIDC create form fields
   newOidcClient: Partial<OidcClient> = { name: '' };
   newOidcRedirects = '';
@@ -936,6 +945,9 @@ export class TenantsComponent implements OnInit {
       next: updated => {
         Object.assign(t, updated);
         t.brandingDraft = this.brandingDraftFrom(updated);
+        // Tenant displayName / branding fields surface in the picker
+        // dropdown, so refresh that cache when an update lands.
+        this.queryClient.invalidateQueries({ queryKey: ['tenant-picker'] });
         this.ok(`Branding saved for ${t.slug}`);
       },
       error: err => this.err('Failed to save branding', err),
@@ -970,7 +982,13 @@ export class TenantsComponent implements OnInit {
   saveCreate() {
     this.api.create(this.newTenant).subscribe({
       next: t => {
-        this.tenants.update(ts => [...ts, { ...t, draft: this.freshDraft() }]);
+        // Re-fetch from server rather than splicing into the local
+        // signal: the create response doesn't include every derived
+        // field the row template renders (samlDraft, brandingDraft,
+        // computed enabled flag, etc.) and a server round-trip is the
+        // simplest way to keep the displayed list canonical.
+        this.refresh();
+        this.queryClient.invalidateQueries({ queryKey: ['tenant-picker'] });
         this.creating.set(false);
         this.ok(`Tenant ${t.slug} created`);
       },
@@ -982,7 +1000,8 @@ export class TenantsComponent implements OnInit {
     if (!confirm(`Delete tenant "${t.slug}"? All its users and provider config will be removed.`)) return;
     this.api.delete(t.id).subscribe({
       next: () => {
-        this.tenants.update(ts => ts.filter(x => x.id !== t.id));
+        this.refresh();
+        this.queryClient.invalidateQueries({ queryKey: ['tenant-picker'] });
         this.ok(`Tenant ${t.slug} deleted`);
       },
       error: err => this.err('Delete failed', err),
