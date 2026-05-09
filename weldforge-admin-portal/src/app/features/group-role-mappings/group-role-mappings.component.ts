@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -10,6 +10,8 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { GroupRoleMappingService, GroupRoleMapping } from '../../core/services/group-role-mapping.service';
 import { AdminService, Role } from '../../core/services/admin.service';
+import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
+import { TenantPickerService } from '../../core/services/tenant-picker.service';
 
 @Component({
   selector: 'app-group-role-mappings',
@@ -19,6 +21,7 @@ import { AdminService, Role } from '../../core/services/admin.service';
     MatCardModule, MatButtonModule, MatIconModule,
     MatFormFieldModule, MatInputModule, MatSelectModule,
     MatSnackBarModule,
+    TenantPickerComponent,
   ],
   template: `
     <div class="wf-page">
@@ -29,6 +32,8 @@ import { AdminService, Role } from '../../core/services/admin.service';
           <p class="sub">Map SCIM groups to roles for automatic role assignment. When a user belongs to a SCIM group, they inherit the mapped role based on priority.</p>
         </div>
       </header>
+
+      <wf-tenant-picker></wf-tenant-picker>
 
       <!-- Create form -->
       <mat-card class="wf-card wf-create-card">
@@ -172,11 +177,25 @@ export class GroupRoleMappingsComponent implements OnInit {
 
   newMapping: Partial<GroupRoleMapping> = { scimGroupId: undefined, roleId: undefined, priority: 0 };
 
+  private picker = inject(TenantPickerService);
+
   constructor(
     private mappingService: GroupRoleMappingService,
     private adminService: AdminService,
     private snack: MatSnackBar,
-  ) {}
+  ) {
+    // Re-fetch whenever a SUPER_ADMIN switches tenant — both lists are
+    // tenant-scoped on the backend, so the active selection has to drive
+    // a refresh just like TanStack Query's invalidateQueries does on the
+    // other admin pages.
+    effect(() => {
+      this.picker.activeTenantSlug();
+      if (this.loaded()) {
+        this.refresh();
+        this.loadRoles();
+      }
+    });
+  }
 
   ngOnInit() {
     this.refresh();
@@ -204,8 +223,12 @@ export class GroupRoleMappingsComponent implements OnInit {
     const m = this.newMapping;
     if (!m.scimGroupId || !m.roleId) return;
     this.mappingService.create(m).subscribe({
-      next: created => {
-        this.mappings.update(ms => [...ms, created]);
+      next: () => {
+        // Re-fetch rather than splicing the create response in: the
+        // server enriches the row with scimGroupName + roleName, which
+        // the create response doesn't always carry, and the table
+        // template renders those columns.
+        this.refresh();
         this.newMapping = { scimGroupId: undefined, roleId: undefined, priority: 0 };
         this.ok('Mapping created');
       },
@@ -218,7 +241,7 @@ export class GroupRoleMappingsComponent implements OnInit {
     if (!confirm(`Remove mapping for group "${m.scimGroupName || m.scimGroupId}" to role "${m.roleName || m.roleId}"?`)) return;
     this.mappingService.delete(m.id).subscribe({
       next: () => {
-        this.mappings.update(ms => ms.filter(x => x.id !== m.id));
+        this.refresh();
         this.ok('Mapping removed');
       },
       error: err => this.err('Delete failed', err),

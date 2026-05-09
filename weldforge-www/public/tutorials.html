@@ -387,6 +387,76 @@ function verify(secret, header, rawBody) {
     </div>
 </section>
 
+<section id="super-admin-tenant-picker">
+    <div class="container">
+        <h2>Managing users across tenants (super-admin)</h2>
+        <p class="lead">
+            A user with <code>admin_role = SUPER_ADMIN</code> sees a tenant
+            dropdown at the top of the <strong>Users</strong>,
+            <strong>Roles</strong>, and <strong>Group-Role-Mappings</strong>
+            pages in the admin portal. Selecting a tenant scopes every
+            request on that page to the chosen tenant — no logout, no
+            JWT rotation, no URL gymnastics.
+        </p>
+
+        <h3>How it works</h3>
+        <p>
+            The dropdown writes the chosen slug to <code>localStorage</code>
+            and an HTTP interceptor stamps it onto every outbound
+            <code>/api/*</code> request as the <code>X-Tenant-Slug</code>
+            header. The backend's JWT filter reads the header and, only
+            when the JWT itself carries the <code>sa: true</code> claim,
+            overrides the request's tenant context to the selected
+            tenant. Non-super-admins keep their JWT's home tenant
+            regardless of any header — the override is gated server-side,
+            not just hidden in the UI.
+        </p>
+
+        <h3>What the picker affects</h3>
+        <ul>
+            <li><strong>Users</strong> — list, invite, reset MFA, change admin role.</li>
+            <li><strong>Roles</strong> — create, list, delete tenant-scoped roles.</li>
+            <li><strong>Group-Role-Mappings</strong> — wire SCIM groups to roles for the selected tenant.</li>
+        </ul>
+        <p>
+            Other admin pages (<strong>Tenants</strong>,
+            <strong>App-Clients</strong>, <strong>Audit</strong>,
+            <strong>Security</strong>) deliberately don't render the
+            picker. They're either inherently cross-tenant, or they
+            should always read against the operator's home tenant for
+            audit clarity.
+        </p>
+
+        <h3>Audit trail</h3>
+        <p>
+            Every cross-tenant override is logged at INFO level on the
+            API as <code>super_admin_tenant_override actor=… home=… acting=…</code>
+            so you can reconstruct who acted on which tenant's data
+            without parsing JWTs out of HTTP logs. The MDC enrichment
+            filter also stamps the acting tenant onto every downstream
+            log line.
+        </p>
+
+        <h3>Branding the login &amp; password-reset forms</h3>
+        <p>
+            Each tenant has its own login and password-reset forms
+            rendered from the SPA. To brand them in line with the rest
+            of the customer's site, set the tenant's <code>branding</code>
+            JSON via <code>PUT /api/admin/tenants/{id}</code> — keys
+            <code>logoUrl</code>, <code>headline</code>,
+            <code>tagline</code>, <code>primaryColor</code>,
+            <code>accentColor</code>, <code>bgColor</code>,
+            <code>displayFont</code>, <code>sansFont</code> all flow
+            into CSS variables on the form. The login screen reads
+            these via the public
+            <code>GET /api/auth/tenants/{slug}/branding</code> endpoint
+            before the user has a JWT, so the look-and-feel matches the
+            tenant the user is signing into. Same applies to the
+            <code>/reset-password</code> screen.
+        </p>
+    </div>
+</section>
+
 <section>
     <div class="container">
         <div class="callout">

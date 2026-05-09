@@ -76,9 +76,49 @@ export class AuthService {
     return localStorage.getItem('access_token');
   }
 
+  /**
+   * Decode the JWT payload (no signature verification — that happens
+   * server-side; this is only ever used to drive UI gating). Returns
+   * null if the token is missing or unparseable.
+   */
+  getJwtClaims(): JwtClaims | null {
+    const token = this.getAccessToken();
+    if (!token) return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    try {
+      const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+      return JSON.parse(json) as JwtClaims;
+    } catch {
+      return null;
+    }
+  }
+
+  /** True when the JWT carries `sa: true` or `adm: SUPER_ADMIN`. */
+  isSuperAdmin(): boolean {
+    const c = this.getJwtClaims();
+    if (!c) return false;
+    return c.sa === true || c.adm === 'SUPER_ADMIN';
+  }
+
+  /** The tenant slug the JWT was issued against (the user's "home" tenant). */
+  getHomeTenantSlug(): string | null {
+    return this.getJwtClaims()?.tenant ?? null;
+  }
+
   private storeIfAccess(res: AuthResponse) {
     if (res && res.token && !res.mfaRequired) {
       localStorage.setItem('access_token', res.token);
     }
   }
+}
+
+interface JwtClaims {
+  sub?: string;
+  tenant?: string;
+  tid?: number;
+  sa?: boolean;
+  adm?: 'NONE' | 'READ_ONLY' | 'TENANT_ADMIN' | 'SUPER_ADMIN';
+  exp?: number;
+  iat?: number;
 }
