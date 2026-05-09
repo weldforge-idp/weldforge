@@ -7,13 +7,16 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
+import tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter;
 import tech.cwvermaak.weldforge.model.AdminRole;
+import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.JwtService;
 
@@ -21,6 +24,7 @@ import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     /** Cookie name used for browser-redirect OIDC flows. */
@@ -28,6 +32,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final TenantRepository tenantRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -104,6 +109,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (slug != null && !slug.isBlank()) {
             TenantContext.set(slug, tid, adminRole);
+        }
+
+        // Super-admin tenant impersonation: a SUPER_ADMIN can scope the
+        // request to a tenant other than their JWT's home tenant by
+        // sending an explicit X-Tenant-Slug header. This drives the
+        // admin-portal "select tenant" dropdown so a super-admin can
+        // manage users/roles in other tenants without re-issuing a JWT.
+        // The privilege is gated strictly on the JWT's `sa` claim — any
+        // non-super-admin sending the same header keeps their home
+        // tenant (the original "JWT is authoritative" rule), so the
+        // header cannot be used to fake cross-tenant access.
+        if (sa) {
+            String overrideSlug = request.getHeader(TenantResolverFilter.HEADER);
+            if (overrideSlug != null && !overrideSlug.isBlank()) {
+                String normalized = overrideSlug.trim().toLowerCase();
+                if (slug == null || !normalized.equals(slug)) {
+                    tenantRepository.findBySlug(normalized).ifPresent(t -> {
+                        TenantContext.set(t.getSlug(), t.getId(), AdminRole.SUPER_ADMIN);
+                        log.info("super_admin_tenant_override actor={} home={} acting={}",
+                                email, slug, t.getSlug());
+                    });
+                }
+            }
         }
 
         UsernamePasswordAuthenticationToken authToken =

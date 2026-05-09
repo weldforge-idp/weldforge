@@ -11,6 +11,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { injectMutation, injectQuery } from '@tanstack/angular-query-experimental';
 
 import { AdminService, Role } from '../../core/services/admin.service';
+import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
 
 @Component({
   selector: 'app-roles',
@@ -24,7 +25,8 @@ import { AdminService, Role } from '../../core/services/admin.service';
     MatFormFieldModule,
     MatCardModule,
     MatProgressSpinnerModule,
-    MatIconModule
+    MatIconModule,
+    TenantPickerComponent,
   ],
   templateUrl: './roles.component.html'
 })

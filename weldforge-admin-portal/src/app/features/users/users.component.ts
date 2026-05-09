@@ -9,6 +9,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { injectQuery, injectQueryClient } from '@tanstack/angular-query-experimental';
 
 import { AdminService, User } from '../../core/services/admin.service';
+import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
 
 @Component({
   selector: 'app-users',
@@ -17,6 +18,7 @@ import { AdminService, User } from '../../core/services/admin.service';
     CommonModule,
     MatTableModule, MatCardModule, MatButtonModule, MatIconModule,
     MatProgressSpinnerModule, MatSnackBarModule,
+    TenantPickerComponent,
   ],
   template: `
     <div class="wf-page">
@@ -27,6 +29,8 @@ import { AdminService, User } from '../../core/services/admin.service';
           <p class="sub">Everyone in this tenant. Reset a user's MFA here if they've lost access to their second factor.</p>
         </div>
       </header>
+
+      <wf-tenant-picker></wf-tenant-picker>
 
       <mat-card class="wf-card">
         @if (usersQuery.isLoading()) {
