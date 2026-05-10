@@ -891,6 +891,7 @@ export class TenantsComponent implements OnInit {
         ...t,
         draft: this.freshDraft(),
         samlDraft: this.freshSamlDraft(),
+        twilioDraft: this.freshTwilioDraft(),
         brandingDraft: this.brandingDraftFrom(t),
       }))),
       error: err => this.err('Failed to load tenants', err),
