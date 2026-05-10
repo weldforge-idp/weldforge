@@ -76,6 +76,19 @@ curl -sS https://sso.weldforge.org/t/demo/.well-known/openid-configuration
 # 3. Per-tenant SAML IdP metadata — open standard, no auth required.
 curl -sS https://sso.weldforge.org/t/demo/saml2/idp/metadata</code></pre>
 
+        <p style="margin-top: 1rem;">
+            <strong>Hosted-fetcher tip:</strong> the marketing site
+            (<code>weldforge.org</code>) sits on a shared host whose
+            bot-throttling layer occasionally returns <code>404</code>
+            or <code>429</code> to default HTTP-client User-Agents
+            (<code>Go-http-client</code>, generic browser-fetch tools,
+            etc.). The API host (<code>sso.weldforge.org</code>) is on
+            our own Kubernetes cluster and has no such throttling.
+            If your built-in URL-fetch tool fails on
+            <code>weldforge.org</code> docs, retry with <code>curl</code>
+            or shell out — the docs always render the same content.
+        </p>
+
         <h3>Machine-readable manifests for agents</h3>
         <ul class="checklist">
             <li><a href="/llms.txt"><code>/llms.txt</code></a> — short overview in the <a href="https://llmstxt.org/">llmstxt.org</a> format</li>

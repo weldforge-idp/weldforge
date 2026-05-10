@@ -64,3 +64,43 @@ ErrorDocument 404 /404.html
 <FilesMatch "^\.(env|git|ht|DS_Store)">
     Require all denied
 </FilesMatch>
+
+# ---- 5. AI agent / bot friendliness ---------------------------
+# JetBrains Junie (and similar hosted-fetcher AI tools) reported
+# 404s when fetching /agents.html and /llms.txt while plain curl
+# from the same machine returned 200. The most likely cause is the
+# host's bot-throttling layer rate-limiting requests with
+# "Go-http-client/*" or similar default UAs — we observed
+# intermittent 429s on those agents during reproduction.
+#
+# We can't disable Imunify360 from a per-directory .htaccess, but
+# we CAN: (a) advertise that this content is fully crawlable, and
+# (b) make the discovery surfaces CORS-open so a fetcher running
+# under a different origin doesn't drop the response itself.
+<IfModule mod_headers.c>
+    # Tell every well-behaved indexer / AI crawler that everything
+    # under this root is fair game. Pairs with /robots.txt and /llms.txt.
+    Header always set X-Robots-Tag "all"
+</IfModule>
+
+# Discovery / manifest files: fully open CORS, short-cache so an
+# update propagates quickly, and explicit content types where the
+# host might guess wrong.
+<FilesMatch "^(robots\.txt|llms\.txt|ai-manifest\.json|ld\.json|sitemap\.xml)$">
+    <IfModule mod_headers.c>
+        Header always set Access-Control-Allow-Origin "*"
+        Header always set Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+        Header always set Cache-Control "public, max-age=300"
+    </IfModule>
+</FilesMatch>
+
+# Human-readable pages an AI agent is likely to fetch: same CORS
+# treatment so a hosted fetcher (Junie, ChatGPT browse, etc.) can
+# read them from any origin without the browser-side preflight
+# silently dropping the body.
+<FilesMatch "^(agents|tutorials|api-authentication|deployment|compliance|pki|workforce-sso|customer-identity|pricing)\.html$">
+    <IfModule mod_headers.c>
+        Header always set Access-Control-Allow-Origin "*"
+        Header always set Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+    </IfModule>
+</FilesMatch>
