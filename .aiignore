@@ -1,0 +1,48 @@
+# JetBrains AI Assistant / Junie exclusion list.
+#
+# Same syntax as .gitignore. Paths listed here are hidden from
+# JetBrains AI features (Junie, AI Assistant chat, code completion,
+# file-open suggestions, project indexing) so secrets do not leak
+# into prompts sent to JetBrains' inference backend.
+#
+# This complements .gitignore — .gitignore stops files reaching the
+# remote git repo, but .aiignore is the file the JetBrains AI plugin
+# reads to decide what local content to expose to its model. They
+# overlap on intent but neither one implies the other.
+# ============================================================
+
+# ---- Local environment files (deploy / dev credentials) ----
+.env
+.env.*
+!.env.example
+!.env.*.example
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+
+# ---- Cryptographic material -------------------------------
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+**/secrets/
+**/secret/
+
+# ---- Terraform state / vars (may hold plaintext creds) ----
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# ---- Common credential / SA-key artefacts -----------------
+**/credentials.json
+**/service-account*.json
+**/gcloud-key*.json
+**/*-credentials*.json
+
+# ---- Locally cached agent state ---------------------------
+.claude/
