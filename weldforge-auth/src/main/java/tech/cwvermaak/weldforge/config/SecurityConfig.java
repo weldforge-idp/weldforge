@@ -12,6 +12,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import tech.cwvermaak.weldforge.config.security.ApiAuthenticationEntryPoint;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import tech.cwvermaak.weldforge.config.logging.MdcEnrichmentFilter;
@@ -36,6 +38,7 @@ public class SecurityConfig {
     private final DatabaseRelyingPartyRegistrationRepository relyingPartyRegistrationRepository;
     private final SamlUserProvisioningSuccessHandler samlSuccessHandler;
     private final CorsProperties corsProperties;
+    private final ApiAuthenticationEntryPoint apiAuthenticationEntryPoint;
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
@@ -161,6 +164,20 @@ public class SecurityConfig {
                 .logout(logout -> logout
                         .logoutSuccessUrl("/")
                         .permitAll()
+                )
+
+                // /api/** is consumed by the admin SPA's HttpClient, not by
+                // a browser navigation, so an unauthenticated call should
+                // return JSON 401 instead of the default 302 → /login that
+                // oauth2Login() / saml2Login() install. Without this the SPA
+                // follows the redirect, lands on /login, gets the
+                // index.html SPA shell back (nginx try_files fallback) and
+                // raises "Http failure during parsing" — the surface bug
+                // the Service Accounts list query was hitting.
+                .exceptionHandling(ex -> ex
+                        .defaultAuthenticationEntryPointFor(
+                                apiAuthenticationEntryPoint,
+                                new AntPathRequestMatcher("/api/**"))
                 );
 
         return http.build();

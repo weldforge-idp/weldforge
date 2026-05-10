@@ -181,8 +181,17 @@ import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.
               <tr mat-row *matRowDef="let row; columns: columns"></tr>
             </table>
           }
-        } @else if (listQuery.error()) {
-          <p class="empty mono">// failed to load — {{ listQuery.error() | json }}</p>
+        } @else if (listQuery.error(); as err) {
+          <div class="wf-load-error">
+            <mat-icon class="err-icon">error_outline</mat-icon>
+            <div>
+              <div class="err-title">Could not load service accounts.</div>
+              <div class="err-detail mono">{{ errorSummary(err) }}</div>
+              <button mat-stroked-button (click)="listQuery.refetch()">
+                <mat-icon>refresh</mat-icon> Try again
+              </button>
+            </div>
+          </div>
         }
       </mat-card>
     </div>
@@ -277,6 +286,19 @@ import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.
       font-size: 12px;
     }
     .token-box code { color: var(--wf-amber); }
+
+    .wf-load-error {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      padding: 16px;
+      border: 1px dashed var(--wf-border);
+      background: rgba(244, 67, 54, 0.04);
+      border-radius: 4px;
+    }
+    .wf-load-error .err-icon { color: #f44336; margin-top: 2px; }
+    .wf-load-error .err-title { font-weight: 600; margin-bottom: 4px; }
+    .wf-load-error .err-detail { color: var(--wf-text-3); font-size: 12px; margin-bottom: 10px; }
   `]
 })
 export class ServiceAccountsComponent {
@@ -380,5 +402,25 @@ export class ServiceAccountsComponent {
 
   private toast(msg: string) {
     this.snack.open(msg, 'OK', { duration: 4000 });
+  }
+
+  /**
+   * Render a one-line human-readable summary for the load-error panel.
+   * Covers the three shapes the listQuery can fail with: a real
+   * HttpErrorResponse from the backend (status + error.message), the
+   * "Http failure during parsing" case that fires when the response is
+   * HTML rather than JSON (which is what 401 redirect-to-login produced
+   * before the backend 401 entry point shipped), and unknown shapes.
+   */
+  protected errorSummary(err: unknown): string {
+    const e = err as { status?: number; statusText?: string; message?: string; error?: { message?: string } };
+    if (typeof e?.status === 'number') {
+      if (e.status === 0) return 'Network error — the server did not respond.';
+      if (e.status === 401) return 'Session expired. Reload the page to log in again.';
+      if (e.status === 403) return 'You do not have permission to view service accounts in this tenant.';
+      const upstream = e.error?.message || e.statusText;
+      return `HTTP ${e.status}${upstream ? ' — ' + upstream : ''}`;
+    }
+    return e?.message ?? 'Unknown error.';
   }
 }
