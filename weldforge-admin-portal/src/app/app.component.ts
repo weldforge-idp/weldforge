@@ -21,6 +21,7 @@ import { AuthService } from './core/services/auth.service';
         <a mat-button routerLink="/users" routerLinkActive="active">Users</a>
         <a mat-button routerLink="/roles" routerLinkActive="active">Roles</a>
         <a mat-button routerLink="/group-role-mappings" routerLinkActive="active">Group Roles</a>
+        <a mat-button routerLink="/service-accounts" routerLinkActive="active">Service Accounts</a>
         <a mat-button routerLink="/audit" routerLinkActive="active">Audit</a>
         <a mat-button routerLink="/security" routerLinkActive="active">Security</a>
         <button mat-stroked-button class="wf-logout" (click)="logout()">Logout</button>

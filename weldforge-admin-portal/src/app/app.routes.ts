@@ -6,6 +6,7 @@ import { TenantsComponent } from './features/tenants/tenants.component';
 import { SecurityComponent } from './features/security/security.component';
 import { AuditComponent } from './features/audit/audit.component';
 import { GroupRoleMappingsComponent } from './features/group-role-mappings/group-role-mappings.component';
+import { ServiceAccountsComponent } from './features/service-accounts/service-accounts.component';
 import { ForgotPasswordComponent } from './features/auth/forgot-password.component';
 import { ResetPasswordComponent } from './features/auth/reset-password.component';
 import { RegisterComponent } from './features/auth/register.component';
@@ -24,6 +25,7 @@ export const routes: Routes = [
   { path: 'security', component: SecurityComponent, canActivate: [authGuard] },
   { path: 'audit', component: AuditComponent, canActivate: [authGuard] },
   { path: 'group-role-mappings', component: GroupRoleMappingsComponent, canActivate: [authGuard] },
+  { path: 'service-accounts', component: ServiceAccountsComponent, canActivate: [authGuard] },
   { path: '', redirectTo: 'tenants', pathMatch: 'full' },
   { path: '**', redirectTo: 'tenants' }
 ];
