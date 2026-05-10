@@ -93,8 +93,8 @@ interface TenantRow extends Tenant {
       </mat-card>
 
       <mat-accordion multi>
-        <mat-expansion-panel *ngFor="let t of tenants()"
-                             (opened)="loadProviders(t)" class="wf-panel">
+        @for (t of tenants(); track t.id) {
+        <mat-expansion-panel (opened)="loadProviders(t)" class="wf-panel">
           <mat-expansion-panel-header>
             <mat-panel-title>
               <span class="slug mono">{{ t.slug }}</span>
@@ -102,9 +102,13 @@ interface TenantRow extends Tenant {
             </mat-panel-title>
             <mat-panel-description>
               <span class="status" [class.on]="t.enabled">{{ t.enabled ? 'enabled' : 'disabled' }}</span>
-              <span *ngIf="t.providers?.length" class="chips">
-                <mat-chip *ngFor="let p of t.providers" [class.off]="!p.enabled">{{ p.provider }}</mat-chip>
-              </span>
+              @if (t.providers?.length) {
+                <span class="chips">
+                  @for (p of t.providers; track p.registrationId) {
+                    <mat-chip [class.off]="!p.enabled">{{ p.provider }}</mat-chip>
+                  }
+                </span>
+              }
             </mat-panel-description>
           </mat-expansion-panel-header>
 
@@ -620,6 +624,7 @@ interface TenantRow extends Tenant {
             </div>
           </div>
         </mat-expansion-panel>
+        }
       </mat-accordion>
     </div>
   `,
