@@ -134,3 +134,29 @@ code, pre, .mono { font-family: var(--wf-mono); }
   background-color: var(--wf-amber) !important;
   color: #070B17 !important;
 }
+
+// Expansion panel chevron — keep it visible against the dark forge bg
+// in both states. Material's M2 default is rgba(255,255,255,0.54) which
+// is fine on a light theme but disappears on var(--wf-bg-2) #0C1020,
+// especially on collapsed rows where there's no body content drawing
+// the eye to the right edge.
+//
+// The chevron is a CSS-drawn arrow on .mat-expansion-indicator::after
+// using border-color, so we need to set BOTH the host color (for any
+// theming overrides that read it) and the ::after border-color (which
+// is what actually paints the arrow).
+.mat-expansion-indicator {
+  color: var(--wf-text-2) !important;
+
+  &::after {
+    border-color: var(--wf-text-2) !important;
+    // Slightly thicker stroke for legibility at this contrast.
+    border-width: 0 2px 2px 0 !important;
+  }
+}
+
+// Reserve space so a long mat-panel-description (chip rows, etc.)
+// can't shrink the indicator out of view on collapsed headers.
+.mat-expansion-panel-header .mat-content {
+  margin-right: 16px;
+}
