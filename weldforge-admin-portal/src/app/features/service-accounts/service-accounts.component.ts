@@ -325,7 +325,17 @@ export class ServiceAccountsComponent {
     return this.auth.isSuperAdmin() ? [...base, 'SUPER_ADMIN'] : base;
   });
 
-  protected canCreate = computed(() => !!this.draft.name?.trim() && !!this.draft.adminRole);
+  // Plain method, NOT a computed(). The `draft` field is a non-signal
+  // object mutated by [(ngModel)] on the form inputs; computed() only
+  // re-runs when its tracked signals change, so wrapping this in
+  // computed() would freeze its value at the construction-time snapshot
+  // (name === '' → false) and never re-evaluate, leaving the Create
+  // button permanently disabled. A method re-evaluates on every CD pass,
+  // and ngModel triggers a CD pass on every input event, which is what
+  // we want here.
+  protected canCreate(): boolean {
+    return !!this.draft.name?.trim() && !!this.draft.adminRole;
+  }
 
   protected listQuery = injectQuery(() => ({
     queryKey: ['service-accounts'],
