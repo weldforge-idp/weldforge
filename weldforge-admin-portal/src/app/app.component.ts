@@ -94,7 +94,13 @@ export class AppComponent {
   constructor(public authService: AuthService, private router: Router) {}
 
   logout() {
-    this.authService.logout();
+    // logout() now returns an Observable — it has already cleared
+    // local state synchronously and the subscription drives the
+    // network revocation of the refresh-token family. We don't gate
+    // the redirect on the server response: the user should leave the
+    // page immediately, and the catchError inside AuthService.logout
+    // means a failed revocation won't surface here.
+    this.authService.logout().subscribe();
     this.router.navigate(['/login']);
   }
 }

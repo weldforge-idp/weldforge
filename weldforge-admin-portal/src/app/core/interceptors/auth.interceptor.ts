@@ -13,6 +13,7 @@ import { Router } from '@angular/router';
 import { catchError, Observable, ReplaySubject, switchMap, take, throwError } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
+import { TokenRefreshScheduler } from '../services/token-refresh.scheduler';
 
 // x-app-authorization is injected by the nginx reverse proxy on the
 // admin.weldforge.org vhost using a value read from the
@@ -75,6 +76,7 @@ let refreshInFlight$: ReplaySubject<string> | null = null;
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
   const http = inject(HttpClient);
+  const scheduler = inject(TokenRefreshScheduler);
 
   const authed = withBearer(req);
 
@@ -91,7 +93,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       }
       if (req.context.get(SKIP_REFRESH_RETRY)) {
         // Retried-with-new-token request also failed → genuine auth
-        // failure. Clear local state and bounce to login.
+        // failure. Clear local state, cancel any future proactive
+        // refresh, and bounce to login.
+        scheduler.cancel();
         localStorage.removeItem('access_token');
         router.navigate(['/login'], {
           queryParams: { returnUrl: router.url, reason: 'session_expired' },
@@ -99,7 +103,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         return throwError(() => err);
       }
 
-      return refreshAndReplay(req, next, http, router);
+      return refreshAndReplay(req, next, http, router, scheduler);
     }),
   );
 };
@@ -115,6 +119,7 @@ function refreshAndReplay(
   next: HttpHandlerFn,
   http: HttpClient,
   router: Router,
+  scheduler: TokenRefreshScheduler,
 ): Observable<HttpEvent<unknown>> {
   // Another concurrent 401 has already kicked off /refresh — wait
   // for it and replay with whatever token it produces (or propagate
@@ -138,6 +143,10 @@ function refreshAndReplay(
     .pipe(
       switchMap(res => {
         localStorage.setItem('access_token', res.token);
+        // Reset the proactive timer to the new exp — without this it
+        // would still be set to the previous token's exp (probably in
+        // the past) and fire a redundant /refresh on the next tick.
+        scheduler.scheduleFromToken(res.token);
         subject.next(res.token);
         subject.complete();
         refreshInFlight$ = null;
@@ -146,6 +155,7 @@ function refreshAndReplay(
       catchError(refreshErr => {
         subject.error(refreshErr);
         refreshInFlight$ = null;
+        scheduler.cancel();
         localStorage.removeItem('access_token');
         router.navigate(['/login'], {
           queryParams: { returnUrl: router.url, reason: 'session_expired' },

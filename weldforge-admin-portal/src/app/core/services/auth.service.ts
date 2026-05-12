@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
+import { Observable, catchError, of, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { TokenRefreshScheduler } from './token-refresh.scheduler';
 
 export type MfaFactorType = 'TOTP' | 'WEBAUTHN';
 
@@ -22,7 +23,17 @@ export interface LoginCredentials {
 export class AuthService {
   private url = `${environment.apiBaseUrl}/api/auth`;
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private scheduler: TokenRefreshScheduler,
+  ) {
+    // If a token is already in localStorage (page reload while logged
+    // in, or new tab opened with a live session), schedule the next
+    // proactive refresh immediately so the user doesn't see a 401
+    // round-trip on their first request.
+    const existing = this.getAccessToken();
+    if (existing) this.scheduler.scheduleFromToken(existing);
+  }
 
   isLoggedIn(): boolean {
     return !!localStorage.getItem('access_token');
@@ -68,8 +79,26 @@ export class AuthService {
     return this.http.post<{ message: string }>(`${this.url}/resend-verification`, { email });
   }
 
-  logout(): void {
+  /**
+   * Hit POST /api/auth/logout-all to revoke the refresh-token family
+   * server-side (so the cookie left in the browser cannot be used to
+   * silently rotate a new session), then cancel the proactive refresh
+   * timer and clear the local access token. We don't wait on the
+   * network call's result before clearing local state — if it fails
+   * (network down, server already revoked the family) we still want
+   * the user logged out client-side.
+   *
+   * /logout-all kills every session for the user, not just the current
+   * one. That's the right primitive for an admin portal: clicking
+   * Logout there is unambiguous "I want to be signed out everywhere".
+   */
+  logout(): Observable<unknown> {
+    const obs = this.http
+      .post(`${this.url}/logout-all`, null, { withCredentials: true })
+      .pipe(catchError(() => of(null)));
+    this.scheduler.cancel();
     localStorage.removeItem('access_token');
+    return obs;
   }
 
   getAccessToken(): string | null {
@@ -109,6 +138,7 @@ export class AuthService {
   private storeIfAccess(res: AuthResponse) {
     if (res && res.token && !res.mfaRequired) {
       localStorage.setItem('access_token', res.token);
+      this.scheduler.scheduleFromToken(res.token);
     }
   }
 }
