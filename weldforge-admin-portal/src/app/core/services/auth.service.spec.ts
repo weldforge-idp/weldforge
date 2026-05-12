@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HttpClient } from '@angular/common/http';
 import { of } from 'rxjs';
 import { AuthService, AuthResponse } from './auth.service';
+import { TokenRefreshScheduler } from './token-refresh.scheduler';
 
 /**
  * Unit tests for the AuthService login flow — with extra attention to the
@@ -10,11 +11,16 @@ import { AuthService, AuthResponse } from './auth.service';
  */
 describe('AuthService', () => {
   let http: { post: any; get: any; delete: any };
+  let scheduler: { scheduleFromToken: any; cancel: any };
   let service: AuthService;
 
   beforeEach(() => {
     http = { post: vi.fn(), get: vi.fn(), delete: vi.fn() };
-    service = new AuthService(http as unknown as HttpClient);
+    scheduler = { scheduleFromToken: vi.fn(), cancel: vi.fn() };
+    service = new AuthService(
+      http as unknown as HttpClient,
+      scheduler as unknown as TokenRefreshScheduler,
+    );
     localStorage.clear();
   });
 
@@ -67,11 +73,31 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('clears the stored access token', () => {
+    it('clears local state synchronously and posts /logout-all to revoke the refresh family', () => {
+      // /logout-all returns a count of revoked refresh tokens; logout
+      // ignores the body but still has to subscribe so the request goes
+      // out, which the AppComponent click handler does.
+      http.post.mockReturnValue(of({ refreshTokensRevoked: 2 }));
       localStorage.setItem('access_token', 'stale');
-      service.logout();
+
+      service.logout().subscribe();
+
       expect(localStorage.getItem('access_token')).toBeNull();
       expect(service.isLoggedIn()).toBe(false);
+      expect(scheduler.cancel).toHaveBeenCalled();
+      // First arg = URL, second = body (null), third = options.
+      expect(http.post.mock.calls[0][0]).toMatch(/\/api\/auth\/logout-all$/);
+    });
+
+    it('still clears local state if /logout-all fails (offline, server already revoked)', () => {
+      http.post.mockReturnValue({
+        pipe: () => ({ subscribe: () => undefined }),
+      });
+      localStorage.setItem('access_token', 'stale');
+
+      // Should not throw even when the http call errors.
+      expect(() => service.logout().subscribe()).not.toThrow();
+      expect(localStorage.getItem('access_token')).toBeNull();
     });
   });
 });
