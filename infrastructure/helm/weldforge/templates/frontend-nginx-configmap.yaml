@@ -77,6 +77,29 @@ data:
             proxy_set_header X-Forwarded-Proto $proxy_xfp;
         }
 
+        # Bare-host OIDC endpoints for tenants served under a customer-
+        # owned domain (e.g. idp.writebuddy.org). HostAliasFilter inside
+        # the API rewrites these to /t/{slug}/... using the tenant_hosts
+        # table, so the same controllers serve both shapes.
+        location = /.well-known/openid-configuration {
+            proxy_pass http://sso-api:8080/.well-known/openid-configuration;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $proxy_xfp;
+        }
+        # /oauth2/ already proxied for Spring's social-login callbacks,
+        # but those only respond on /oauth2/authorization/** and
+        # /login/oauth2/code/**. The unprefixed token / authorize / etc.
+        # paths land here and HostAliasFilter forwards them to /t/{slug}/.
+        location /oauth2/ {
+            proxy_pass http://sso-api:8080/oauth2/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $proxy_xfp;
+        }
+
         location /scim/ {
             proxy_pass http://sso-api:8080/scim/;
             proxy_set_header Host $host;

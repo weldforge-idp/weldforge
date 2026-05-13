@@ -21,6 +21,7 @@ import tech.cwvermaak.weldforge.config.oauth.DatabaseClientRegistrationRepositor
 import tech.cwvermaak.weldforge.config.scim.ScimAuthenticationFilter;
 import tech.cwvermaak.weldforge.config.saml.DatabaseRelyingPartyRegistrationRepository;
 import tech.cwvermaak.weldforge.config.saml.SamlUserProvisioningSuccessHandler;
+import tech.cwvermaak.weldforge.config.tenant.HostAliasFilter;
 import tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter;
 
 @Configuration
@@ -32,6 +33,7 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final AppAuthorizationFilter appAuthorizationFilter;
     private final TenantResolverFilter tenantResolverFilter;
+    private final HostAliasFilter hostAliasFilter;
     private final MdcEnrichmentFilter mdcEnrichmentFilter;
     private final ScimAuthenticationFilter scimAuthenticationFilter;
     private final DatabaseClientRegistrationRepository clientRegistrationRepository;
@@ -70,7 +72,12 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 .addFilterBefore(tenantResolverFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(appAuthorizationFilter, TenantResolverFilter.class)
+                // Maps idp.writebuddy.org → tenant write-buddy and forwards
+                // OIDC / SAML public endpoints to /t/{slug}/* so customer-
+                // branded hosts share the existing controllers without
+                // per-controller duplication.
+                .addFilterAfter(hostAliasFilter, TenantResolverFilter.class)
+                .addFilterAfter(appAuthorizationFilter, HostAliasFilter.class)
                 .addFilterAfter(jwtAuthenticationFilter, AppAuthorizationFilter.class)
                 // SCIM has its own bearer-token scheme; the filter only
                 // fires on /scim/v2/** paths and authenticates against the
@@ -93,6 +100,11 @@ public class SecurityConfig {
                                 "/api/auth/mfa/verify",
                                 "/api/auth/mfa/webauthn/assertion/**",
                                 "/t/*/.well-known/openid-configuration",
+                                // Bare-host discovery doc for tenants served
+                                // under a customer-owned domain (e.g.
+                                // idp.writebuddy.org). HostAliasFilter rewrites
+                                // it to /t/{slug}/.well-known/... internally.
+                                "/.well-known/openid-configuration",
                                 "/t/*/oauth2/jwks",
                                 "/t/*/oauth2/token",
                                 "/t/*/oauth2/userinfo",

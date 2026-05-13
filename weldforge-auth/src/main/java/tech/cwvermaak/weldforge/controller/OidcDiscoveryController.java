@@ -36,7 +36,7 @@ public class OidcDiscoveryController {
     public ResponseEntity<Map<String, Object>> discovery(@PathVariable String slug,
                                                          HttpServletRequest request) {
         Tenant tenant = lookupTenant(slug);
-        String issuer = baseUrl(request) + "/t/" + tenant.getSlug();
+        String issuer = OidcDiscoveryControllerHelper.tenantIssuer(request, tenant.getSlug());
 
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("issuer", issuer);
@@ -67,13 +67,5 @@ public class OidcDiscoveryController {
     private Tenant lookupTenant(String slug) {
         return tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant: " + slug));
-    }
-
-    private static String baseUrl(HttpServletRequest request) {
-        String scheme = request.getScheme();
-        String host = request.getServerName();
-        int port = request.getServerPort();
-        boolean defaultPort = ("http".equals(scheme) && port == 80) || ("https".equals(scheme) && port == 443);
-        return scheme + "://" + host + (defaultPort ? "" : ":" + port);
     }
 }

@@ -73,6 +73,7 @@ frontend:
       name: sso-frontend-cert
       domains:
         - sso.weldforge.org
+        - idp.writebuddy.org
 
 # --- PostgreSQL ---
 # Disabled — replaced by Cloud SQL via the Auth Proxy sidecar.
