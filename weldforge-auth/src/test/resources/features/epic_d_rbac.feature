@@ -24,6 +24,19 @@ Feature: Admin RBAC — SUPER_ADMIN, TENANT_ADMIN, READ_ONLY (PRD ADM-02, ADM-04
     When alice creates an OIDC client "my-app"
     Then the client is created
 
+  Scenario: TENANT_ADMIN cannot create an OIDC client in another tenant
+    Given alice has admin role TENANT_ADMIN
+    And tenant "other" exists for RBAC tests
+    When alice tries to create an OIDC client "leaky" in tenant "other"
+    Then the call is rejected as access denied
+
+  Scenario: SUPER_ADMIN can create an OIDC client in another tenant
+    Given alice has admin role SUPER_ADMIN
+    And tenant "other" exists for RBAC tests
+    When alice creates an OIDC client "cross-tenant-app" in tenant "other"
+    Then the client is created
+    And the client belongs to tenant "other"
+
   Scenario: TENANT_ADMIN cannot create a tenant
     Given alice has admin role TENANT_ADMIN
     When alice tries to create a new tenant "newco"

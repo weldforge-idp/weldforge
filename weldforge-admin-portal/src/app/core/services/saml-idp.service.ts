@@ -17,23 +17,30 @@ export interface SamlIdpServiceProvider {
 
 @Injectable({ providedIn: 'root' })
 export class SamlIdpService {
-  private url = `${environment.apiBaseUrl}/api/admin/saml/service-providers`;
-
   constructor(private http: HttpClient) {}
 
-  list(): Observable<SamlIdpServiceProvider[]> {
-    return this.http.get<SamlIdpServiceProvider[]>(this.url);
+  private url(tenantId: number): string {
+    return `${environment.apiBaseUrl}/api/admin/tenants/${tenantId}/saml/service-providers`;
   }
 
-  create(sp: SamlIdpServiceProvider): Observable<SamlIdpServiceProvider> {
-    return this.http.post<SamlIdpServiceProvider>(this.url, sp);
+  list(tenantId: number): Observable<SamlIdpServiceProvider[]> {
+    return this.http.get<SamlIdpServiceProvider[]>(this.url(tenantId));
   }
 
-  update(id: number, sp: SamlIdpServiceProvider): Observable<SamlIdpServiceProvider> {
-    return this.http.put<SamlIdpServiceProvider>(`${this.url}/${id}`, sp);
+  create(tenantId: number, sp: SamlIdpServiceProvider): Observable<SamlIdpServiceProvider> {
+    return this.http.post<SamlIdpServiceProvider>(this.url(tenantId), sp);
   }
 
-  delete(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.url}/${id}`);
+  update(tenantId: number, id: number, sp: SamlIdpServiceProvider): Observable<SamlIdpServiceProvider> {
+    return this.http.put<SamlIdpServiceProvider>(`${this.url(tenantId)}/${id}`, sp);
+  }
+
+  delete(tenantId: number, id: number): Observable<void> {
+    return this.http.delete<void>(`${this.url(tenantId)}/${id}`);
+  }
+
+  importMetadata(tenantId: number, body: { metadataXml?: string; metadataUrl?: string }):
+      Observable<SamlIdpServiceProvider> {
+    return this.http.post<SamlIdpServiceProvider>(`${this.url(tenantId)}/import-metadata`, body);
   }
 }

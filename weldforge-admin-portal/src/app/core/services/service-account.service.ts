@@ -37,25 +37,28 @@ export interface UpdateServiceAccountDto {
 @Injectable({ providedIn: 'root' })
 export class ServiceAccountApi {
   private http = inject(HttpClient);
-  private url = `${environment.apiBaseUrl}/api/admin/service-accounts`;
 
-  list(): Observable<ServiceAccount[]> {
-    return this.http.get<ServiceAccount[]>(this.url);
+  private url(tenantId: number): string {
+    return `${environment.apiBaseUrl}/api/admin/tenants/${tenantId}/service-accounts`;
   }
 
-  create(dto: CreateServiceAccountDto): Observable<ServiceAccount> {
-    return this.http.post<ServiceAccount>(this.url, dto);
+  list(tenantId: number): Observable<ServiceAccount[]> {
+    return this.http.get<ServiceAccount[]>(this.url(tenantId));
   }
 
-  update(id: number, dto: UpdateServiceAccountDto): Observable<ServiceAccount> {
-    return this.http.put<ServiceAccount>(`${this.url}/${id}`, dto);
+  create(tenantId: number, dto: CreateServiceAccountDto): Observable<ServiceAccount> {
+    return this.http.post<ServiceAccount>(this.url(tenantId), dto);
   }
 
-  rotate(id: number): Observable<ServiceAccount> {
-    return this.http.post<ServiceAccount>(`${this.url}/${id}/rotate`, {});
+  update(tenantId: number, id: number, dto: UpdateServiceAccountDto): Observable<ServiceAccount> {
+    return this.http.put<ServiceAccount>(`${this.url(tenantId)}/${id}`, dto);
   }
 
-  delete(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.url}/${id}`);
+  rotate(tenantId: number, id: number): Observable<ServiceAccount> {
+    return this.http.post<ServiceAccount>(`${this.url(tenantId)}/${id}/rotate`, {});
+  }
+
+  delete(tenantId: number, id: number): Observable<void> {
+    return this.http.delete<void>(`${this.url(tenantId)}/${id}`);
   }
 }

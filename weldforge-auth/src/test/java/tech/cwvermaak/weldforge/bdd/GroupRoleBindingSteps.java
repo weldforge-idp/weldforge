@@ -28,6 +28,7 @@ public class GroupRoleBindingSteps {
     private ScimGroupRepository scimGroupRepository;
     private RoleRepository roleRepository;
     private UserRepository userRepository;
+    private TenantRepository tenantRepository;
     private AuditService auditService;
     private GroupRoleMappingService mappingService;
     private ScimGroupService scimGroupService;
@@ -55,10 +56,15 @@ public class GroupRoleBindingSteps {
         scimGroupRepository = mock(ScimGroupRepository.class);
         roleRepository = mock(RoleRepository.class);
         userRepository = mock(UserRepository.class);
+        tenantRepository = mock(TenantRepository.class);
         auditService = mock(AuditService.class);
 
         when(tenantAccessor.requireTenant()).thenAnswer(inv -> acme);
         when(tenantAccessor.requireTenantId()).thenAnswer(inv -> acme == null ? null : acme.getId());
+        when(tenantRepository.findById(anyLong())).thenAnswer(inv -> {
+            Long id = inv.getArgument(0);
+            return tenantsBySlug.values().stream().filter(t -> id.equals(t.getId())).findFirst();
+        });
 
         // Mapping repository mocks
         when(mappingRepository.save(any(GroupRoleMapping.class))).thenAnswer(inv -> {
@@ -156,7 +162,7 @@ public class GroupRoleBindingSteps {
         }).when(auditService).recordAdmin(anyString(), any(), anyString(), anyString(), any());
 
         mappingService = new GroupRoleMappingService(tenantAccessor, mappingRepository,
-                scimGroupRepository, roleRepository, userRepository, auditService);
+                scimGroupRepository, roleRepository, userRepository, tenantRepository, auditService);
 
         scimGroupService = new ScimGroupService(tenantAccessor, scimGroupRepository,
                 userRepository, auditService, new SimpleMeterRegistry(), mappingService);

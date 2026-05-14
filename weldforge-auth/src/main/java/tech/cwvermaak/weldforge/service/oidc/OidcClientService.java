@@ -9,6 +9,7 @@ import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.dto.OidcClientDto;
 import tech.cwvermaak.weldforge.repository.OidcClientRepository;
+import tech.cwvermaak.weldforge.repository.TenantRepository;
 
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -16,9 +17,13 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Tenant-scoped admin operations for OIDC relying parties. The service is
- * the only place that talks to {@link OidcClientRepository}, so every
- * read and write is automatically forced through {@link TenantAccessor}.
+ * Tenant-scoped admin operations for OIDC relying parties. Every method
+ * takes the target {@code tenantId} explicitly (sourced from the URL by
+ * {@link tech.cwvermaak.weldforge.controller.OidcAdminController}) so a
+ * SUPER_ADMIN can manage another tenant's clients without first
+ * impersonating that tenant. Tenant isolation is enforced by
+ * {@link TenantAccessor#requireSameTenant(Long)} — non-super admins
+ * targeting a foreign tenant are rejected with AccessDeniedException.
  *
  * Client secrets are generated server-side, AES-GCM encrypted at rest,
  * and surfaced in plaintext exactly once on create or rotate. Subsequent
@@ -32,19 +37,22 @@ public class OidcClientService {
 
     private final TenantAccessor tenantAccessor;
     private final OidcClientRepository repository;
+    private final TenantRepository tenantRepository;
 
-    public List<OidcClientDto> list() {
+    public List<OidcClientDto> list(Long tenantId) {
         tenantAccessor.requireAnyAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        return repository.findByTenantId(tid).stream()
+        tenantAccessor.requireSameTenant(tenantId);
+        return repository.findByTenantId(tenantId).stream()
                 .map(c -> toDto(c, false))
                 .toList();
     }
 
     @Transactional
-    public OidcClientDto create(OidcClientDto dto) {
+    public OidcClientDto create(Long tenantId, OidcClientDto dto) {
         tenantAccessor.requireTenantAdmin();
-        Tenant tenant = tenantAccessor.requireTenant();
+        tenantAccessor.requireSameTenant(tenantId);
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         require(dto.getRedirectUris(), "redirectUris");
         require(dto.getScopes(),       "scopes");
         require(dto.getGrantTypes(),   "grantTypes");
@@ -79,10 +87,10 @@ public class OidcClientService {
     }
 
     @Transactional
-    public OidcClientDto rotateSecret(Long id) {
+    public OidcClientDto rotateSecret(Long tenantId, Long id) {
         tenantAccessor.requireTenantAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        OidcClient client = repository.findByIdAndTenantId(id, tid)
+        tenantAccessor.requireSameTenant(tenantId);
+        OidcClient client = repository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("OIDC client " + id + " not found"));
         String newSecret = generateSecret();
         client.setClientSecret(newSecret);
@@ -92,10 +100,10 @@ public class OidcClientService {
     }
 
     @Transactional
-    public void delete(Long id) {
+    public void delete(Long tenantId, Long id) {
         tenantAccessor.requireTenantAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        OidcClient client = repository.findByIdAndTenantId(id, tid)
+        tenantAccessor.requireSameTenant(tenantId);
+        OidcClient client = repository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("OIDC client " + id + " not found"));
         repository.delete(client);
     }

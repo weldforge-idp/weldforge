@@ -161,7 +161,7 @@ public class EpicDRbacSteps {
         adminService = new AdminService(tenantAccessor, roleRepository, userRepository,
                 envRepo, appClientRepo, mfaService, auditService,
                 mock(tech.cwvermaak.weldforge.service.PasswordResetService.class));
-        oidcClientService = new OidcClientService(tenantAccessor, oidcClientRepository);
+        oidcClientService = new OidcClientService(tenantAccessor, oidcClientRepository, tenantRepository);
     }
 
     private Tenant tenant(String slug) {
@@ -235,11 +235,15 @@ public class EpicDRbacSteps {
 
     // ---- OIDC operations -------------------------------------------
 
+    private Long aliceTenantId() {
+        return users.get("acme|alice@acme.test").getTenant().getId();
+    }
+
     @When("alice tries to list OIDC clients")
     public void aliceTriesListOidc() {
         lastError = null;
         try {
-            lastResult = oidcClientService.list();
+            lastResult = oidcClientService.list(aliceTenantId());
         } catch (Exception e) {
             lastError = e;
         }
@@ -260,7 +264,7 @@ public class EpicDRbacSteps {
                 .grantTypes(List.of("authorization_code"))
                 .build();
         try {
-            lastResult = oidcClientService.create(dto);
+            lastResult = oidcClientService.create(aliceTenantId(), dto);
         } catch (Exception e) {
             lastError = e;
         }
@@ -276,10 +280,32 @@ public class EpicDRbacSteps {
                 .grantTypes(List.of("authorization_code"))
                 .build();
         try {
-            lastResult = oidcClientService.create(dto);
+            lastResult = oidcClientService.create(aliceTenantId(), dto);
         } catch (Exception e) {
             lastError = e;
         }
+    }
+
+    @When("alice creates an OIDC client {string} in tenant {string}")
+    public void aliceCreatesOidcInTenant(String clientId, String slug) {
+        lastError = null;
+        Tenant target = tenant(slug);
+        OidcClientDto dto = OidcClientDto.builder()
+                .clientId(clientId)
+                .redirectUris(List.of("https://app.test/cb"))
+                .scopes(List.of("openid"))
+                .grantTypes(List.of("authorization_code"))
+                .build();
+        try {
+            lastResult = oidcClientService.create(target.getId(), dto);
+        } catch (Exception e) {
+            lastError = e;
+        }
+    }
+
+    @When("alice tries to create an OIDC client {string} in tenant {string}")
+    public void aliceTriesCreatesOidcInTenant(String clientId, String slug) {
+        aliceCreatesOidcInTenant(clientId, slug);
     }
 
     @Then("the client is created")
@@ -287,6 +313,14 @@ public class EpicDRbacSteps {
         assertThat(lastError).isNull();
         assertThat(lastResult).isInstanceOf(OidcClientDto.class);
         assertThat(oidcClientStore).isNotEmpty();
+    }
+
+    @Then("the client belongs to tenant {string}")
+    public void clientBelongsToTenant(String slug) {
+        Tenant t = tenant(slug);
+        assertThat(lastResult).isInstanceOf(OidcClientDto.class);
+        OidcClientDto dto = (OidcClientDto) lastResult;
+        assertThat(dto.getTenantId()).isEqualTo(t.getId());
     }
 
     // ---- Tenant create ---------------------------------------------

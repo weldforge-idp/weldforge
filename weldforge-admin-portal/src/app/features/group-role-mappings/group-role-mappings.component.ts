@@ -202,8 +202,21 @@ export class GroupRoleMappingsComponent implements OnInit {
     this.loadRoles();
   }
 
+  /**
+   * Resolve the tenant id to thread into nested admin REST URLs. Falls
+   * back to the JWT home id when the picker hasn't been touched. Returns
+   * null only when the user has no tenant claim at all (which would mean
+   * an unauthenticated request — the interceptor will reject it before
+   * we get this far).
+   */
+  private currentTenantId(): number | null {
+    return this.picker.outgoingTenantId();
+  }
+
   refresh() {
-    this.mappingService.list().subscribe({
+    const tid = this.currentTenantId();
+    if (tid == null) { this.err('No active tenant', null); return; }
+    this.mappingService.list(tid).subscribe({
       next: ms => {
         this.mappings.set(ms);
         this.loaded.set(true);
@@ -222,7 +235,9 @@ export class GroupRoleMappingsComponent implements OnInit {
   createMapping() {
     const m = this.newMapping;
     if (!m.scimGroupId || !m.roleId) return;
-    this.mappingService.create(m).subscribe({
+    const tid = this.currentTenantId();
+    if (tid == null) { this.err('No active tenant', null); return; }
+    this.mappingService.create(tid, m).subscribe({
       next: () => {
         // Re-fetch rather than splicing the create response in: the
         // server enriches the row with scimGroupName + roleName, which
@@ -239,7 +254,9 @@ export class GroupRoleMappingsComponent implements OnInit {
   deleteMapping(m: GroupRoleMapping) {
     if (!m.id) return;
     if (!confirm(`Remove mapping for group "${m.scimGroupName || m.scimGroupId}" to role "${m.roleName || m.roleId}"?`)) return;
-    this.mappingService.delete(m.id).subscribe({
+    const tid = this.currentTenantId();
+    if (tid == null) { this.err('No active tenant', null); return; }
+    this.mappingService.delete(tid, m.id).subscribe({
       next: () => {
         this.refresh();
         this.ok('Mapping removed');

@@ -38,6 +38,8 @@ interface BrandingDraft {
 interface TenantRow extends Tenant {
   providers?: SocialProvider[];
   samlProviders?: SamlProvider[];
+  oidcClients?: OidcClient[];
+  samlIdpSps?: SamlIdpServiceProvider[];
   loadingProviders?: boolean;
   expanded?: boolean;
   draft?: SocialProvider;
@@ -372,12 +374,12 @@ interface TenantRow extends Tenant {
               <h4>OIDC relying parties</h4>
               <p class="sub">Apps that authenticate <em>via</em> WeldForge as their OpenID Connect identity provider. Each client gets its own secret and may register multiple redirect URIs.</p>
 
-              <table *ngIf="oidcClients().length" class="wf-table">
+              <table *ngIf="(t.oidcClients || []).length" class="wf-table">
                 <thead>
                   <tr><th>client_id</th><th>Name</th><th>Redirect URIs</th><th>Scopes</th><th>Grants</th><th>PKCE</th><th></th></tr>
                 </thead>
                 <tbody>
-                  <tr *ngFor="let c of oidcClients()">
+                  <tr *ngFor="let c of (t.oidcClients || [])">
                     <td class="mono trunc">{{ c.clientId }}</td>
                     <td>{{ c.name || '—' }}</td>
                     <td class="mono trunc">{{ (c.redirectUris || []).join(', ') }}</td>
@@ -385,10 +387,10 @@ interface TenantRow extends Tenant {
                     <td class="mono">{{ (c.grantTypes || []).join(' ') }}</td>
                     <td>{{ c.requirePkce ? 'yes' : 'no' }}</td>
                     <td>
-                      <button mat-icon-button (click)="rotateOidcSecret(c)" title="Rotate secret">
+                      <button mat-icon-button (click)="rotateOidcSecret(t, c)" title="Rotate secret">
                         <mat-icon>refresh</mat-icon>
                       </button>
-                      <button mat-icon-button color="warn" (click)="removeOidcClient(c)">
+                      <button mat-icon-button color="warn" (click)="removeOidcClient(t, c)">
                         <mat-icon>delete</mat-icon>
                       </button>
                     </td>
@@ -396,7 +398,7 @@ interface TenantRow extends Tenant {
                 </tbody>
               </table>
 
-              <div *ngIf="!oidcClients().length" class="empty mono">
+              <div *ngIf="!(t.oidcClients || []).length" class="empty mono">
                 // no OIDC clients configured for this tenant yet
               </div>
 
@@ -438,12 +440,12 @@ interface TenantRow extends Tenant {
               <h4>SAML IdP — downstream service providers</h4>
               <p class="sub">Apps that receive SAML assertions from WeldForge. Register each SP's entity ID and Assertion Consumer Service URL.</p>
 
-              <table *ngIf="samlIdpSps().length" class="wf-table">
+              <table *ngIf="(t.samlIdpSps || []).length" class="wf-table">
                 <thead>
                   <tr><th>Entity ID</th><th>Name</th><th>ACS URL</th><th>Status</th><th>IdP metadata</th><th></th></tr>
                 </thead>
                 <tbody>
-                  <tr *ngFor="let sp of samlIdpSps()">
+                  <tr *ngFor="let sp of (t.samlIdpSps || [])">
                     <td class="mono trunc">{{ sp.entityId }}</td>
                     <td>{{ sp.name || '—' }}</td>
                     <td class="mono trunc">{{ sp.acsUrl }}</td>
@@ -456,7 +458,7 @@ interface TenantRow extends Tenant {
                       </button>
                     </td>
                     <td>
-                      <button mat-icon-button color="warn" (click)="removeSamlIdpSp(sp)">
+                      <button mat-icon-button color="warn" (click)="removeSamlIdpSp(t, sp)">
                         <mat-icon>delete</mat-icon>
                       </button>
                     </td>
@@ -464,7 +466,7 @@ interface TenantRow extends Tenant {
                 </tbody>
               </table>
 
-              <div *ngIf="!samlIdpSps().length" class="empty mono">
+              <div *ngIf="!(t.samlIdpSps || []).length" class="empty mono">
                 // no downstream SAML service providers configured yet
               </div>
 
@@ -503,7 +505,7 @@ interface TenantRow extends Tenant {
                 <div class="wf-actions">
                   <mat-slide-toggle [(ngModel)]="samlIdpDraft.enabled">Enabled</mat-slide-toggle>
                   <span class="spacer"></span>
-                  <button mat-raised-button color="primary" (click)="createSamlIdpSp()">Register SP</button>
+                  <button mat-raised-button color="primary" (click)="createSamlIdpSp(t)">Register SP</button>
                 </div>
               </div>
             </section>
@@ -844,8 +846,6 @@ interface TenantRow extends Tenant {
 })
 export class TenantsComponent implements OnInit {
   tenants = signal<TenantRow[]>([]);
-  oidcClients = signal<OidcClient[]>([]);
-  samlIdpSps = signal<SamlIdpServiceProvider[]>([]);
   creating = signal(false);
   providerTypes = SUPPORTED_PROVIDERS;
 
@@ -881,8 +881,6 @@ export class TenantsComponent implements OnInit {
 
   ngOnInit() {
     this.refresh();
-    this.refreshOidcClients();
-    this.refreshSamlIdpSps();
   }
 
   refresh() {
@@ -898,16 +896,16 @@ export class TenantsComponent implements OnInit {
     });
   }
 
-  refreshOidcClients() {
-    this.oidcApi.list().subscribe({
-      next: cs => this.oidcClients.set(cs),
+  refreshOidcClients(t: TenantRow) {
+    this.oidcApi.list(t.id).subscribe({
+      next: cs => { t.oidcClients = cs; },
       error: err => this.err('Failed to load OIDC clients', err),
     });
   }
 
-  refreshSamlIdpSps() {
-    this.samlIdpApi.list().subscribe({
-      next: sps => this.samlIdpSps.set(sps),
+  refreshSamlIdpSps(t: TenantRow) {
+    this.samlIdpApi.list(t.id).subscribe({
+      next: sps => { t.samlIdpSps = sps; },
       error: err => this.err('Failed to load SAML IdP service providers', err),
     });
   }
@@ -1044,7 +1042,12 @@ export class TenantsComponent implements OnInit {
         error: err => this.err('Failed to load MFA policy', err),
       });
     }
-    this.refreshSamlIdpSps();
+    if (!t.oidcClients) {
+      this.refreshOidcClients(t);
+    }
+    if (!t.samlIdpSps) {
+      this.refreshSamlIdpSps(t);
+    }
   }
 
   private freshMfaPolicy(): MfaPolicy {
@@ -1152,12 +1155,12 @@ export class TenantsComponent implements OnInit {
     };
   }
 
-  createSamlIdpSp() {
+  createSamlIdpSp(t: TenantRow) {
     if (!this.samlIdpDraft.entityId) { this.err('Entity ID is required', null); return; }
     if (!this.samlIdpDraft.acsUrl) { this.err('ACS URL is required', null); return; }
-    this.samlIdpApi.create(this.samlIdpDraft).subscribe({
+    this.samlIdpApi.create(t.id, this.samlIdpDraft).subscribe({
       next: created => {
-        this.samlIdpSps.update(sps => [...sps, created]);
+        t.samlIdpSps = [...(t.samlIdpSps ?? []), created];
         this.samlIdpDraft = this.freshSamlIdpDraft();
         this.ok(`SAML SP ${created.entityId} registered`);
       },
@@ -1165,12 +1168,12 @@ export class TenantsComponent implements OnInit {
     });
   }
 
-  removeSamlIdpSp(sp: SamlIdpServiceProvider) {
+  removeSamlIdpSp(t: TenantRow, sp: SamlIdpServiceProvider) {
     if (!sp.id) return;
     if (!confirm(`Remove SAML service provider ${sp.entityId}?`)) return;
-    this.samlIdpApi.delete(sp.id).subscribe({
+    this.samlIdpApi.delete(t.id, sp.id).subscribe({
       next: () => {
-        this.samlIdpSps.update(sps => sps.filter(x => x.id !== sp.id));
+        t.samlIdpSps = (t.samlIdpSps ?? []).filter(x => x.id !== sp.id);
         this.ok(`SP ${sp.entityId} removed`);
       },
       error: err => this.err('Delete failed', err),
@@ -1184,7 +1187,7 @@ export class TenantsComponent implements OnInit {
 
   // ---- OIDC clients -----------------------------------------------
 
-  createOidcClient(_t: TenantRow) {
+  createOidcClient(t: TenantRow) {
     const dto: OidcClient = {
       clientId: '', // server generates
       name: this.newOidcClient.name,
@@ -1196,9 +1199,9 @@ export class TenantsComponent implements OnInit {
       maxAuthenticationAgeSeconds: this.newOidcMaxAge,
     };
     if (!dto.redirectUris.length) { this.err('At least one redirect URI is required', null); return; }
-    this.oidcApi.create(dto).subscribe({
+    this.oidcApi.create(t.id, dto).subscribe({
       next: created => {
-        this.oidcClients.update(cs => [...cs, created]);
+        t.oidcClients = [...(t.oidcClients ?? []), created];
         this.newOidcClient = { name: '' };
         this.newOidcRedirects = '';
         this.newOidcRequireMfa = false;
@@ -1214,10 +1217,10 @@ export class TenantsComponent implements OnInit {
     });
   }
 
-  rotateOidcSecret(c: OidcClient) {
+  rotateOidcSecret(t: TenantRow, c: OidcClient) {
     if (!c.id) return;
     if (!confirm(`Rotate the secret for ${c.clientId}? Existing integrations will stop working until updated.`)) return;
-    this.oidcApi.rotateSecret(c.id).subscribe({
+    this.oidcApi.rotateSecret(t.id, c.id).subscribe({
       next: rotated => {
         const message = `New client_secret for ${c.clientId}:\n\n${rotated.clientSecret}\n\nSave it now.`;
         window.alert(message);
@@ -1226,12 +1229,12 @@ export class TenantsComponent implements OnInit {
     });
   }
 
-  removeOidcClient(c: OidcClient) {
+  removeOidcClient(t: TenantRow, c: OidcClient) {
     if (!c.id) return;
     if (!confirm(`Delete OIDC client ${c.clientId}? Tokens issued to it will continue to verify until they expire.`)) return;
-    this.oidcApi.delete(c.id).subscribe({
+    this.oidcApi.delete(t.id, c.id).subscribe({
       next: () => {
-        this.oidcClients.update(cs => cs.filter(x => x.id !== c.id));
+        t.oidcClients = (t.oidcClients ?? []).filter(x => x.id !== c.id);
         this.ok('Client deleted');
       },
       error: err => this.err('Delete failed', err),

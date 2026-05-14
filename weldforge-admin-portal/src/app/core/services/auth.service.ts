@@ -135,6 +135,11 @@ export class AuthService {
     return this.getJwtClaims()?.tenant ?? null;
   }
 
+  /** The numeric tenant id the JWT was issued against. */
+  getHomeTenantId(): number | null {
+    return this.getJwtClaims()?.tid ?? null;
+  }
+
   private storeIfAccess(res: AuthResponse) {
     if (res && res.token && !res.mfaRequired) {
       localStorage.setItem('access_token', res.token);

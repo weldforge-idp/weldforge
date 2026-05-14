@@ -86,7 +86,8 @@ export class TenantPickerComponent {
   }
 
   protected onChange(slug: string): void {
-    this.picker.set(slug);
+    const t = this.tenants().find(x => x.slug === slug);
+    this.picker.set(slug, t?.id ?? null);
     // Invalidate everything page-level — the tenant changed, so any
     // user/role/group-role-mapping list visible on the current page
     // needs to refetch under the new tenant context.

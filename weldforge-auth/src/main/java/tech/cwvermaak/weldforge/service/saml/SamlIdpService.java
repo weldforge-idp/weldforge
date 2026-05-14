@@ -32,6 +32,7 @@ import tech.cwvermaak.weldforge.model.*;
 import tech.cwvermaak.weldforge.model.dto.SamlServiceProviderDto;
 import tech.cwvermaak.weldforge.repository.SamlServiceProviderRepository;
 import tech.cwvermaak.weldforge.repository.ScimGroupRepository;
+import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
@@ -65,14 +66,17 @@ public class SamlIdpService {
     private final TenantSigningKeyService signingKeyService;
     private final UserRepository userRepository;
     private final ScimGroupRepository scimGroupRepository;
+    private final TenantRepository tenantRepository;
     private final AuditService auditService;
 
     // ---- CRUD for SP registrations ----------------------------------
 
     @Transactional
-    public SamlServiceProviderDto create(SamlServiceProviderDto dto) {
+    public SamlServiceProviderDto create(Long tenantId, SamlServiceProviderDto dto) {
         tenantAccessor.requireTenantAdmin();
-        Tenant tenant = tenantAccessor.requireTenant();
+        tenantAccessor.requireSameTenant(tenantId);
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         if (dto.getEntityId() == null || dto.getEntityId().isBlank()) {
             throw new IllegalArgumentException("entityId is required");
         }
@@ -106,10 +110,10 @@ public class SamlIdpService {
     }
 
     @Transactional
-    public SamlServiceProviderDto update(Long id, SamlServiceProviderDto dto) {
+    public SamlServiceProviderDto update(Long tenantId, Long id, SamlServiceProviderDto dto) {
         tenantAccessor.requireTenantAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        SamlServiceProvider sp = spRepository.findByIdAndTenantId(id, tid)
+        tenantAccessor.requireSameTenant(tenantId);
+        SamlServiceProvider sp = spRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("SP " + id + " not found"));
 
         if (dto.getName() != null) sp.setName(dto.getName());
@@ -129,10 +133,10 @@ public class SamlIdpService {
     }
 
     @Transactional
-    public void delete(Long id) {
+    public void delete(Long tenantId, Long id) {
         tenantAccessor.requireTenantAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        SamlServiceProvider sp = spRepository.findByIdAndTenantId(id, tid)
+        tenantAccessor.requireSameTenant(tenantId);
+        SamlServiceProvider sp = spRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("SP " + id + " not found"));
         spRepository.delete(sp);
 
@@ -141,10 +145,10 @@ public class SamlIdpService {
                 AuditService.meta("entity_id", sp.getEntityId()));
     }
 
-    public List<SamlServiceProviderDto> list() {
+    public List<SamlServiceProviderDto> list(Long tenantId) {
         tenantAccessor.requireAnyAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        return spRepository.findByTenantId(tid).stream().map(SamlIdpService::toDto).toList();
+        tenantAccessor.requireSameTenant(tenantId);
+        return spRepository.findByTenantId(tenantId).stream().map(SamlIdpService::toDto).toList();
     }
 
     // ---- IdP metadata -----------------------------------------------

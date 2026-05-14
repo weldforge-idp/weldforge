@@ -116,7 +116,7 @@ public class EpicBStep2Steps {
         when(scimGroupRepository.findByTenantId(anyLong())).thenReturn(List.of());
 
         idpService = new SamlIdpService(tenantAccessor, spRepository, signingKeyService,
-                userRepository, scimGroupRepository, auditService);
+                userRepository, scimGroupRepository, mock(tech.cwvermaak.weldforge.repository.TenantRepository.class), auditService);
         sloService = new SamlSloService(spRepository, auditService);
     }
 

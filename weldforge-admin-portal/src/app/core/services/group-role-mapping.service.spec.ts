@@ -3,6 +3,8 @@ import { HttpClient } from '@angular/common/http';
 import { of } from 'rxjs';
 import { GroupRoleMappingService, GroupRoleMapping } from './group-role-mapping.service';
 
+const TENANT_ID = 7;
+
 describe('GroupRoleMappingService', () => {
   let http: { post: any; get: any; delete: any; put: any };
   let service: GroupRoleMappingService;
@@ -13,45 +15,47 @@ describe('GroupRoleMappingService', () => {
   });
 
   describe('list', () => {
-    it('fetches all group-role mappings', () => {
+    it('fetches all group-role mappings for the given tenant', () => {
       const mappings: GroupRoleMapping[] = [
         { id: 1, scimGroupId: 10, scimGroupName: 'Engineering', roleId: 2, roleName: 'DEVELOPER', priority: 1 },
       ];
       http.get.mockReturnValue(of(mappings));
 
       let observed: GroupRoleMapping[] | undefined;
-      service.list().subscribe(r => (observed = r));
+      service.list(TENANT_ID).subscribe(r => (observed = r));
 
-      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('/api/admin/group-role-mappings'));
+      expect(http.get).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/admin/tenants/${TENANT_ID}/group-role-mappings`),
+      );
       expect(observed).toEqual(mappings);
     });
   });
 
   describe('create', () => {
-    it('posts a new mapping and returns the created resource', () => {
+    it('posts a new mapping to the tenant-scoped URL and returns the created resource', () => {
       const input: Partial<GroupRoleMapping> = { scimGroupId: 10, roleId: 2, priority: 1 };
       const created: GroupRoleMapping = { id: 5, scimGroupId: 10, roleId: 2, priority: 1 };
       http.post.mockReturnValue(of(created));
 
       let observed: GroupRoleMapping | undefined;
-      service.create(input).subscribe(r => (observed = r));
+      service.create(TENANT_ID, input).subscribe(r => (observed = r));
 
       expect(http.post).toHaveBeenCalledWith(
-        expect.stringContaining('/api/admin/group-role-mappings'),
-        input
+        expect.stringContaining(`/api/admin/tenants/${TENANT_ID}/group-role-mappings`),
+        input,
       );
       expect(observed).toEqual(created);
     });
   });
 
   describe('delete', () => {
-    it('sends a DELETE request for the given mapping id', () => {
+    it('sends a DELETE request to the tenant-scoped endpoint for the given mapping id', () => {
       http.delete.mockReturnValue(of(undefined));
 
-      service.delete(5).subscribe();
+      service.delete(TENANT_ID, 5).subscribe();
 
       expect(http.delete).toHaveBeenCalledWith(
-        expect.stringContaining('/api/admin/group-role-mappings/5')
+        expect.stringContaining(`/api/admin/tenants/${TENANT_ID}/group-role-mappings/5`),
       );
     });
   });

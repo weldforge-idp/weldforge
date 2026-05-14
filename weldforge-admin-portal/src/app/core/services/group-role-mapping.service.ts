@@ -14,19 +14,21 @@ export interface GroupRoleMapping {
 
 @Injectable({ providedIn: 'root' })
 export class GroupRoleMappingService {
-  private apiUrl = `${environment.apiBaseUrl}/api/admin/group-role-mappings`;
-
   constructor(private http: HttpClient) {}
 
-  list(): Observable<GroupRoleMapping[]> {
-    return this.http.get<GroupRoleMapping[]>(this.apiUrl);
+  private url(tenantId: number): string {
+    return `${environment.apiBaseUrl}/api/admin/tenants/${tenantId}/group-role-mappings`;
   }
 
-  create(mapping: Partial<GroupRoleMapping>): Observable<GroupRoleMapping> {
-    return this.http.post<GroupRoleMapping>(this.apiUrl, mapping);
+  list(tenantId: number): Observable<GroupRoleMapping[]> {
+    return this.http.get<GroupRoleMapping[]>(this.url(tenantId));
   }
 
-  delete(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/${id}`);
+  create(tenantId: number, mapping: Partial<GroupRoleMapping>): Observable<GroupRoleMapping> {
+    return this.http.post<GroupRoleMapping>(this.url(tenantId), mapping);
+  }
+
+  delete(tenantId: number, id: number): Observable<void> {
+    return this.http.delete<void>(`${this.url(tenantId)}/${id}`);
   }
 }

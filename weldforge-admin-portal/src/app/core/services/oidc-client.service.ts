@@ -22,23 +22,25 @@ export interface OidcClient {
 
 @Injectable({ providedIn: 'root' })
 export class OidcClientService {
-  private url = `${environment.apiBaseUrl}/api/admin/oidc/clients`;
-
   constructor(private http: HttpClient) {}
 
-  list(): Observable<OidcClient[]> {
-    return this.http.get<OidcClient[]>(this.url);
+  private url(tenantId: number): string {
+    return `${environment.apiBaseUrl}/api/admin/tenants/${tenantId}/oidc/clients`;
   }
 
-  create(client: OidcClient): Observable<OidcClient> {
-    return this.http.post<OidcClient>(this.url, client);
+  list(tenantId: number): Observable<OidcClient[]> {
+    return this.http.get<OidcClient[]>(this.url(tenantId));
   }
 
-  rotateSecret(id: number): Observable<OidcClient> {
-    return this.http.post<OidcClient>(`${this.url}/${id}/rotate-secret`, {});
+  create(tenantId: number, client: OidcClient): Observable<OidcClient> {
+    return this.http.post<OidcClient>(this.url(tenantId), client);
   }
 
-  delete(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.url}/${id}`);
+  rotateSecret(tenantId: number, id: number): Observable<OidcClient> {
+    return this.http.post<OidcClient>(`${this.url(tenantId)}/${id}/rotate-secret`, {});
+  }
+
+  delete(tenantId: number, id: number): Observable<void> {
+    return this.http.delete<void>(`${this.url(tenantId)}/${id}`);
   }
 }

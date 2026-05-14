@@ -10,6 +10,7 @@ import tech.cwvermaak.weldforge.model.ServiceAccount;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.dto.ServiceAccountDto;
 import tech.cwvermaak.weldforge.repository.ServiceAccountRepository;
+import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 import tech.cwvermaak.weldforge.service.security.ApiKeyHasher;
@@ -32,20 +33,22 @@ public class ServiceAccountService {
 
     private final TenantAccessor tenantAccessor;
     private final ServiceAccountRepository repository;
+    private final TenantRepository tenantRepository;
     private final AuditService auditService;
 
     @Transactional(readOnly = true)
-    public List<ServiceAccountDto> list() {
+    public List<ServiceAccountDto> list(Long tenantId) {
         tenantAccessor.requireAnyAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        return repository.findByTenantId(tid).stream()
+        tenantAccessor.requireSameTenant(tenantId);
+        return repository.findByTenantId(tenantId).stream()
                 .map(ServiceAccountService::toMaskedDto)
                 .toList();
     }
 
     @Transactional
-    public ServiceAccountDto create(ServiceAccountDto dto) {
+    public ServiceAccountDto create(Long tenantId, ServiceAccountDto dto) {
         tenantAccessor.requireTenantAdmin();
+        tenantAccessor.requireSameTenant(tenantId);
         if (dto.getName() == null || dto.getName().isBlank()) {
             throw new IllegalArgumentException("Service account name is required");
         }
@@ -54,7 +57,8 @@ public class ServiceAccountService {
             throw new org.springframework.security.access.AccessDeniedException(
                     "Only a super admin may grant SUPER_ADMIN to a service account");
         }
-        Tenant tenant = tenantAccessor.requireTenant();
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         String raw = generateToken();
 
         ServiceAccount sa = ServiceAccount.builder()
@@ -82,9 +86,10 @@ public class ServiceAccountService {
     }
 
     @Transactional
-    public ServiceAccountDto rotate(Long id) {
+    public ServiceAccountDto rotate(Long tenantId, Long id) {
         tenantAccessor.requireTenantAdmin();
-        ServiceAccount sa = loadOwn(id);
+        tenantAccessor.requireSameTenant(tenantId);
+        ServiceAccount sa = loadOwn(tenantId, id);
         String raw = generateToken();
         sa.setTokenPrefix(ApiKeyHasher.displayPrefix(raw));
         sa.setTokenHash(ApiKeyHasher.hash(raw));
@@ -99,9 +104,10 @@ public class ServiceAccountService {
     }
 
     @Transactional
-    public ServiceAccountDto update(Long id, ServiceAccountDto dto) {
+    public ServiceAccountDto update(Long tenantId, Long id, ServiceAccountDto dto) {
         tenantAccessor.requireTenantAdmin();
-        ServiceAccount sa = loadOwn(id);
+        tenantAccessor.requireSameTenant(tenantId);
+        ServiceAccount sa = loadOwn(tenantId, id);
         if (dto.getDescription() != null) sa.setDescription(dto.getDescription());
         if (dto.getEnabled() != null) sa.setEnabled(dto.getEnabled());
         if (dto.getExpiresAt() != null) sa.setExpiresAt(dto.getExpiresAt());
@@ -116,18 +122,18 @@ public class ServiceAccountService {
     }
 
     @Transactional
-    public void delete(Long id) {
+    public void delete(Long tenantId, Long id) {
         tenantAccessor.requireTenantAdmin();
-        ServiceAccount sa = loadOwn(id);
+        tenantAccessor.requireSameTenant(tenantId);
+        ServiceAccount sa = loadOwn(tenantId, id);
         repository.delete(sa);
         auditService.recordAdmin(AuditEventTypes.SERVICE_ACCOUNT_DELETE, null,
                 AuditEventTypes.TARGET_SERVICE_ACCOUNT, String.valueOf(id),
                 AuditService.meta("name", sa.getName()));
     }
 
-    private ServiceAccount loadOwn(Long id) {
-        Long tid = tenantAccessor.requireTenantId();
-        return repository.findByIdAndTenantId(id, tid)
+    private ServiceAccount loadOwn(Long tenantId, Long id) {
+        return repository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Service account " + id + " not found"));
     }
 

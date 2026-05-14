@@ -9,40 +9,46 @@ import tech.cwvermaak.weldforge.service.ServiceAccountService;
 import java.util.List;
 
 /**
- * Admin API for service accounts (PRD TOK-03). Lives under /api/admin
- * so it is gated by the authenticated admin chain and the same tenant
- * isolation rules as the rest of the admin surface.
+ * Admin API for service accounts (PRD TOK-03), nested under the owning
+ * tenant ({@code /api/admin/tenants/{tenantId}/service-accounts}). Tenant
+ * isolation is enforced inside {@link ServiceAccountService} via
+ * {@code TenantAccessor.requireSameTenant(tenantId)}; SUPER_ADMIN may
+ * target a foreign tenant.
  */
 @RestController
-@RequestMapping("/api/admin/service-accounts")
+@RequestMapping("/api/admin/tenants/{tenantId}/service-accounts")
 @RequiredArgsConstructor
 public class ServiceAccountController {
 
     private final ServiceAccountService service;
 
     @GetMapping
-    public ResponseEntity<List<ServiceAccountDto>> list() {
-        return ResponseEntity.ok(service.list());
+    public ResponseEntity<List<ServiceAccountDto>> list(@PathVariable Long tenantId) {
+        return ResponseEntity.ok(service.list(tenantId));
     }
 
     @PostMapping
-    public ResponseEntity<ServiceAccountDto> create(@RequestBody ServiceAccountDto dto) {
-        return ResponseEntity.ok(service.create(dto));
+    public ResponseEntity<ServiceAccountDto> create(@PathVariable Long tenantId,
+                                                    @RequestBody ServiceAccountDto dto) {
+        return ResponseEntity.ok(service.create(tenantId, dto));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ServiceAccountDto> update(@PathVariable Long id, @RequestBody ServiceAccountDto dto) {
-        return ResponseEntity.ok(service.update(id, dto));
+    public ResponseEntity<ServiceAccountDto> update(@PathVariable Long tenantId,
+                                                    @PathVariable Long id,
+                                                    @RequestBody ServiceAccountDto dto) {
+        return ResponseEntity.ok(service.update(tenantId, id, dto));
     }
 
     @PostMapping("/{id}/rotate")
-    public ResponseEntity<ServiceAccountDto> rotate(@PathVariable Long id) {
-        return ResponseEntity.ok(service.rotate(id));
+    public ResponseEntity<ServiceAccountDto> rotate(@PathVariable Long tenantId,
+                                                    @PathVariable Long id) {
+        return ResponseEntity.ok(service.rotate(tenantId, id));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
-        service.delete(id);
+    public ResponseEntity<Void> delete(@PathVariable Long tenantId, @PathVariable Long id) {
+        service.delete(tenantId, id);
         return ResponseEntity.noContent().build();
     }
 }

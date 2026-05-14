@@ -81,11 +81,12 @@ public class OidcRegistrationController {
                 .requirePkce("none".equals(tokenEndpointAuthMethod) ? true : null)
                 .build();
 
-        // Delegate to the existing create method (sets tenant context via slug)
-        // We need to use the service directly, which requires tenant context.
-        // The OidcClientService uses TenantAccessor, so the tenant resolver
-        // filter should have already set the slug context from the URL.
-        OidcClientDto created = oidcClientService.create(dto);
+        // The slug-resolved tenant is the registration target. Admin RBAC
+        // is still enforced inside the service (requireTenantAdmin), so a
+        // truly public RFC 7591 flow needs a separate code path; today this
+        // only works when the caller is already authenticated as an admin
+        // for the same tenant.
+        OidcClientDto created = oidcClientService.create(tenant.getId(), dto);
 
         // Build RFC 7591 response
         String baseUrl = baseUrl(request);

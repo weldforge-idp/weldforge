@@ -135,7 +135,7 @@ public class SamlIdpSteps {
         }).when(auditService).recordAdmin(anyString(), any(), anyString(), anyString(), any());
 
         samlIdpService = new SamlIdpService(tenantAccessor, spRepository, signingKeyService,
-                userRepository, scimGroupRepository, auditService);
+                userRepository, scimGroupRepository, mock(tech.cwvermaak.weldforge.repository.TenantRepository.class), auditService);
     }
 
     private Tenant createTenant(String slug) {

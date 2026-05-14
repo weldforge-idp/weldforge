@@ -11,6 +11,7 @@ import tech.cwvermaak.weldforge.model.dto.GroupRoleMappingDto;
 import tech.cwvermaak.weldforge.repository.GroupRoleMappingRepository;
 import tech.cwvermaak.weldforge.repository.RoleRepository;
 import tech.cwvermaak.weldforge.repository.ScimGroupRepository;
+import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
@@ -38,22 +39,25 @@ public class GroupRoleMappingService {
     private final ScimGroupRepository scimGroupRepository;
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
+    private final TenantRepository tenantRepository;
     private final AuditService auditService;
 
     // ---- CRUD -----------------------------------------------------------
 
-    public List<GroupRoleMappingDto> list() {
+    public List<GroupRoleMappingDto> list(Long tenantId) {
         tenantAccessor.requireAnyAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        return mappingRepository.findByTenantId(tid).stream()
+        tenantAccessor.requireSameTenant(tenantId);
+        return mappingRepository.findByTenantId(tenantId).stream()
                 .map(GroupRoleMappingService::toDto)
                 .toList();
     }
 
     @Transactional
-    public GroupRoleMappingDto create(GroupRoleMappingDto dto) {
+    public GroupRoleMappingDto create(Long tenantId, GroupRoleMappingDto dto) {
         tenantAccessor.requireTenantAdmin();
-        Tenant tenant = tenantAccessor.requireTenant();
+        tenantAccessor.requireSameTenant(tenantId);
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
         if (dto.getScimGroupId() == null) throw new IllegalArgumentException("scimGroupId is required");
         if (dto.getRoleId() == null) throw new IllegalArgumentException("roleId is required");
 
@@ -79,10 +83,10 @@ public class GroupRoleMappingService {
     }
 
     @Transactional
-    public void delete(Long id) {
+    public void delete(Long tenantId, Long id) {
         tenantAccessor.requireTenantAdmin();
-        Long tid = tenantAccessor.requireTenantId();
-        GroupRoleMapping mapping = mappingRepository.findByIdAndTenantId(id, tid)
+        tenantAccessor.requireSameTenant(tenantId);
+        GroupRoleMapping mapping = mappingRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Mapping " + id + " not found"));
         mappingRepository.delete(mapping);
 
