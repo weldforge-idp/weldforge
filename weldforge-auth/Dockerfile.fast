@@ -3,7 +3,7 @@
 # `mvn package -DskipTests`. Use this for iteration; the
 # main Dockerfile is the canonical reproducible build.
 # ============================================================
-FROM bellsoft/liberica-openjre-debian:21
+FROM bellsoft/liberica-openjre-debian:25
 
 LABEL org.opencontainers.image.source="https://github.com/weldforge-idp/weldforge"
 
