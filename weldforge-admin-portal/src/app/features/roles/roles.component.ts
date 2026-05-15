@@ -12,6 +12,7 @@ import { injectMutation, injectQuery } from '@tanstack/angular-query-experimenta
 
 import { AdminService, Role } from '../../core/services/admin.service';
 import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
+import { TenantPickerService } from '../../core/services/tenant-picker.service';
 
 @Component({
   selector: 'app-roles',
@@ -32,11 +33,14 @@ import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.
 })
 export class RolesComponent {
   private adminService = inject(AdminService);
+  private tenantPicker = inject(TenantPickerService);
 
   displayedColumns = ['name', 'description', 'actions'];
 
+  // Tenant slug in the key — switching tenant in the picker refetches
+  // and caches roles per tenant. See UsersComponent for the rationale.
   rolesQuery = injectQuery(() => ({
-    queryKey: ['roles'],
+    queryKey: ['roles', this.tenantPicker.activeTenantSlug()],
     queryFn: () => this.adminService.getRoles().toPromise()
   }));
 

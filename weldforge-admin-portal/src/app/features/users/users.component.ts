@@ -10,6 +10,7 @@ import { injectQuery, injectQueryClient } from '@tanstack/angular-query-experime
 
 import { AdminService, User } from '../../core/services/admin.service';
 import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
+import { TenantPickerService } from '../../core/services/tenant-picker.service';
 
 @Component({
   selector: 'app-users',
@@ -103,11 +104,15 @@ export class UsersComponent {
   private adminService = inject(AdminService);
   private snack = inject(MatSnackBar);
   private queryClient = injectQueryClient();
+  private tenantPicker = inject(TenantPickerService);
 
   displayedColumns = ['email', 'name', 'provider', 'role', 'actions'];
 
+  // The tenant slug is part of the query key so the list is cached and
+  // refetched per tenant: when a SUPER_ADMIN switches tenant in the
+  // picker, the key changes, and TanStack fetches that tenant's users.
   usersQuery = injectQuery(() => ({
-    queryKey: ['users'],
+    queryKey: ['users', this.tenantPicker.activeTenantSlug()],
     queryFn: () => this.adminService.getUsers().toPromise(),
   }));
 

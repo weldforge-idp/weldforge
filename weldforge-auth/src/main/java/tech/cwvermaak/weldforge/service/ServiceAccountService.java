@@ -132,10 +132,15 @@ public class ServiceAccountService {
     }
 
     private static ServiceAccountDto toMaskedDto(ServiceAccount sa) {
+        Tenant t = sa.getTenant();
         return ServiceAccountDto.builder()
                 .id(sa.getId())
                 .name(sa.getName())
                 .description(sa.getDescription())
+                .tenantSlug(t != null ? t.getSlug() : null)
+                .tenantName(t == null ? null
+                        : (t.getDisplayName() != null && !t.getDisplayName().isBlank()
+                            ? t.getDisplayName() : t.getName()))
                 .tokenPrefix(sa.getTokenPrefix())
                 .adminRole(sa.getAdminRole())
                 .enabled(sa.isEnabled())
