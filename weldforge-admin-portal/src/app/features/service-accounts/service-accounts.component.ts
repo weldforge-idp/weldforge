@@ -26,6 +26,7 @@ import {
   ServiceAccountApi,
 } from '../../core/services/service-account.service';
 import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
+import { TenantPickerService } from '../../core/services/tenant-picker.service';
 
 @Component({
   selector: 'app-service-accounts',
@@ -127,6 +128,16 @@ import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.
                   <div class="name">{{ s.name }}</div>
                   @if (s.description) {
                     <div class="sub">{{ s.description }}</div>
+                  }
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="tenant">
+                <th mat-header-cell *matHeaderCellDef>Tenant</th>
+                <td mat-cell *matCellDef="let s">
+                  <div>{{ s.tenantName || s.tenantSlug || '—' }}</div>
+                  @if (s.tenantSlug && s.tenantName) {
+                    <div class="sub mono">{{ s.tenantSlug }}</div>
                   }
                 </td>
               </ng-container>
@@ -306,8 +317,9 @@ export class ServiceAccountsComponent {
   private auth = inject(AuthService);
   private snack = inject(MatSnackBar);
   private queryClient = injectQueryClient();
+  private tenantPicker = inject(TenantPickerService);
 
-  protected columns = ['name', 'prefix', 'role', 'enabled', 'lastUsed', 'actions'];
+  protected columns = ['name', 'tenant', 'prefix', 'role', 'enabled', 'lastUsed', 'actions'];
 
   /** Token surfaced after a successful create or rotate. Cleared on Dismiss. */
   protected revealed = signal<ServiceAccount | null>(null);
@@ -337,8 +349,12 @@ export class ServiceAccountsComponent {
     return !!this.draft.name?.trim() && !!this.draft.adminRole;
   }
 
+  // Tenant slug in the key — switching tenant in the picker refetches
+  // and caches the token list per tenant. The mutation invalidations
+  // below pass a bare ['service-accounts'] key, which prefix-matches
+  // every ['service-accounts', <slug>] entry, so they still work.
   protected listQuery = injectQuery(() => ({
-    queryKey: ['service-accounts'],
+    queryKey: ['service-accounts', this.tenantPicker.activeTenantSlug()],
     queryFn: () => firstValueFrom(this.api.list()),
   }));
 

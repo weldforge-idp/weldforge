@@ -16,6 +16,10 @@ public class ServiceAccountDto {
     private Long id;
     private String name;
     private String description;
+    /** Slug of the tenant this service account is scoped to. */
+    private String tenantSlug;
+    /** Human-readable name of the scoping tenant (display name, else name). */
+    private String tenantName;
     /** Returned only on create/rotate. */
     private String token;
     private String tokenPrefix;

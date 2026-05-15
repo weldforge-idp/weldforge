@@ -9,6 +9,10 @@ export interface ServiceAccount {
   id: number;
   name: string;
   description?: string;
+  /** Slug of the tenant this service account is scoped to. */
+  tenantSlug?: string;
+  /** Human-readable name of the scoping tenant. */
+  tenantName?: string;
   /** Returned only on create/rotate — the raw `wf_svc_*` token. */
   token?: string;
   tokenPrefix: string;
