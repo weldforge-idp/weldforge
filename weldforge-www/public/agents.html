@@ -186,7 +186,7 @@ export TENANT=acme
 export TOKEN=wf_svc_...</code></pre>
 
         <h3>A.1 — Register your app as an OIDC Relying Party</h3>
-        <pre><code>curl -X POST $HOST/api/admin/oidc-clients \
+        <pre><code>curl -X POST $HOST/api/admin/oidc/clients \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
@@ -273,15 +273,21 @@ curl -X POST $HOST/api/admin/tenants \
       "enabled": true
     }'
 
-# 2. Issue a TENANT_ADMIN service-account for the new tenant's owner.
+# 2. Issue a service-account token for day-to-day admin work.
+#    NOTE: POST /api/admin/service-accounts creates the account in the
+#    CALLER'S OWN tenant — there is currently no cross-tenant target
+#    parameter, and user / OIDC-client creation is caller-tenant-scoped
+#    too. To bootstrap an admin for a newly created tenant, sign in to the
+#    admin portal in that tenant's context and mint the token there.
+#    (Explicit cross-tenant admin is planned — see the repository's
+#    docs/cross-tenant-admin-spec.md.)
 curl -X POST $HOST/api/admin/service-accounts \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
-      "name":        "newco-admin-bootstrap",
-      "description": "Bootstrap TENANT_ADMIN for NewCo",
-      "adminRole":   "TENANT_ADMIN",
-      "tenantSlug":  "newco"
+      "name":        "admin-automation",
+      "description": "Service account for admin automation",
+      "adminRole":   "TENANT_ADMIN"
     }'
 
 # 3. (Optional) Bootstrap the tenant's PKI root.
@@ -392,12 +398,12 @@ curl $HOST/t/newco/saml2/idp/metadata</code></pre>
         <p class="lead">
             The full source is at <a href="https://github.com/weldforge-idp/weldforge">github.com/weldforge-idp/weldforge</a>.
             The repository ships Dockerfiles, a Docker Compose stack for
-            local development, and Kubernetes manifests under
-            <code>infrastructure/kubernetes/sso/</code> matching the
-            production deployment on EKS.
+            local development, and a Helm chart under
+            <code>infrastructure/helm/weldforge/</code> matching the
+            production deployment on GKE.
         </p>
         <p>
-            Stack: Spring Boot 3.3.5, Java 21, PostgreSQL 15, Flyway,
+            Stack: Spring Boot 3.5.8, Java 25, PostgreSQL 15, Flyway,
             Angular 21 admin portal, nginx, Bouncy Castle (PKI),
             Resilience4j (circuit breakers).
         </p>

@@ -9,8 +9,8 @@
 OIDC issuer • SAML 2.0 SP + IdP • SCIM 2.0 • MFA (TOTP / WebAuthn / SMS) • Internal per-tenant PKI • HMAC-signed audit webhooks • M2M API keys with path/method scopes • Multi-tenant from the database up
 
 [![Website](https://img.shields.io/badge/website-weldforge.org-4A8FF5)](https://www.weldforge.org)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F)](https://spring.io/projects/spring-boot)
-[![Java](https://img.shields.io/badge/Java-21-ED8B00)](https://openjdk.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.8-6DB33F)](https://spring.io/projects/spring-boot)
+[![Java](https://img.shields.io/badge/Java-25-ED8B00)](https://openjdk.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-336791)](https://www.postgresql.org/)
 [![Security audit](https://img.shields.io/badge/security%20audit-April%202026-brightgreen)](SECURITY_AUDIT_2026-04-15.md)
 
@@ -88,7 +88,7 @@ self-host tier.
               ┌──────────────────────────────────────────────────┐
               │                  WeldForge                        │
               │                                                   │
-Browser ───►  │  ┌─ Spring Boot 3.3.5 (Java 21) ───────────────┐ │
+Browser ───►  │  ┌─ Spring Boot 3.5.8 (Java 25) ───────────────┐ │
               │  │    REST + OIDC + SAML + SCIM + PKI          │ │
 App ────────► │  │    Resilience4j circuit breakers             │ │
               │  │    Prometheus metrics + health probes        │ │
@@ -111,7 +111,7 @@ Runs as one jar + one database. Scales horizontally behind a load balancer
 
 | Layer | Technology |
 |---|---|
-| Backend | Spring Boot 3.3.5, Java 21, JPA/Hibernate 6 |
+| Backend | Spring Boot 3.5.8, Java 25, JPA/Hibernate 6 |
 | Database | PostgreSQL 14+, Flyway migrations |
 | SAML | OpenSAML 4 + Spring Security SAML |
 | OAuth2 / OIDC | Spring Authorization Server + custom issuer |

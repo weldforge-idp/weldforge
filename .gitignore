@@ -48,6 +48,10 @@ AWSCLIV2.pkg
 weldforge-auth/.env
 weldforge-admin-portal/.env
 
+# Local secrets / API tokens — never commit
+.wf-token
+*.token
+
 # Test output
 test-output/
 

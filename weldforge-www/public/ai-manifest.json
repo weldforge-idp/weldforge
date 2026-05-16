@@ -72,20 +72,20 @@
     "keyAdminEndpoints": [
         {"method": "POST",   "path": "/api/admin/tenants",                              "purpose": "Create a new tenant",                                             "requires": "SUPER_ADMIN"},
         {"method": "GET",    "path": "/api/admin/tenants",                              "purpose": "List tenants",                                                    "requires": "SUPER_ADMIN"},
-        {"method": "POST",   "path": "/api/admin/users",                                "purpose": "Provision a user",                                                "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/users/invite",                         "purpose": "Invite a user — creates the user in an invited state and returns a 7-day reset token", "requires": "SUPER_ADMIN", "responseOneShot": "resetToken"},
         {"method": "POST",   "path": "/api/admin/app-clients",                          "purpose": "Issue a scoped API key (wf_live_*)",                              "requires": "TENANT_ADMIN",  "responseOneShot": "apiKey"},
         {"method": "POST",   "path": "/api/admin/app-clients/{id}/rotate",              "purpose": "Rotate an API key",                                               "requires": "TENANT_ADMIN",  "responseOneShot": "apiKey"},
         {"method": "POST",   "path": "/api/admin/service-accounts",                     "purpose": "Issue a service-account token (wf_svc_*)",                        "requires": "TENANT_ADMIN",  "responseOneShot": "token"},
         {"method": "POST",   "path": "/api/admin/saml/service-providers",               "purpose": "Register a SAML SP the IdP will assert to",                       "requires": "TENANT_ADMIN"},
-        {"method": "POST",   "path": "/api/admin/oidc-clients",                         "purpose": "Register an OIDC relying party",                                  "requires": "TENANT_ADMIN"},
-        {"method": "POST",   "path": "/api/admin/ldap-providers",                       "purpose": "Wire an upstream AD/LDAP directory",                              "requires": "TENANT_ADMIN"},
-        {"method": "POST",   "path": "/api/admin/crm-providers",                        "purpose": "Wire a CRM push target (Salesforce, HubSpot, Dynamics, Pipedrive)","requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/oidc/clients",                         "purpose": "Register an OIDC relying party",                                  "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/tenants/{id}/ldap-providers",          "purpose": "Wire an upstream AD/LDAP directory",                              "requires": "TENANT_ADMIN"},
+        {"method": "POST",   "path": "/api/admin/tenants/{id}/crm-providers",           "purpose": "Wire a CRM push target (Salesforce, HubSpot, Dynamics, Pipedrive)","requires": "TENANT_ADMIN"},
         {"method": "POST",   "path": "/api/admin/webhooks",                             "purpose": "Subscribe to identity events (HMAC-signed delivery)",             "requires": "TENANT_ADMIN",  "responseOneShot": "secret"},
         {"method": "POST",   "path": "/api/admin/pki/ca",                               "purpose": "Bootstrap a root CA for the tenant",                              "requires": "TENANT_ADMIN"},
         {"method": "POST",   "path": "/api/admin/pki/certificates",                     "purpose": "Issue a client certificate",                                      "requires": "TENANT_ADMIN"},
         {"method": "POST",   "path": "/api/admin/pki/certificates/{serial}/revoke",     "purpose": "Revoke a client certificate",                                     "requires": "TENANT_ADMIN"},
         {"method": "POST",   "path": "/api/admin/group-role-mappings",                  "purpose": "Bind a SCIM group to an admin role",                              "requires": "TENANT_ADMIN"},
-        {"method": "POST",   "path": "/api/admin/mfa-policies",                         "purpose": "Configure per-tenant MFA enforcement",                            "requires": "TENANT_ADMIN"}
+        {"method": "POST",   "path": "/api/admin/tenants/{id}/mfa-policy",              "purpose": "Configure per-tenant MFA enforcement",                            "requires": "TENANT_ADMIN"}
     ],
     "standards": [
         "RFC 6749 (OAuth 2.0)",

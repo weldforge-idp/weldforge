@@ -1,10 +1,10 @@
 # ============================================================
-# Multi-stage build: JDK 21 compile → JRE 21 runtime.
+# Multi-stage build: JDK 25 compile → JRE 25 runtime.
 # Non-root user, health check, and optimised layer caching.
 # ============================================================
 
 # --- Build stage ---
-FROM bellsoft/liberica-openjdk-debian:21 AS build
+FROM bellsoft/liberica-openjdk-debian:25 AS build
 WORKDIR /app
 
 # Cache Maven dependencies before copying source
@@ -18,7 +18,7 @@ COPY src src
 RUN ./mvnw clean package -DskipTests -B -ntp
 
 # --- Runtime stage ---
-FROM bellsoft/liberica-openjre-debian:21
+FROM bellsoft/liberica-openjre-debian:25
 
 LABEL org.opencontainers.image.source="https://github.com/weldforge-idp/weldforge"
 
