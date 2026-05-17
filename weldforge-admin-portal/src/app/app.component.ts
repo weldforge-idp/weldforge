@@ -16,7 +16,7 @@ import { AuthService } from './core/services/auth.service';
       </a>
       <span class="wf-tagline mono">federated identity platform</span>
       <span class="spacer"></span>
-      <nav class="wf-nav" *ngIf="authService.isLoggedIn()">
+      <nav class="wf-nav" *ngIf="authService.isLoggedIn() && !isAuthRoute()">
         <a mat-button routerLink="/tenants" routerLinkActive="active">Tenants</a>
         <a mat-button routerLink="/users" routerLinkActive="active">Users</a>
         <a mat-button routerLink="/roles" routerLinkActive="active">Roles</a>
@@ -102,5 +102,18 @@ export class AppComponent {
     // means a failed revocation won't surface here.
     this.authService.logout().subscribe();
     this.router.navigate(['/login']);
+  }
+
+  /**
+   * True on the public auth screens (login, register, forgot/reset
+   * password, verify email). The admin nav must never render there —
+   * those pages are reached unauthenticated, or while re-authenticating,
+   * so showing Tenants/Users/Roles/etc. on top of a login form is both
+   * wrong and a needless disclosure of the admin surface.
+   */
+  isAuthRoute(): boolean {
+    const path = this.router.url.split('?')[0].split('#')[0];
+    return ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email']
+      .some(r => path === r || path.startsWith(r + '/'));
   }
 }

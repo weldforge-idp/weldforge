@@ -315,6 +315,24 @@ public class PasswordResetSteps {
         assertThat(adminIssued.rawToken()).isNotBlank();
     }
 
+    @Given("{string} is locked out after failed logins")
+    public void userIsLockedOut(String email) {
+        User user = userStore.stream()
+                .filter(u -> email.equalsIgnoreCase(u.getEmail()))
+                .findFirst().orElseThrow(() -> new AssertionError("no such user: " + email));
+        user.setFailedLoginAttempts(5);
+        user.setLockedUntil(LocalDateTime.now().plusMinutes(15));
+    }
+
+    @Then("the login lockout for {string} is cleared")
+    public void lockoutCleared(String email) {
+        User user = userStore.stream()
+                .filter(u -> email.equalsIgnoreCase(u.getEmail()))
+                .findFirst().orElseThrow(() -> new AssertionError("no such user: " + email));
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.getLockedUntil()).isNull();
+    }
+
     // ---- test helpers (mirror PasswordResetService internals) --------
 
     private static String generateToken() {
