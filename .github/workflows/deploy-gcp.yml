@@ -80,6 +80,11 @@ jobs:
           echo "::add-mask::$(gcloud secrets versions access latest --secret=wf-db-password)"
           echo "::add-mask::$(gcloud secrets versions access latest --secret=wf-jwt-secret)"
           echo "::add-mask::$(gcloud secrets versions access latest --secret=wf-app-crypto-secret)"
+          # Optional — SendGrid API key for SMTP. Absent until email is set up;
+          # an empty value keeps SmtpMailService dormant instead of failing the
+          # deploy. See docs/email-deliverability.md.
+          SENDGRID_API_KEY=$(gcloud secrets versions access latest --secret=wf-sendgrid-api-key 2>/dev/null || true)
+          if [ -n "$SENDGRID_API_KEY" ]; then echo "::add-mask::$SENDGRID_API_KEY"; fi
           {
             echo "DB_PASSWORD<<EOF"
             gcloud secrets versions access latest --secret=wf-db-password
@@ -92,6 +97,9 @@ jobs:
             echo "APP_CRYPTO_SECRET<<EOF"
             gcloud secrets versions access latest --secret=wf-app-crypto-secret
             echo
+            echo "EOF"
+            echo "SENDGRID_API_KEY<<EOF"
+            echo "$SENDGRID_API_KEY"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -107,4 +115,5 @@ jobs:
             --set-string api.secrets.SPRING_DATASOURCE_PASSWORD="${{ steps.sm.outputs.DB_PASSWORD }}" \
             --set-string api.secrets.JWT_SECRET="${{ steps.sm.outputs.JWT_SECRET }}" \
             --set-string api.secrets.APP_CRYPTO_SECRET="${{ steps.sm.outputs.APP_CRYPTO_SECRET }}" \
+            --set-string mail.password="${{ steps.sm.outputs.SENDGRID_API_KEY }}" \
             --wait --timeout=10m

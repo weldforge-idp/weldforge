@@ -89,3 +89,21 @@ monitoring:
 # --- CORS ---
 cors:
   allowedOrigins: "https://sso.weldforge.org,https://app.wellspring.org.za"
+
+# --- Outbound email (SMTP / SendGrid) ---
+# Dormant until mail.password is supplied. The deploy workflow sources the
+# SendGrid API key from GCP Secret Manager (secret: wf-sendgrid-api-key) and
+# --set-strings mail.password. With no such secret the password stays empty,
+# no SPRING_MAIL_* env is rendered, SmtpMailService stays inactive, and
+# LoggingMailService remains the MailService — so this is safe to deploy
+# before SMTP is set up. Creating that one GCP secret is the whole activation
+# step. See docs/email-deliverability.md.
+mail:
+  host: smtp.sendgrid.net
+  port: 587
+  # SendGrid SMTP: the username is the literal string "apikey"; the API key
+  # itself is the password.
+  username: apikey
+  from: no-reply@weldforge.org
+  # Injected at deploy time from Secret Manager — never commit a real key.
+  password: ""
