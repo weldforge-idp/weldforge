@@ -22,6 +22,7 @@ import tech.cwvermaak.weldforge.service.PasswordResetService;
 import tech.cwvermaak.weldforge.service.TenantSamlService;
 import tech.cwvermaak.weldforge.service.TenantService;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -159,7 +160,9 @@ public class AuthController {
     @PostMapping("/forgot-password")
     public ResponseEntity<Map<String, String>> forgotPassword(@RequestBody Map<String, String> body) {
         String email = body.get("email");
-        passwordResetService.requestReset(email);
+        // returnTo: optional base64url URL the SPA forwards from the login
+        // page's OIDC continuation — validated and stored server-side.
+        passwordResetService.requestReset(email, body.get("returnTo"));
         // Always 200 to avoid user enumeration.
         return ResponseEntity.ok(Map.of("message", "If that email is registered, a reset link has been sent."));
     }
@@ -169,8 +172,13 @@ public class AuthController {
         String token = body.get("token");
         String newPassword = body.get("newPassword");
         try {
-            passwordResetService.resetPassword(token, newPassword);
-            return ResponseEntity.ok(Map.of("message", "Password has been reset successfully."));
+            String returnTo = passwordResetService.resetPassword(token, newPassword);
+            Map<String, String> resp = new HashMap<>();
+            resp.put("message", "Password has been reset successfully.");
+            // Present only when the reset began inside an app flow — the SPA
+            // sends the user back to the sign-in screen with this continuation.
+            if (returnTo != null) resp.put("returnTo", returnTo);
+            return ResponseEntity.ok(resp);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

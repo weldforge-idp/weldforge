@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of, tap } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { AuthShellComponent } from './auth-shell.component';
@@ -43,7 +43,11 @@ import { AuthShellComponent } from './auth-shell.component';
       </form>
 
       <div *ngIf="done()" class="wf-form">
-        <p class="wf-info">Your password has been reset. You can now sign in with the new password.</p>
+        <p class="wf-info">
+          {{ redirecting()
+              ? 'Your password has been reset. Returning you to sign in…'
+              : 'Your password has been reset. You can now sign in with the new password.' }}
+        </p>
         <a mat-raised-button color="primary" [routerLink]="['/login']" [queryParams]="forwardQueryParams" class="wf-submit">
           Continue to sign in
         </a>
@@ -80,17 +84,18 @@ export class ResetPasswordComponent {
   loading = signal(false);
   error = signal<string | null>(null);
   done = signal(false);
+  redirecting = signal(false);
   token: string | null = null;
 
   forwardQueryParams: Record<string, string> = {};
 
-  constructor(private auth: AuthService, route: ActivatedRoute) {
+  constructor(private auth: AuthService, private router: Router, route: ActivatedRoute) {
     this.token = route.snapshot.queryParamMap.get('token');
     if (!this.token) {
       this.error.set('This reset link is missing or invalid. Request a new one from the sign-in page.');
     }
     const slug = route.snapshot.queryParamMap.get('tenant');
-    if (slug) this.forwardQueryParams = { tenant: slug };
+    if (slug) this.forwardQueryParams['tenant'] = slug;
   }
 
   submit(): void {
@@ -102,7 +107,18 @@ export class ResetPasswordComponent {
     this.error.set(null);
     this.loading.set(true);
     this.auth.resetPassword(this.token, this.newPassword).pipe(
-      tap(() => { this.done.set(true); this.loading.set(false); }),
+      tap(res => {
+        this.loading.set(false);
+        this.done.set(true);
+        // Reset began inside an app flow — return the user to the sign-in
+        // screen carrying the original OIDC continuation, so they sign in
+        // with the new password and land back in the calling app.
+        if (res.returnTo) {
+          this.forwardQueryParams = { ...this.forwardQueryParams, oidcReturnTo: res.returnTo };
+          this.redirecting.set(true);
+          setTimeout(() => this.router.navigate(['/login'], { queryParams: this.forwardQueryParams }), 1800);
+        }
+      }),
       catchError(err => {
         this.error.set(err?.error?.message || 'Could not reset your password. The link may be expired.');
         this.loading.set(false);

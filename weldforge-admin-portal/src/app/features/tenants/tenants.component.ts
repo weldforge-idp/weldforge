@@ -32,6 +32,7 @@ interface BrandingDraft {
   registrationEnabled: boolean;
   passwordRecoveryEnabled: boolean;
   emailVerificationRequired: boolean;
+  returnToCallerEnabled: boolean;
   brand: Record<string, string>;
 }
 
@@ -532,6 +533,12 @@ interface TenantRow extends Tenant {
                   </mat-slide-toggle>
                   <p class="sub">When on, new accounts must confirm their email before they can sign in.</p>
                 </div>
+                <div class="wf-toggle-row">
+                  <mat-slide-toggle [(ngModel)]="t.brandingDraft!.returnToCallerEnabled">
+                    Return to app after password reset
+                  </mat-slide-toggle>
+                  <p class="sub">When on, a password reset started from inside an app returns the user to the sign-in screen with the original flow preserved, so they continue straight back to the calling app. When off, the reset ends on a standalone confirmation screen.</p>
+                </div>
               </div>
 
               <div class="wf-grid wf-branding-grid">
@@ -926,6 +933,7 @@ export class TenantsComponent implements OnInit {
       registrationEnabled: t.registrationEnabled !== false,
       passwordRecoveryEnabled: t.passwordRecoveryEnabled !== false,
       emailVerificationRequired: t.emailVerificationRequired !== false,
+      returnToCallerEnabled: t.returnToCallerEnabled !== false,
       brand,
     };
   }
@@ -945,6 +953,7 @@ export class TenantsComponent implements OnInit {
       registrationEnabled: t.brandingDraft.registrationEnabled,
       passwordRecoveryEnabled: t.brandingDraft.passwordRecoveryEnabled,
       emailVerificationRequired: t.brandingDraft.emailVerificationRequired,
+      returnToCallerEnabled: t.brandingDraft.returnToCallerEnabled,
       branding: cleaned,
     };
     this.api.update(t.id, patch).subscribe({

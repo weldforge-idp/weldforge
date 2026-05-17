@@ -266,8 +266,14 @@ export class LoginComponent implements OnInit {
   }
 
   forwardQueryParams(): Record<string, string> {
+    const params: Record<string, string> = {};
     const slug = this.branding.current()?.slug ?? this.route.snapshot.queryParamMap.get('tenant');
-    return slug ? { tenant: slug } : {};
+    if (slug) params['tenant'] = slug;
+    // Carry the OIDC continuation through to forgot/reset-password so a
+    // password reset can return the user to the calling app.
+    const oidcReturnTo = this.route.snapshot.queryParamMap.get('oidcReturnTo');
+    if (oidcReturnTo) params['oidcReturnTo'] = oidcReturnTo;
+    return params;
   }
 
   private brandingValue<T>(key: string): T | null {

@@ -63,12 +63,26 @@ export class AuthService {
     );
   }
 
-  forgotPassword(email: string): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(`${this.url}/forgot-password`, { email });
+  /**
+   * Request a password-reset email. `returnTo` is the base64url OIDC
+   * continuation carried over from the login page — when present the backend
+   * stores it (validated same-origin) so the reset can send the user back
+   * into the original flow.
+   */
+  forgotPassword(email: string, returnTo?: string): Observable<{ message: string }> {
+    const body: { email: string; returnTo?: string } = { email };
+    if (returnTo) body.returnTo = returnTo;
+    return this.http.post<{ message: string }>(`${this.url}/forgot-password`, body);
   }
 
-  resetPassword(token: string, newPassword: string): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(`${this.url}/reset-password`, { token, newPassword });
+  /**
+   * Complete a password reset. The response carries `returnTo` only when the
+   * reset began inside an app flow and the tenant has return-to-caller on —
+   * the caller then sends the user back to the sign-in screen with it.
+   */
+  resetPassword(token: string, newPassword: string): Observable<{ message: string; returnTo?: string }> {
+    return this.http.post<{ message: string; returnTo?: string }>(
+      `${this.url}/reset-password`, { token, newPassword });
   }
 
   verifyEmail(token: string): Observable<{ message: string }> {

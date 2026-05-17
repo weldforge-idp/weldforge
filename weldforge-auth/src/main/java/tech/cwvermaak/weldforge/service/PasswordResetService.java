@@ -20,6 +20,7 @@ import tech.cwvermaak.weldforge.service.mail.MailService;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -49,8 +50,25 @@ public class PasswordResetService {
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final int EXPIRY_HOURS = 1;
 
+    /** Backwards-compatible entry point — a reset with no in-flow return target. */
     @Transactional
     public void requestReset(String email) {
+        requestReset(email, null);
+    }
+
+    /**
+     * Request a password reset.
+     *
+     * @param email    account email; a non-existent address succeeds silently
+     *                 (no user enumeration)
+     * @param returnTo optional base64url-encoded URL the user should land on
+     *                 after the reset completes — the sign-in screen carrying
+     *                 the original OIDC continuation. Honoured only when the
+     *                 tenant has return-to-caller enabled and the decoded URL
+     *                 is on the auth server's own origin; otherwise dropped.
+     */
+    @Transactional
+    public void requestReset(String email, String returnTo) {
         Tenant tenant = currentTenant();
 
         // Per-tenant feature flag: when password recovery is disabled the
@@ -79,6 +97,7 @@ public class PasswordResetService {
                 .tenant(tenant)
                 .user(user)
                 .tokenHash(tokenHash)
+                .returnTo(resolveReturnTo(tenant, returnTo))
                 .expiresAt(LocalDateTime.now().plusHours(EXPIRY_HOURS))
                 .build();
 
@@ -104,8 +123,15 @@ public class PasswordResetService {
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
     }
 
+    /**
+     * Complete a password reset.
+     *
+     * @return the validated, same-origin return target the SPA should send the
+     *         user back to (the sign-in screen with the OIDC continuation), or
+     *         null when there is none / the tenant has return-to-caller off.
+     */
     @Transactional
-    public void resetPassword(String token, String newPassword) {
+    public String resetPassword(String token, String newPassword) {
         String tokenHash = sha256Hex(token);
 
         PasswordResetToken resetToken = resetTokenRepository.findByTokenHash(tokenHash)
@@ -142,6 +168,13 @@ public class PasswordResetService {
         auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_RESET_COMPLETED, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
                 AuditService.meta("refresh_tokens_revoked", revoked));
+
+        // Return target for the SPA. It was already same-origin validated when
+        // the token was minted; re-check the tenant flag so an operator who
+        // turns return-to-caller off mid-flight is honoured.
+        return Boolean.TRUE.equals(resetToken.getTenant().getReturnToCallerEnabled())
+                ? resetToken.getReturnTo()
+                : null;
     }
 
     // ---- internals ---------------------------------------------------
@@ -217,6 +250,44 @@ public class PasswordResetService {
         }
         return tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant: " + slug));
+    }
+
+    /**
+     * Validate an optional return-to URL supplied at forgot-password time.
+     * It is kept only when the tenant has return-to-caller enabled and the
+     * base64url-decoded target sits on the auth server's own origin — a reset
+     * link must never be coercible into an open redirect. Anything malformed,
+     * cross-origin, or arriving for a tenant with the feature off is dropped
+     * (null), and the reset simply ends on the standalone confirmation screen.
+     */
+    private String resolveReturnTo(Tenant tenant, String returnTo) {
+        if (returnTo == null || returnTo.isBlank()) return null;
+        if (!Boolean.TRUE.equals(tenant.getReturnToCallerEnabled())) return null;
+        String base = frontendBaseUrl == null ? "" : frontendBaseUrl.trim();
+        if (base.isBlank()) return null;
+        try {
+            String decoded = new String(
+                    Base64.getUrlDecoder().decode(returnTo.trim()), StandardCharsets.UTF_8);
+            if (sameOrigin(URI.create(decoded), URI.create(base))) {
+                return returnTo.trim();
+            }
+            log.warn("Dropped cross-origin password-reset returnTo for tenant {}", tenant.getSlug());
+        } catch (RuntimeException e) {
+            log.warn("Dropped malformed password-reset returnTo for tenant {}", tenant.getSlug());
+        }
+        return null;
+    }
+
+    /** Scheme + host + (default-aware) port equality. */
+    private static boolean sameOrigin(URI a, URI b) {
+        return a.getScheme() != null && a.getScheme().equalsIgnoreCase(b.getScheme())
+                && a.getHost() != null && a.getHost().equalsIgnoreCase(b.getHost())
+                && effectivePort(a) == effectivePort(b);
+    }
+
+    private static int effectivePort(URI u) {
+        if (u.getPort() != -1) return u.getPort();
+        return "https".equalsIgnoreCase(u.getScheme()) ? 443 : 80;
     }
 
     /**

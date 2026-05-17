@@ -51,6 +51,17 @@ public class Tenant {
     private Boolean emailVerificationRequired = true;
 
     /**
+     * When true, a password reset started from inside an app/OIDC flow returns
+     * the user to the sign-in screen with the original continuation preserved
+     * once the new password is set — they then sign in and are bounced back to
+     * the calling app. When false the reset ends on the standalone
+     * confirmation screen.
+     */
+    @Column(name = "return_to_caller_enabled", nullable = false)
+    @Builder.Default
+    private Boolean returnToCallerEnabled = true;
+
+    /**
      * Free-form per-tenant branding payload (JSONB), consumed by the Angular
      * admin-portal auth screens — {@code login.component.ts} /
      * {@code auth-shell.component.ts} and {@code TenantBrandingService}.
@@ -131,6 +142,7 @@ public class Tenant {
         if (registrationEnabled == null) registrationEnabled = true;
         if (passwordRecoveryEnabled == null) passwordRecoveryEnabled = true;
         if (emailVerificationRequired == null) emailVerificationRequired = true;
+        if (returnToCallerEnabled == null) returnToCallerEnabled = true;
     }
 
     @PreUpdate
