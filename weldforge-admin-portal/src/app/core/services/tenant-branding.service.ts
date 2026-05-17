@@ -79,6 +79,10 @@ export class TenantBrandingService {
         root.style.setProperty(cssVar, v);
       }
     }
+    // `theme: "light"` toggles the .wf-light body class, which scopes the
+    // light Angular Material colour theme (see styles.scss). Without this a
+    // light tenant gets a light page but dark, unreadable form fields.
+    document.body.classList.toggle('wf-light', payload['theme'] === 'light');
   }
 
   private removeBrandingVars(): void {
@@ -86,5 +90,6 @@ export class TenantBrandingService {
     for (const cssVar of Object.values(CSS_VAR_KEYS)) {
       root.style.removeProperty(cssVar);
     }
+    document.body.classList.remove('wf-light');
   }
 }

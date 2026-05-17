@@ -26,7 +26,8 @@ type Step = 'credentials' | 'mfa';
     <div class="wf-login-shell">
       <div class="wf-login-card">
         <div class="wf-login-header">
-          <img [src]="logoUrl()" [alt]="displayName()" height="44">
+          <img *ngIf="logoUrl() as logo" [src]="logo" [alt]="displayName()" height="44">
+          <div class="wf-wordmark" *ngIf="!logoUrl()">{{ wordmark() }}</div>
           <div class="wf-eyebrow" *ngIf="eyebrow()">{{ eyebrow() }}</div>
           <h1>{{ headline() }}</h1>
           <p class="wf-sub" *ngIf="step() === 'credentials'">{{ tagline() }}</p>
@@ -126,6 +127,14 @@ type Step = 'credentials' | 'mfa';
     }
     .wf-login-header { text-align: center; margin-bottom: 28px; }
     .wf-login-header img { margin-bottom: 18px; max-width: 240px; }
+    .wf-wordmark {
+      margin-bottom: 18px;
+      font-family: var(--wf-display, 'Syne', sans-serif);
+      font-weight: 700;
+      font-size: 26px;
+      letter-spacing: 0.01em;
+      color: var(--wf-text);
+    }
     .wf-eyebrow {
       font-family: var(--wf-mono, 'Space Mono', monospace);
       font-size: 11px;
@@ -185,6 +194,11 @@ type Step = 'credentials' | 'mfa';
       letter-spacing: 0.18em;
       color: var(--wf-text-3);
     }
+    /* Light tenant theme — drop the dark-tuned amber glow and heavy shadow. */
+    :host-context(body.wf-light) .wf-login-shell::after { display: none; }
+    :host-context(body.wf-light) .wf-login-card {
+      box-shadow: 0 8px 30px rgba(17, 24, 39, 0.10);
+    }
   `]
 })
 export class LoginComponent implements OnInit {
@@ -205,8 +219,13 @@ export class LoginComponent implements OnInit {
   readonly displayName = computed(() => this.branding.current()?.displayName ?? 'WeldForge');
   readonly logoUrl = computed(() => {
     const url = this.brandingValue<string>('logoUrl');
-    return url || 'weldforge-logo.svg';
+    if (url) return url;
+    // A branded tenant with no logo image gets a text wordmark, not the
+    // WeldForge shield; only the unbranded default falls back to the shield.
+    return this.branding.current() ? null : 'weldforge-logo.svg';
   });
+  readonly wordmark = computed(() =>
+    this.brandingValue<string>('wordmark') ?? this.displayName());
   readonly eyebrow = computed(() => {
     const v = this.brandingValue<string>('eyebrow');
     return v ?? (this.branding.current() ? null : '// secure access');
