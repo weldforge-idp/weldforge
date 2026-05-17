@@ -1,14 +1,17 @@
 ---
 name: portable-memory-snapshot
-description: Project memory is mirrored into the repo at docs/agent-memory/ + CLAUDE.md so it survives a copy/clone to another machine
+description: Project memory is mirrored into the repo — CLAUDE.md embeds the full notes and auto-loads; docs/agent-memory/ is the per-note mirror
 metadata: 
   node_type: memory
   type: reference
   originSessionId: e91dbe85-0918-4ed6-96ef-1ead548c4fc7
 ---
 
-The machine-local Claude Code memory store (`~/.claude/projects/<path-slug>/memory/`) is path-keyed and does not travel with the project. A verbatim mirror is committed in the repo at `docs/agent-memory/`, and `CLAUDE.md` at the repo root bootstraps it — `CLAUDE.md` auto-loads on any installation, carries the memory index, and documents re-seeding.
+The machine-local Claude Code memory store (`~/.claude/projects/<path-slug>/memory/`) is path-keyed and does not travel with the project. Two committed, portable copies exist:
 
-**Why:** copying or cloning the project to another machine otherwise loses every memory; the in-repo mirror makes the knowledge portable.
+- `CLAUDE.md` at the repo root **embeds the full text of every memory note** and auto-loads on any installation — the knowledge is in context with zero setup steps. This is the authoritative copy.
+- `docs/agent-memory/` is a verbatim per-note mirror in the memory-tool on-disk format, used only to optionally re-seed the live store on a new machine.
 
-**How to apply:** whenever memories change, also update the copy under `docs/agent-memory/` and the index in `CLAUDE.md` so the snapshot stays current. To re-seed a fresh installation's live store, copy `docs/agent-memory/*.md` into `~/.claude/projects/<slug>/memory/` (see the command in `CLAUDE.md`).
+**Why:** copying or cloning the project otherwise loses every memory; embedding the content in the auto-loaded `CLAUDE.md` makes it portable with no manual step.
+
+**How to apply:** whenever memories change, update `CLAUDE.md` (authoritative) AND the matching file under `docs/agent-memory/` so all copies stay in sync. Re-seeding the live memory tool is optional — see the PowerShell command in `CLAUDE.md`.
