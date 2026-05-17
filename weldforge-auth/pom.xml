@@ -47,6 +47,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-client</artifactId>
         </dependency>
+        <!-- SMTP mail transport. JavaMailSender is autoconfigured only when
+             spring.mail.host is set, so SmtpMailService stays inert (and
+             LoggingMailService remains the MailService) until SMTP is
+             configured at deploy time. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
         <!-- Stripe SDK for v1 of the payment-gateway subsystem. Additional
              gateways (Paddle, PayFast, Yoco) add their own deps alongside. -->
         <dependency>
