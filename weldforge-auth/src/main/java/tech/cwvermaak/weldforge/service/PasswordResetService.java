@@ -185,6 +185,32 @@ public class PasswordResetService {
         return resetTokenRepository.save(token);
     }
 
+    /**
+     * Admin-initiated, out-of-band password reset for an existing user — the
+     * account-recovery path when email delivery is unavailable. Wipes any
+     * pending tokens, mints a fresh single-use one (24h), and returns the raw
+     * value so the admin can hand it to the user over a secure channel.
+     */
+    @Transactional
+    public IssuedReset adminIssueReset(User user) {
+        resetTokenRepository.deleteByUserIdAndUsedFalse(user.getId());
+        String rawToken = generateToken();
+        LocalDateTime expiresAt = LocalDateTime.now().plusHours(24);
+        resetTokenRepository.save(PasswordResetToken.builder()
+                .tenant(user.getTenant())
+                .user(user)
+                .tokenHash(sha256Hex(rawToken))
+                .expiresAt(expiresAt)
+                .build());
+        auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_RESET_REQUESTED, user,
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                AuditService.meta("channel", "admin_out_of_band"));
+        return new IssuedReset(rawToken, expiresAt);
+    }
+
+    /** Result of an admin-issued reset — the raw token and its expiry. */
+    public record IssuedReset(String rawToken, LocalDateTime expiresAt) {}
+
     public static String generateToken() {
         byte[] bytes = new byte[TOKEN_BYTE_LENGTH];
         new SecureRandom().nextBytes(bytes);

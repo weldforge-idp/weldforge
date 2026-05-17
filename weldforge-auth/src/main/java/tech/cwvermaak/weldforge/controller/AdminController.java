@@ -66,6 +66,16 @@ public class AdminController {
     }
 
     /**
+     * Admin-issued, out-of-band password reset for an existing user. Mints a
+     * single-use reset token and returns it so the admin can deliver it over
+     * a secure channel — the account-recovery path when email is unavailable.
+     */
+    @PostMapping("/users/{id}/issue-password-reset")
+    public ResponseEntity<java.util.Map<String, Object>> issuePasswordReset(@PathVariable Long id) {
+        return ResponseEntity.ok(adminService.issuePasswordReset(id));
+    }
+
+    /**
      * PRD ADM-02: assign an admin console role to a user. Super-admin only.
      * Body: {"adminRole": "NONE|READ_ONLY|TENANT_ADMIN|SUPER_ADMIN"}
      */

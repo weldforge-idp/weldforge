@@ -17,6 +17,11 @@ Feature: Password reset
     Then the password is changed successfully
     And every active session for the user is terminated
 
+  Scenario: An admin issues an out-of-band reset for an existing user
+    When an admin issues a password reset for "alice@acme.test"
+    Then a reset token is returned to the admin
+    And a reset token is generated
+
   Scenario: Expired token is rejected
     When a password reset is requested for "alice@acme.test"
     And the token is expired

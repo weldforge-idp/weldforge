@@ -168,6 +168,30 @@ public class AdminService {
     }
 
     /**
+     * Admin-issued, out-of-band password reset for an existing user
+     * (TENANT_ADMIN). Mints a single-use reset token and returns it so the
+     * admin can deliver it over a secure channel — the account-recovery path
+     * when email delivery is unavailable. Audit-logged.
+     */
+    @Transactional
+    public java.util.Map<String, Object> issuePasswordReset(Long targetUserId) {
+        tenantAccessor.requireTenantAdmin();
+        Long tid = tenantAccessor.requireTenantId();
+        User target = userRepository.findByIdAndTenantId(targetUserId, tid)
+                .orElseThrow(() -> new EntityNotFoundException("User " + targetUserId + " not found"));
+        PasswordResetService.IssuedReset issued = passwordResetService.adminIssueReset(target);
+        User actor = currentActor();
+        auditService.recordAdmin(AuditEventTypes.ADMIN_PASSWORD_RESET_ISSUED, actor,
+                AuditEventTypes.TARGET_USER, String.valueOf(target.getId()),
+                AuditService.meta("target_email", target.getEmail()));
+        return java.util.Map.of(
+                "userId", target.getId(),
+                "email", target.getEmail(),
+                "resetToken", issued.rawToken(),
+                "expiresAt", issued.expiresAt().toString());
+    }
+
+    /**
      * PRD ADM-02: set a user's admin console role. Only SUPER_ADMIN may
      * call this, and only SUPER_ADMIN may grant SUPER_ADMIN to someone
      * else. Tenant admins cannot assign any admin role themselves — if

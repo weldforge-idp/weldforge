@@ -61,6 +61,7 @@ public class PasswordResetSteps {
 
     private String lastRawToken;
     private Throwable lastError;
+    private PasswordResetService.IssuedReset adminIssued;
 
     public PasswordResetSteps(TestWorld world) {
         this.world = world;
@@ -290,6 +291,28 @@ public class PasswordResetSteps {
     @Then("no error is returned")
     public void noErrorReturned() {
         assertThat(lastError).isNull();
+    }
+
+    @When("an admin issues a password reset for {string}")
+    public void adminIssuesReset(String email) {
+        lastError = null;
+        adminIssued = null;
+        User user = userStore.stream()
+                .filter(u -> email.equalsIgnoreCase(u.getEmail()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no such user: " + email));
+        try {
+            adminIssued = passwordResetService.adminIssueReset(user);
+        } catch (Exception e) {
+            lastError = e;
+        }
+    }
+
+    @Then("a reset token is returned to the admin")
+    public void resetTokenReturnedToAdmin() {
+        assertThat(lastError).isNull();
+        assertThat(adminIssued).isNotNull();
+        assertThat(adminIssued.rawToken()).isNotBlank();
     }
 
     // ---- test helpers (mirror PasswordResetService internals) --------
