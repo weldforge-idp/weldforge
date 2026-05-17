@@ -1,0 +1,11 @@
+- [PlatformSettings on its own branch](platform_settings_wip.md) — committed on feature/write-buddy-integration@1a321df, NOT on main; V33 slot collides with host-routing's V33__tenant_hosts.sql
+- [Dev sync pending](dev_branch_behind.md) — origin/dev now ~25 commits behind main; fast-forward command ready, awaiting user go-ahead
+- [GitHub auth account](github_account.md) — christiaanwvermaak is the right user for weldforge-idp/weldforge; gh credential helper flips between accounts
+- [Git push needs token-in-URL](feedback_git_push_token_in_url.md) — gh credential helper returns wrong account's token; use https://user:token@host form
+- [Repo + cluster reference](reference_infra.md) — weldforge-idp/weldforge, GKE cluster, kubectl context
+- [Auth-form branding in docs](feedback_auth_form_branding_in_docs.md) — every tutorial/integration guide must document how operators brand the login + password-reset forms
+- [Deployment pipeline](deployment_pipeline.md) — GitHub Actions, not TeamCity; TEAMCITY.md / deploy.sh comments are stale
+- [Tenant-nesting WIP](tenant_nesting_wip.md) — feat/admin-rest-tenant-nesting@1ff7451 — 5 TS2554 errors in service-accounts.component.ts, thread tenantId via TenantPickerService.outgoingTenantId()
+- [Angular zoneless pitfalls](feedback_angular_zoneless_pitfalls.md) — computed() over a non-signal field freezes; template `!` on lazy-init objects throws at runtime and truncates CD
+- [SendGrid trial deadline](sendgrid_trial_deadline.md) — free trial ends 2026-07-16; downgrade to the free plan before then or transactional email silently stops
+- [Portable memory snapshot](portable_memory_snapshot.md) — memory mirrored to repo docs/agent-memory/ + CLAUDE.md so it survives copy/clone; keep both in sync
