@@ -25,6 +25,7 @@ export interface Tenant {
   registrationEnabled?: boolean;
   passwordRecoveryEnabled?: boolean;
   emailVerificationRequired?: boolean;
+  returnToCallerEnabled?: boolean;
   branding?: Record<string, unknown> | null;
 }
 

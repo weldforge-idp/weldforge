@@ -121,6 +121,7 @@ public class TenantService {
         if (dto.getRegistrationEnabled() != null)        t.setRegistrationEnabled(dto.getRegistrationEnabled());
         if (dto.getPasswordRecoveryEnabled() != null)    t.setPasswordRecoveryEnabled(dto.getPasswordRecoveryEnabled());
         if (dto.getEmailVerificationRequired() != null)  t.setEmailVerificationRequired(dto.getEmailVerificationRequired());
+        if (dto.getReturnToCallerEnabled() != null)      t.setReturnToCallerEnabled(dto.getReturnToCallerEnabled());
         if (dto.getBranding() != null)                   t.setBranding(dto.getBranding());
         // slug is immutable — changing it would break OAuth2 registration IDs.
         auditService.recordAdmin(AuditEventTypes.TENANT_UPDATE, currentActor(),
@@ -275,6 +276,7 @@ public class TenantService {
                 .registrationEnabled(t.getRegistrationEnabled())
                 .passwordRecoveryEnabled(t.getPasswordRecoveryEnabled())
                 .emailVerificationRequired(t.getEmailVerificationRequired())
+                .returnToCallerEnabled(t.getReturnToCallerEnabled())
                 .branding(t.getBranding())
                 .build();
     }

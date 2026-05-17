@@ -34,6 +34,9 @@ public class TenantDto {
     /** Require email verification before a self-registered user can sign in. */
     private Boolean emailVerificationRequired;
 
+    /** Return the user to the calling app/login flow after a password reset. */
+    private Boolean returnToCallerEnabled;
+
     /** Custom-login branding (logoUrl, primaryColor, tagline, …). */
     private Map<String, Object> branding;
 }

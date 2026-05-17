@@ -75,16 +75,21 @@ export class ForgotPasswordComponent {
   sent = signal(false);
 
   forwardQueryParams: Record<string, string> = {};
+  private oidcReturnTo: string | null = null;
 
   constructor(private auth: AuthService, route: ActivatedRoute) {
     const slug = route.snapshot.queryParamMap.get('tenant');
-    if (slug) this.forwardQueryParams = { tenant: slug };
+    if (slug) this.forwardQueryParams['tenant'] = slug;
+    // OIDC continuation forwarded from the login page — passed to the backend
+    // so the completed reset can return the user to the calling app.
+    this.oidcReturnTo = route.snapshot.queryParamMap.get('oidcReturnTo');
+    if (this.oidcReturnTo) this.forwardQueryParams['oidcReturnTo'] = this.oidcReturnTo;
   }
 
   submit(): void {
     this.error.set(null);
     this.loading.set(true);
-    this.auth.forgotPassword(this.email).pipe(
+    this.auth.forgotPassword(this.email, this.oidcReturnTo ?? undefined).pipe(
       tap(() => { this.sent.set(true); this.loading.set(false); }),
       catchError(err => {
         if (err?.status === 404) {
