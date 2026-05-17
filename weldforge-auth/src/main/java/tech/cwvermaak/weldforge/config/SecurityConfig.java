@@ -15,12 +15,14 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import tech.cwvermaak.weldforge.config.security.ApiAuthenticationEntryPoint;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import tech.cwvermaak.weldforge.config.logging.MdcEnrichmentFilter;
 import tech.cwvermaak.weldforge.config.oauth.DatabaseClientRegistrationRepository;
 import tech.cwvermaak.weldforge.config.scim.ScimAuthenticationFilter;
 import tech.cwvermaak.weldforge.config.saml.DatabaseRelyingPartyRegistrationRepository;
 import tech.cwvermaak.weldforge.config.saml.SamlUserProvisioningSuccessHandler;
+import tech.cwvermaak.weldforge.config.tenant.CrossTenantSelectorFilter;
 import tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter;
 
 @Configuration
@@ -34,10 +36,12 @@ public class SecurityConfig {
     private final TenantResolverFilter tenantResolverFilter;
     private final MdcEnrichmentFilter mdcEnrichmentFilter;
     private final ScimAuthenticationFilter scimAuthenticationFilter;
+    private final CrossTenantSelectorFilter crossTenantSelectorFilter;
     private final DatabaseClientRegistrationRepository clientRegistrationRepository;
     private final DatabaseRelyingPartyRegistrationRepository relyingPartyRegistrationRepository;
     private final SamlUserProvisioningSuccessHandler samlSuccessHandler;
     private final CorsProperties corsProperties;
+    private final TenantOidcCorsConfigurationSource tenantOidcCorsConfigurationSource;
     private final ApiAuthenticationEntryPoint apiAuthenticationEntryPoint;
 
     @Bean
@@ -55,14 +59,23 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        UrlBasedCorsConfigurationSource corsSource = new UrlBasedCorsConfigurationSource();
+        UrlBasedCorsConfigurationSource staticCors = new UrlBasedCorsConfigurationSource();
         CorsConfiguration corsConfig = new CorsConfiguration();
         corsProperties.getAllowedOrigins().forEach(corsConfig::addAllowedOrigin);
         corsProperties.getAllowedMethods().forEach(corsConfig::addAllowedMethod);
         corsConfig.addAllowedHeader("*");
         corsConfig.setAllowCredentials(true);
         corsConfig.setMaxAge(corsProperties.getMaxAge());
-        corsSource.registerCorsConfiguration("/**", corsConfig);
+        staticCors.registerCorsConfiguration("/**", corsConfig);
+
+        // Composite CORS: the per-tenant OIDC surface (/t/{slug}/oauth2/* and
+        // discovery) gets an allow-list computed from the tenant's registered
+        // OIDC client web origins; every other path keeps the static
+        // app.cors.allowed-origins config (admin SPA, marketing site).
+        CorsConfigurationSource corsSource = request -> {
+            CorsConfiguration oidc = tenantOidcCorsConfigurationSource.getCorsConfiguration(request);
+            return oidc != null ? oidc : staticCors.getCorsConfiguration(request);
+        };
 
         http
                 .cors(cors -> cors.configurationSource(corsSource))
@@ -77,9 +90,13 @@ public class SecurityConfig {
                 // app_clients table. Sits inside the chain so MDC enrichment
                 // sees the populated tenant context.
                 .addFilterAfter(scimAuthenticationFilter, JwtAuthenticationFilter.class)
-                // Runs after JWT + SCIM auth so MDC carries actor + tenant +
-                // super_admin on every downstream log line.
-                .addFilterAfter(mdcEnrichmentFilter, ScimAuthenticationFilter.class)
+                // Cross-tenant admin selector — honours X-WF-Tenant on
+                // /api/admin/** once the caller's identity + home tenant are
+                // resolved by the auth filters above.
+                .addFilterAfter(crossTenantSelectorFilter, ScimAuthenticationFilter.class)
+                // Runs after auth + cross-tenant resolution so MDC carries the
+                // effective actor + tenant + role on every downstream log line.
+                .addFilterAfter(mdcEnrichmentFilter, CrossTenantSelectorFilter.class)
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(

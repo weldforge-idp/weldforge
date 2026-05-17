@@ -10,6 +10,13 @@ Feature: Password reset
     Then the password is changed successfully
     And a "auth.password_reset.completed" audit event is recorded for password reset
 
+  Scenario: Completing a reset terminates every existing session
+    When a password reset is requested for "alice@acme.test"
+    Then a reset token is generated
+    When the reset token is used with new password "NewS3cure!Pass"
+    Then the password is changed successfully
+    And every active session for the user is terminated
+
   Scenario: Expired token is rejected
     When a password reset is requested for "alice@acme.test"
     And the token is expired

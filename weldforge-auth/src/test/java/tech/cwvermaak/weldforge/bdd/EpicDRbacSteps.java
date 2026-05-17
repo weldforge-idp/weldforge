@@ -155,7 +155,8 @@ public class EpicDRbacSteps {
         }).when(auditService).recordAdmin(anyString(), any(), anyString(), anyString(), any());
 
         // Real TenantAccessor so the RBAC guards actually run.
-        tenantAccessor = new TenantAccessor(tenantRepository);
+        tenantAccessor = new TenantAccessor(tenantRepository,
+                mock(tech.cwvermaak.weldforge.repository.AdminMembershipRepository.class));
 
         tenantService = new TenantService(tenantAccessor, tenantRepository, socialRepo, userRepository, auditService);
         adminService = new AdminService(tenantAccessor, roleRepository, userRepository,

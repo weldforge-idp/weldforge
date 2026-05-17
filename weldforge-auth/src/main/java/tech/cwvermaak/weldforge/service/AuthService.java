@@ -313,8 +313,10 @@ public class AuthService {
     /**
      * Self-service password change for the signed-in user. Verifies the
      * current password, validates the new one against the tenant policy,
-     * and bumps {@code token_version} so any other live sessions die on
-     * their next request — only the caller's session keeps working.
+     * then terminates every session: {@code token_version} is bumped
+     * (invalidating outstanding access tokens) and all refresh-token
+     * families are revoked. The user re-authenticates with the new
+     * password — including in the tab they changed it from.
      */
     @Transactional
     public void changePassword(String email, String currentPassword, String newPassword) {
@@ -332,8 +334,15 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
+        // A password change must not leave stolen sessions alive. Bumping
+        // token_version kills outstanding access tokens; revoking every
+        // refresh-token family kills the refresh side too. Without this an
+        // attacker's stolen refresh token would simply outlive the very
+        // password change meant to lock them out.
+        int revoked = refreshTokenService.revokeAllForUser(user, "password_changed");
         auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_CHANGED, user,
-                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                AuditService.meta("refresh_tokens_revoked", revoked));
     }
 
     /**

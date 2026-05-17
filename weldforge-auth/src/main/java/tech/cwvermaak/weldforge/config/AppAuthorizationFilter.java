@@ -126,6 +126,8 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
             if (sa.getTenant() != null) {
                 TenantContext.set(sa.getTenant().getSlug(), sa.getTenant().getId(), sa.getAdminRole());
             }
+            // Actor identity for the cross-tenant selector (X-WF-Tenant).
+            TenantContext.setActorServiceAccount(sa.getId());
             // Service accounts get a SecurityContext authentication so the
             // controller layer's standard @PreAuthorize / tenantAccessor
             // guards treat them as first-class admin callers.

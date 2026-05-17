@@ -144,16 +144,6 @@ public class JwtService {
         return PURPOSE_MFA_CHALLENGE.equals(p == null ? null : p.toString());
     }
 
-    public String generateRefreshToken(String email, Long tenantId) {
-        return Jwts.builder()
-                .subject(email)
-                .claim(CLAIM_TENANT_ID, tenantId)
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + refreshExpirationMs))
-                .signWith(getSigningKey())
-                .compact();
-    }
-
     public Claims parse(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())

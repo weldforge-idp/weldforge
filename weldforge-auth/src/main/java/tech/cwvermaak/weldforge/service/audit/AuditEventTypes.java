@@ -22,6 +22,7 @@ public final class AuditEventTypes {
     public static final String MFA_FACTOR_REMOVE      = "mfa.factor.remove";
     public static final String MFA_CHALLENGE_SUCCESS  = "mfa.challenge.success";
     public static final String MFA_CHALLENGE_FAILED   = "mfa.challenge.failed";
+    public static final String MFA_CHALLENGE_BLOCKED  = "mfa.challenge.blocked";
     public static final String MFA_SELF_RESET         = "mfa.self_reset";
     public static final String MFA_ADMIN_RESET        = "mfa.admin_reset";
     public static final String MFA_BACKUP_CODES_REGENERATED = "mfa.backup_codes.regenerated";
@@ -31,6 +32,9 @@ public final class AuditEventTypes {
     public static final String TENANT_UPDATE          = "tenant.update";
     public static final String TENANT_DELETE          = "tenant.delete";
     public static final String TENANT_PROVISIONED_VIA_BILLING = "tenant.provisioned_via_billing";
+
+    /** Cross-tenant admin access via the X-WF-Tenant selector (cross-tenant-admin-spec.md). */
+    public static final String ADMIN_CROSS_TENANT_ACCESS = "admin.cross_tenant.access";
 
     // V31: payment &amp; billing
     public static final String BILLING_ORDER_CREATED   = "billing.order.created";

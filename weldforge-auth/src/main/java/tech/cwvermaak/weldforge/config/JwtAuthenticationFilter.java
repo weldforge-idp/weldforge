@@ -76,9 +76,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // invalidated (password change, admin reset, logout-all). Refuse.
         if (tokenVersion != null && tenantSlug != null) {
             var userOpt = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenantSlug.toString(), email);
-            if (userOpt.isPresent() && userOpt.get().getTokenVersion() > tokenVersion) {
-                filterChain.doFilter(request, response);
-                return;
+            if (userOpt.isPresent()) {
+                if (userOpt.get().getTokenVersion() > tokenVersion) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+                // Actor identity — the cross-tenant selector (X-WF-Tenant)
+                // resolves admin memberships against this user id.
+                TenantContext.setActorUser(userOpt.get().getId());
             }
         }
 

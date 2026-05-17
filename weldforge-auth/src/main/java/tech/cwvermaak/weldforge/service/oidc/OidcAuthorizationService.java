@@ -180,10 +180,20 @@ public class OidcAuthorizationService {
             }
         }
 
-        // Confidential client check (require client_secret if PKCE didn't
-        // already cover it). For pure public clients with PKCE, the secret
-        // is optional — but we keep it strict for now.
-        if (request.clientSecret() == null || !request.clientSecret().equals(row.getClient().getClientSecret())) {
+        // Client authentication. A public client (PKCE-only, OAuth 2.1 §2.1
+        // / RFC 8252) proves itself with the PKCE verifier alone and holds
+        // no secret — so a code_challenge must have been bound to the code
+        // at /authorize time (the verifier itself was checked just above).
+        // Confidential clients present client_secret_post, compared in
+        // constant time to avoid a timing oracle on the secret.
+        OidcClient client = row.getClient();
+        if (client.isPublicClient()) {
+            if (row.getCodeChallenge() == null || row.getCodeChallenge().isBlank()) {
+                throw reject("invalid_grant",
+                        "PKCE (code_challenge) is required for public clients");
+            }
+        } else if (request.clientSecret() == null
+                || !constantTimeEquals(request.clientSecret(), client.getClientSecret())) {
             throw reject("invalid_client", "Client secret mismatch");
         }
 
@@ -207,7 +217,11 @@ public class OidcAuthorizationService {
     public OidcClient verifyClientCredentials(Tenant tenant, String clientId, String clientSecret) {
         OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
                 .orElseThrow(() -> reject("invalid_client", "Unknown client"));
-        if (clientSecret == null || !clientSecret.equals(client.getClientSecret())) {
+        if (client.isPublicClient()) {
+            throw reject("unauthorized_client",
+                    "Public clients cannot use the client_credentials grant");
+        }
+        if (clientSecret == null || !constantTimeEquals(clientSecret, client.getClientSecret())) {
             throw reject("invalid_client", "Client secret mismatch");
         }
         if (!client.getGrantTypeList().contains("client_credentials")) {
@@ -304,5 +318,13 @@ public class OidcAuthorizationService {
     /** Public so BDD step definitions can compute the same challenge as a real client. */
     public static String base64UrlSha256(String verifier) {
         return sha256(verifier);
+    }
+
+    /** Constant-time string comparison — avoids a timing oracle on the client secret. */
+    private static boolean constantTimeEquals(String a, String b) {
+        if (a == null || b == null) return false;
+        return MessageDigest.isEqual(
+                a.getBytes(StandardCharsets.UTF_8),
+                b.getBytes(StandardCharsets.UTF_8));
     }
 }

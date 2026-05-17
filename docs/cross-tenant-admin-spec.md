@@ -1,6 +1,8 @@
 # Spec: Cross-Tenant Admin Membership & Global Scope
 
-**Status:** Draft / proposed — not yet implemented
+**Status:** Implemented (phases 1-3, 5) — 2026-05-17. Phase 4 (membership
+management API + admin-portal UI) and phase 7 (drop legacy `users.admin_role` /
+`is_super_admin`) remain. See §10.
 **Author:** drafted 2026-05-15
 **Affects:** `weldforge-auth` (backend), `weldforge-admin-portal`, agent/LLM docs
 
@@ -172,3 +174,30 @@ follow-up migration once all callers read from `admin_membership`.
 7. Drop `users.admin_role` / `is_super_admin` in a later migration.
 
 Each phase ships with Cucumber BDD scenarios per the repo convention.
+
+## 10. Implementation notes (2026-05-17)
+
+Phases 1-3 and 5 are implemented in `weldforge-auth`:
+
+- **`V34__admin_membership.sql`** creates the table and seeds it per §8 —
+  tenant-scoped admins get a per-tenant row, super admins a single global row.
+- **`TenantAccessor.effectiveRole(targetTenantId)`** computes the max of the
+  caller's home-tenant role and their membership rows, per §5 (a per-tenant
+  `SUPER_ADMIN` row is downgraded to `TENANT_ADMIN`).
+- **`X-WF-Tenant: <slug>`** — `CrossTenantSelectorFilter` resolves the header on
+  `/api/admin/**`, rebinds `TenantContext` through `TenantAccessor.switchToTenant`,
+  and emits an `admin.cross_tenant.access` audit event. The dead
+  `resolveCrossTenant` is replaced by `switchToTenant`; the dead
+  `AdminRole.canCrossTenants()` is removed; the `SUPER_ADMIN` Javadoc is corrected.
+
+Two deviations from the draft, each resolving an internal gap:
+
+- **Service accounts.** §4's table is `user_id`-keyed and cannot hold a
+  service-account row, yet §6.3 wants service accounts to have global reach.
+  Resolved without a schema change: a `SUPER_ADMIN` service-account token is a
+  platform-operator credential and is treated as global; a `TENANT_ADMIN` /
+  `READ_ONLY` service account stays confined to its home tenant. No
+  service-account membership rows exist.
+- **Phase 4 deferred.** The membership-management endpoints (§6.2) and admin-portal
+  UI are not built yet; memberships are currently created only by the V34 seed.
+  Granting a *new* cross-tenant membership to a human admin still needs phase 4.

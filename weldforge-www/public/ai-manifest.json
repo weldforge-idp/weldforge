@@ -36,6 +36,12 @@
             }
         ]
     },
+    "crossTenantAdmin": {
+        "header": "X-WF-Tenant",
+        "appliesTo": "/api/admin/**",
+        "purpose": "An admin whose token carries SUPER_ADMIN / a global admin membership targets a tenant other than their own by adding 'X-WF-Tenant: <slug>'. The effective admin role is re-resolved against that tenant, the call is audited, and a caller with no reach into the target is rejected 403.",
+        "spec": "docs/cross-tenant-admin-spec.md"
+    },
     "endUserAuthentication": {
         "register":       "POST /api/auth/register",
         "passwordLogin":  "POST /api/auth/login",

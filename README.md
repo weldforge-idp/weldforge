@@ -95,7 +95,7 @@ App ────────► │  │    Resilience4j circuit breakers       
 SP ─────────► │  └──────────────────────────────────────────────┘ │
               │                                                   │
               │  ┌─ Postgres 14+ ──────────────────────────────┐ │
-              │  │    Flyway-managed schema (V31 migrations)    │ │
+              │  │    Flyway-managed schema (V34 migrations)    │ │
               │  │    Tenant-scoped queries enforced at DAO     │ │
               │  └──────────────────────────────────────────────┘ │
               │                                                   │
