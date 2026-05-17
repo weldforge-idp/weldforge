@@ -22,6 +22,14 @@ Feature: Password reset
     Then a reset token is returned to the admin
     And a reset token is generated
 
+  Scenario: Completing a reset clears a login lockout
+    Given "alice@acme.test" is locked out after failed logins
+    When a password reset is requested for "alice@acme.test"
+    Then a reset token is generated
+    When the reset token is used with new password "NewS3cure!Pass"
+    Then the password is changed successfully
+    And the login lockout for "alice@acme.test" is cleared
+
   Scenario: Expired token is rejected
     When a password reset is requested for "alice@acme.test"
     And the token is expired

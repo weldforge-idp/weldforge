@@ -115,6 +115,10 @@ public class PasswordResetService {
         User user = resetToken.getUser();
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setTokenVersion(user.getTokenVersion() + 1);
+        // A completed reset proves account ownership — clear any failed-login
+        // lockout so the user is not locked out of the password they just set.
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
         userRepository.save(user);
 
         resetToken.setUsed(true);
