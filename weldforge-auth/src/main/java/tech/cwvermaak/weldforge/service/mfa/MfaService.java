@@ -317,6 +317,24 @@ public class MfaService {
     }
 
     /**
+     * Record an MFA verification attempt that was refused before any code
+     * was checked because the account is inside a lockout window — the
+     * brute-force guard tripping. Distinct from {@link #recordChallengeFailure}
+     * (a wrong code) so the two are separable in the audit trail.
+     */
+    public void recordChallengeBlocked(User user) {
+        auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
+                .eventType(AuditEventTypes.MFA_CHALLENGE_BLOCKED)
+                .outcome(tech.cwvermaak.weldforge.model.AuditEvent.Outcome.DENIED)
+                .tenant(user != null ? user.getTenant() : null)
+                .actorUser(user)
+                .actorEmail(user != null ? user.getEmail() : null)
+                .targetType(AuditEventTypes.TARGET_USER)
+                .targetId(user != null ? String.valueOf(user.getId()) : null)
+                .metadata(AuditService.meta("reason", "account_locked")));
+    }
+
+    /**
      * Verify the presented second factor. Returns true on success; the
      * caller should then issue an access token.
      */

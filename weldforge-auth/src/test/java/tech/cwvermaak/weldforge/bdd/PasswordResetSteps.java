@@ -15,8 +15,10 @@ import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.PasswordResetService;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.mail.MailService;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
+import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -37,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 public class PasswordResetSteps {
@@ -47,6 +50,8 @@ public class PasswordResetSteps {
     private UserRepository userRepository;
     private PasswordResetTokenRepository resetTokenRepository;
     private AuditService auditService;
+    private RefreshTokenService refreshTokenService;
+    private MailService mailService;
     private PasswordResetService passwordResetService;
 
     private Tenant acme;
@@ -68,6 +73,8 @@ public class PasswordResetSteps {
         userRepository = mock(UserRepository.class);
         resetTokenRepository = mock(PasswordResetTokenRepository.class);
         auditService = mock(AuditService.class);
+        refreshTokenService = mock(RefreshTokenService.class);
+        mailService = mock(MailService.class);
 
         PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
@@ -145,7 +152,9 @@ public class PasswordResetSteps {
                 resetTokenRepository,
                 passwordEncoder,
                 passwordPolicyService,
-                auditService
+                auditService,
+                refreshTokenService,
+                mailService
         );
     }
 
@@ -240,6 +249,14 @@ public class PasswordResetSteps {
         assertThat(world.auditLog)
                 .extracting(AuditEvent::getEventType)
                 .contains(eventType);
+    }
+
+    @Then("every active session for the user is terminated")
+    public void everySessionTerminated() {
+        assertThat(lastError).isNull();
+        // The reset must revoke the refresh-token side; token_version alone
+        // only kills access tokens and would leave a thief's session alive.
+        verify(refreshTokenService).revokeAllForUser(any(User.class), eq("password_reset"));
     }
 
     @And("the token is expired")

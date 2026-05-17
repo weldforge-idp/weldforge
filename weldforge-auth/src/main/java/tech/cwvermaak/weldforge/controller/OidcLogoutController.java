@@ -33,8 +33,9 @@ import java.util.Optional;
  * <ul>
  *   <li>Parses an optional {@code id_token_hint} JWT to identify the user.
  *   <li>Validates the {@code post_logout_redirect_uri} against the client's
- *       registered redirect URIs (we reuse the same list rather than
- *       maintaining a separate {@code post_logout_redirect_uris}).
+ *       registered {@code post_logout_redirect_uris} allow-list, falling
+ *       back to {@code redirect_uris} for legacy clients registered before
+ *       the dedicated list existed.
  *   <li>Revokes the user's refresh tokens and bumps their token version,
  *       invalidating every outstanding access token on the next request.
  *   <li>Clears the session cookie.
@@ -110,8 +111,13 @@ public class OidcLogoutController {
                 log.warn("OIDC logout: post_logout_redirect_uri supplied without a resolvable client");
                 return ResponseEntity.badRequest().build();
             }
-            if (!client.getRedirectUriList().contains(postLogoutRedirectUri)) {
-                log.warn("OIDC logout: post_logout_redirect_uri '{}' not in client's registered list",
+            // Validate against the dedicated post_logout_redirect_uris
+            // allow-list. Legacy clients registered before V33 have none —
+            // fall back to redirect_uris so they keep working unchanged.
+            java.util.List<String> allowed = client.getPostLogoutRedirectUriList();
+            if (allowed.isEmpty()) allowed = client.getRedirectUriList();
+            if (!allowed.contains(postLogoutRedirectUri)) {
+                log.warn("OIDC logout: post_logout_redirect_uri '{}' not in client's allow-list",
                         postLogoutRedirectUri);
                 return ResponseEntity.badRequest().build();
             }

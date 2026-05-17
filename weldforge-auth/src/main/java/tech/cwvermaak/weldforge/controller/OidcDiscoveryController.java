@@ -51,7 +51,7 @@ public class OidcDiscoveryController {
         doc.put("grant_types_supported",     List.of("authorization_code", "client_credentials"));
         doc.put("subject_types_supported",   List.of("public"));
         doc.put("id_token_signing_alg_values_supported", List.of("RS256"));
-        doc.put("token_endpoint_auth_methods_supported", List.of("client_secret_post"));
+        doc.put("token_endpoint_auth_methods_supported", List.of("client_secret_post", "none"));
         doc.put("scopes_supported", List.of("openid", "profile", "email"));
         doc.put("code_challenge_methods_supported", List.of("S256"));
         doc.put("claims_supported", List.of("sub", "iss", "aud", "exp", "iat", "email", "name", "nonce"));

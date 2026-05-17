@@ -20,8 +20,13 @@ public enum AdminRole {
     TENANT_ADMIN,
 
     /**
-     * Unrestricted access across every tenant. Required for creating or
-     * deleting tenants and for assigning admin roles.
+     * Platform-wide administration. Meaningful only as a GLOBAL admin
+     * membership ({@code admin_membership} with {@code tenant_id = NULL}) or
+     * on a {@code SUPER_ADMIN} service-account token — it then applies to
+     * every tenant, present and future. Required for creating/deleting
+     * tenants and granting admin memberships. A per-tenant {@code SUPER_ADMIN}
+     * grant is downgraded to {@link #TENANT_ADMIN} — see
+     * {@code docs/cross-tenant-admin-spec.md} section 5.
      */
     SUPER_ADMIN;
 
@@ -33,10 +38,5 @@ public enum AdminRole {
     /** True when this role may write within its own tenant. */
     public boolean canWriteTenant() {
         return this == TENANT_ADMIN || this == SUPER_ADMIN;
-    }
-
-    /** True for SUPER_ADMIN only. */
-    public boolean canCrossTenants() {
-        return this == SUPER_ADMIN;
     }
 }

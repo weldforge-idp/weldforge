@@ -28,6 +28,7 @@ import tech.cwvermaak.weldforge.service.TenantMfaPolicyService;
 import tech.cwvermaak.weldforge.service.TenantService;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 import tech.cwvermaak.weldforge.service.crm.CrmProvisioningService;
+import tech.cwvermaak.weldforge.service.mail.MailService;
 import tech.cwvermaak.weldforge.service.ldap.LdapUpstreamService;
 import tech.cwvermaak.weldforge.service.mfa.MfaService;
 import tech.cwvermaak.weldforge.service.security.AccountLockoutService;
@@ -136,7 +137,9 @@ public class TenantBrandingSteps {
                 mock(PasswordResetTokenRepository.class),
                 mock(PasswordEncoder.class),
                 mock(PasswordPolicyService.class),
-                auditService);
+                auditService,
+                mock(RefreshTokenService.class),
+                mock(MailService.class));
     }
 
     @Given("a tenant {string} exists for branding with display name {string}")

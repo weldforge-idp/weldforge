@@ -12,6 +12,7 @@ import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.EmailVerificationService;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.mail.MailService;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -89,7 +90,9 @@ public class EmailVerificationSteps {
             return null;
         }).when(auditService).recordUserAction(any(), any(), any(), any(), any());
 
-        service = new EmailVerificationService(tokenRepository, userRepository, tenantRepository, auditService);
+        MailService mailService = mock(MailService.class);
+        service = new EmailVerificationService(
+                tokenRepository, userRepository, tenantRepository, auditService, mailService);
     }
 
     @Given("tenant {string} exists for email verification")

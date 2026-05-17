@@ -55,6 +55,19 @@ public class AccountLockoutService {
     }
 
     /**
+     * Non-throwing lock check. Returns {@code true} while the account is
+     * inside an active lock window. Unlike {@link #ensureNotLocked} this
+     * neither audits nor auto-unlocks — it is a pure predicate for callers
+     * (e.g. the MFA challenge endpoint) that need to branch on lock state
+     * rather than abort with an exception.
+     */
+    @Transactional(readOnly = true)
+    public boolean isLocked(User user) {
+        LocalDateTime until = user.getLockedUntil();
+        return until != null && LocalDateTime.now().isBefore(until);
+    }
+
+    /**
      * Record a failed attempt. If the threshold is reached, the account is
      * locked for the configured window and a high-visibility audit event
      * is emitted.

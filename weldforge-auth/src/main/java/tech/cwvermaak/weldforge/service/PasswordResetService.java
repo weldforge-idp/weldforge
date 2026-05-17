@@ -3,6 +3,7 @@ package tech.cwvermaak.weldforge.service;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +16,9 @@ import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.mail.MailService;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
+import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -36,6 +39,12 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
     private final PasswordPolicyService passwordPolicyService;
     private final AuditService auditService;
+    private final RefreshTokenService refreshTokenService;
+    private final MailService mailService;
+
+    /** Optional public base URL for the reset page; blank means the email carries the bare token. */
+    @Value("${app.frontend.base-url:}")
+    private String frontendBaseUrl;
 
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final int EXPIRY_HOURS = 1;
@@ -75,8 +84,12 @@ public class PasswordResetService {
 
         resetTokenRepository.save(resetToken);
 
-        // In production this would be emailed. For now, log it.
-        log.info("Password reset token for {}: {}", email, rawToken);
+        // Deliver the single-use token through the mail abstraction. The raw
+        // token is never written to the application log — LoggingMailService
+        // keeps the body (and therefore the token) at DEBUG only.
+        mailService.send(user.getEmail(),
+                "Reset your " + tenantLabel(tenant) + " password",
+                buildResetEmailBody(tenant, rawToken));
 
         auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_RESET_REQUESTED, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
@@ -107,11 +120,40 @@ public class PasswordResetService {
         resetToken.setUsed(true);
         resetTokenRepository.save(resetToken);
 
+        // A reset is the canonical account-recovery action: terminate every
+        // existing session so a token thief is locked out. The token_version
+        // bump above invalidates outstanding access tokens; this revokes the
+        // refresh-token side, which token_version does not cover.
+        int revoked = refreshTokenService.revokeAllForUser(user, "password_reset");
+
         auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_RESET_COMPLETED, user,
-                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                AuditService.meta("refresh_tokens_revoked", revoked));
     }
 
     // ---- internals ---------------------------------------------------
+
+    private static String tenantLabel(Tenant tenant) {
+        return tenant.getDisplayName() != null && !tenant.getDisplayName().isBlank()
+                ? tenant.getDisplayName() : tenant.getName();
+    }
+
+    private String buildResetEmailBody(Tenant tenant, String rawToken) {
+        StringBuilder b = new StringBuilder();
+        b.append("A password reset was requested for your ")
+         .append(tenantLabel(tenant)).append(" account.\n\n");
+        if (frontendBaseUrl != null && !frontendBaseUrl.isBlank()) {
+            b.append("Reset your password here:\n")
+             .append(frontendBaseUrl).append("/reset-password?tenant=")
+             .append(tenant.getSlug()).append("&token=").append(rawToken).append("\n\n");
+        } else {
+            b.append("Use this reset token to set a new password:\n\n")
+             .append(rawToken).append("\n\n");
+        }
+        b.append("This token expires in ").append(EXPIRY_HOURS)
+         .append(" hour(s). If you did not request a reset, you can safely ignore this email.");
+        return b.toString();
+    }
 
     private Tenant currentTenant() {
         String slug = TenantContext.get();

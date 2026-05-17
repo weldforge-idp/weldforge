@@ -17,6 +17,12 @@ public final class TenantContext {
     private static final ThreadLocal<Long>      TENANT_ID  = new ThreadLocal<>();
     private static final ThreadLocal<AdminRole> ADMIN_ROLE = new ThreadLocal<>();
 
+    // Authenticated principal identity — set by the auth filters, read by the
+    // cross-tenant selector to resolve admin memberships. Exactly one of these
+    // is non-null on an authenticated admin request.
+    private static final ThreadLocal<Long> ACTOR_USER_ID            = new ThreadLocal<>();
+    private static final ThreadLocal<Long> ACTOR_SERVICE_ACCOUNT_ID = new ThreadLocal<>();
+
     private TenantContext() {}
 
     public static void set(String slug) {
@@ -51,9 +57,29 @@ public final class TenantContext {
         return getAdminRole() == AdminRole.SUPER_ADMIN;
     }
 
+    /** Record the authenticated end user (JWT filter). */
+    public static void setActorUser(Long userId) {
+        ACTOR_USER_ID.set(userId);
+    }
+
+    /** Record the authenticated service account (app-authorization filter). */
+    public static void setActorServiceAccount(Long serviceAccountId) {
+        ACTOR_SERVICE_ACCOUNT_ID.set(serviceAccountId);
+    }
+
+    public static Long getActorUserId() {
+        return ACTOR_USER_ID.get();
+    }
+
+    public static Long getActorServiceAccountId() {
+        return ACTOR_SERVICE_ACCOUNT_ID.get();
+    }
+
     public static void clear() {
         SLUG.remove();
         TENANT_ID.remove();
         ADMIN_ROLE.remove();
+        ACTOR_USER_ID.remove();
+        ACTOR_SERVICE_ACCOUNT_ID.remove();
     }
 }

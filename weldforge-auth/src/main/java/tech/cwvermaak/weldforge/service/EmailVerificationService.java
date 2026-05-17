@@ -13,6 +13,7 @@ import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.mail.MailService;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -34,11 +35,13 @@ public class EmailVerificationService {
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
     private final AuditService auditService;
+    private final MailService mailService;
 
     /**
      * Generate a verification token for the given user, hash it with SHA-256,
-     * persist the hash, and log the raw token at INFO level (in production
-     * this would be sent via email).
+     * persist the hash, and email the raw token to the user via
+     * {@link MailService}. The raw token is also returned for callers that
+     * need it directly (e.g. tests).
      */
     @Transactional
     public String sendVerification(User user) {
@@ -54,7 +57,13 @@ public class EmailVerificationService {
 
         tokenRepository.save(token);
 
-        log.info("Email verification token for {}: {}", user.getEmail(), rawToken);
+        // Routed through the mail abstraction — the raw token is not logged
+        // at INFO. See LoggingMailService for the log-level rationale.
+        mailService.send(user.getEmail(),
+                "Verify your WeldForge email address",
+                "Confirm your email address with this verification token:\n\n"
+                        + rawToken + "\n\nThis token expires in " + EXPIRY_HOURS + " hours. "
+                        + "If you did not create this account, you can ignore this email.");
 
         auditService.recordUserAction(AuditEventTypes.AUTH_EMAIL_VERIFICATION_SENT, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);

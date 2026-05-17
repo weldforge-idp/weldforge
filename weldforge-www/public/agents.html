@@ -193,11 +193,50 @@ export TOKEN=wf_svc_...</code></pre>
       "clientId":     "my-agent-app",
       "clientName":   "My Agent App",
       "redirectUris": ["https://my-agent-app.example.com/callback"],
-      "grantTypes":   ["authorization_code", "refresh_token"],
+      "grantTypes":   ["authorization_code"],
       "scopes":       ["openid", "email", "profile"]
+    }'</code></pre>
+        <p>
+            <strong>Browser SPA (public client).</strong> A single-page app has
+            no secret — it uses Authorization Code + PKCE. Send
+            <code>"tokenEndpointAuthMethod": "none"</code> (which forces PKCE on),
+            list the app's browser origin under <code>webOrigins</code> so the
+            tenant OIDC endpoints return CORS headers to it, and set
+            <code>postLogoutRedirectUris</code> for RP-initiated logout. Plain
+            <code>http</code> origins are accepted only for loopback hosts
+            (<code>localhost</code> / <code>127.0.0.1</code>); production origins
+            must be <code>https</code>:
+        </p>
+        <pre><code>curl -X POST $HOST/api/admin/oidc/clients \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "clientName":              "My SPA",
+      "tokenEndpointAuthMethod": "none",
+      "redirectUris":            ["https://app.example.com/callback"],
+      "postLogoutRedirectUris":  ["https://app.example.com"],
+      "webOrigins":              ["https://app.example.com"],
+      "grantTypes":              ["authorization_code"],
+      "scopes":                  ["openid", "email", "profile"]
     }'</code></pre>
         <p>Then fetch the per-tenant discovery document to configure your OIDC library:</p>
         <pre><code>curl $HOST/t/$TENANT/.well-known/openid-configuration | jq</code></pre>
+
+        <h3>A.1b — Administering another tenant (cross-tenant admins)</h3>
+        <p>
+            An admin whose <code>wf_svc_*</code> token carries
+            <code>SUPER_ADMIN</code>, or a user holding a global admin
+            membership, can target a tenant other than their own by adding an
+            <code>X-WF-Tenant: &lt;slug&gt;</code> header to any
+            <code>/api/admin/**</code> call. The caller's effective admin role
+            is re-resolved against that tenant and the action is audited; a
+            caller with no admin reach into the target is rejected with 403.
+        </p>
+        <pre><code>curl -X POST $HOST/api/admin/oidc/clients \
+    -H "x-app-authorization: $TOKEN" \
+    -H "X-WF-Tenant: other-tenant" \
+    -H "Content-Type: application/json" \
+    -d '{ ...client metadata... }'</code></pre>
 
         <h3>A.2 — Register your app as a SAML Service Provider</h3>
         <pre><code>curl -X POST $HOST/api/admin/saml/service-providers \

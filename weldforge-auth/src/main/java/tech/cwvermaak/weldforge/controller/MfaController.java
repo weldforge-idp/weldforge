@@ -15,6 +15,7 @@ import tech.cwvermaak.weldforge.service.AuthService;
 import tech.cwvermaak.weldforge.service.mfa.BackupCodeService;
 import tech.cwvermaak.weldforge.service.mfa.MfaService;
 import tech.cwvermaak.weldforge.service.mfa.WebAuthnService;
+import tech.cwvermaak.weldforge.service.security.AccountLockoutService;
 
 import java.io.IOException;
 import java.util.List;
@@ -30,6 +31,7 @@ public class MfaController {
     private final WebAuthnService webAuthnService;
     private final UserRepository userRepository;
     private final AuthService authService;
+    private final AccountLockoutService lockoutService;
 
     // ---- Challenge verification (public — the user is mid-login) ----
 
@@ -38,10 +40,25 @@ public class MfaController {
                                                   HttpServletRequest httpRequest,
                                                   HttpServletResponse response) {
         User user = mfaService.resolveChallenge(req.getChallengeToken());
+
+        // Brute-force guard. A 6-digit TOTP/SMS code is guessable inside the
+        // 5-minute challenge window if attempts are uncapped. Failed factor
+        // attempts feed the same per-user lockout counter as failed
+        // passwords, so an account under attack locks after the configured
+        // threshold no matter which step the attacker is probing — and a
+        // locked account is refused here before any code is checked.
+        if (lockoutService.isLocked(user)) {
+            mfaService.recordChallengeBlocked(user);
+            return ResponseEntity.status(429).build();
+        }
         if (!mfaService.verifyChallenge(user, req)) {
             mfaService.recordChallengeFailure(user, req.getType());
+            lockoutService.recordFailure(user);
             return ResponseEntity.status(401).build();
         }
+        // Second factor satisfied — clear the failed-attempt counter so the
+        // password leg's earlier reset is not undone by interim MFA misses.
+        lockoutService.recordSuccess(user);
         return ResponseEntity.ok(authService.completeMfaLogin(user, httpRequest, response));
     }
 

@@ -72,13 +72,15 @@ public class OidcRegistrationController {
         String tokenEndpointAuthMethod = registrationRequest.get("token_endpoint_auth_method") instanceof String s
                 ? s : "client_secret_basic";
 
-        // Build the DTO for the service layer
+        // Build the DTO for the service layer. Passing token_endpoint_auth_method
+        // through lets the service classify the client: 'none' becomes a public
+        // PKCE-only client (no secret), anything else a confidential client.
         OidcClientDto dto = OidcClientDto.builder()
                 .name(clientName)
                 .redirectUris(redirectUris)
                 .grantTypes(grantTypes)
                 .scopes(scopes)
-                .requirePkce("none".equals(tokenEndpointAuthMethod) ? true : null)
+                .tokenEndpointAuthMethod(tokenEndpointAuthMethod)
                 .build();
 
         // Delegate to the existing create method (sets tenant context via slug)
@@ -100,7 +102,8 @@ public class OidcRegistrationController {
         response.put("redirect_uris", created.getRedirectUris());
         response.put("grant_types", created.getGrantTypes());
         response.put("scope", String.join(" ", created.getScopes()));
-        response.put("token_endpoint_auth_method", tokenEndpointAuthMethod);
+        // Echo the method the service actually settled on, not the request's.
+        response.put("token_endpoint_auth_method", created.getTokenEndpointAuthMethod());
         if (clientName != null) {
             response.put("client_name", clientName);
         }

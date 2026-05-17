@@ -159,7 +159,8 @@ public class EpicHPkiSteps {
                     .filter(u -> id.equals(u.getId())).findFirst();
         });
 
-        tenantAccessor = new TenantAccessor(tenantRepository);
+        tenantAccessor = new TenantAccessor(tenantRepository,
+                mock(tech.cwvermaak.weldforge.repository.AdminMembershipRepository.class));
         caService = new CertificateAuthorityService(
                 tenantAccessor, tenantRepository, userRepository,
                 caRepository, certRepository, auditService);

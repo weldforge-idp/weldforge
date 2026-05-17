@@ -29,4 +29,19 @@ public class OidcClientDto {
      * use before step-up is required. 0 = use tenant default.
      */
     private Integer maxAuthenticationAgeSeconds;
+
+    /** Browser origins allowed to call the tenant OIDC endpoints cross-origin. */
+    private List<String> webOrigins;
+
+    /** OIDC RP-Initiated Logout post_logout_redirect_uri allow-list. */
+    private List<String> postLogoutRedirectUris;
+
+    /**
+     * Public client (PKCE-only, no client secret). May be set directly or
+     * inferred from {@code tokenEndpointAuthMethod == "none"} on create.
+     */
+    private Boolean publicClient;
+
+    /** RFC 8414 token_endpoint_auth_method: {@code client_secret_post} or {@code none}. */
+    private String tokenEndpointAuthMethod;
 }
