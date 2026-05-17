@@ -51,17 +51,31 @@ public class Tenant {
     private Boolean emailVerificationRequired = true;
 
     /**
-     * Free-form branding payload. The Angular login SPA reads keys like
-     * {@code logoUrl, primaryColor, accentColor, tagline, signInLabel,
-     * customCssUrl} and applies them as CSS-variable overrides.
+     * Free-form per-tenant branding payload (JSONB), consumed by the Angular
+     * admin-portal auth screens — {@code login.component.ts} /
+     * {@code auth-shell.component.ts} and {@code TenantBrandingService}.
+     * Three families of keys:
+     * <ul>
+     *   <li><b>CSS-variable keys</b> — {@code primaryColor, primaryDarkColor,
+     *       accentColor, accentDarkColor, bgColor, bg2Color, bg3Color,
+     *       borderColor, textColor, text2Color, text3Color, displayFont,
+     *       sansFont, monoFont} — applied as {@code --wf-*} overrides on
+     *       {@code :root}.</li>
+     *   <li><b>Theme switch</b> — {@code theme}: {@code "light"} toggles the
+     *       light Angular Material colour theme; anything else is the default
+     *       dark.</li>
+     *   <li><b>Content keys</b> — {@code logoUrl, wordmark, headline, eyebrow,
+     *       tagline, ctaLabel, hideFooter}.</li>
+     * </ul>
      *
-     * <p>The hosted login pages ({@code LoginController}) additionally read
-     * {@code theme} ({@code light} | {@code dark}, default {@code dark}),
-     * {@code primaryColor}, {@code primaryHoverColor}, {@code appName},
-     * {@code logoUrl} and {@code tagline} to render a tenant-matched
-     * sign-in screen.</p>
+     * <p>The canonical, exhaustive contract is {@code docs/tenant-branding.md}
+     * — update it when adding a key. Unknown keys are ignored (additive
+     * evolution is safe).
      *
-     * <p>Unknown keys are ignored — additive evolution is safe.</p>
+     * <p>NOTE: the backend {@code LoginController} also reads branding, but
+     * nginx serves the Angular portal at {@code /login} — {@code LoginController}
+     * is shadowed and is <i>not</i> the page users see. Brand the Angular
+     * surface, not {@code LoginController}.
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "branding", columnDefinition = "jsonb")

@@ -48,6 +48,41 @@ $wf-theme: mat.m2-define-dark-theme((
 
 @include mat.all-component-themes($wf-theme);
 
+// --- Light tenant theme --------------------------------------------------
+// Tenants whose branding sets `theme: "light"` get a `wf-light` class on
+// <body> (added by TenantBrandingService). Material is built dark above;
+// overriding the --wf-* CSS variables alone does NOT relight Material's
+// component internals (form-field outlines, labels, ripples), so we emit a
+// real light Material *colour* theme scoped to `.wf-light`. Base, typography
+// and density are inherited from the dark all-component-themes() call above,
+// so only colours need re-emitting here.
+$wf-green-palette: (
+  50:  #ECFDF5, 100: #D1FAE5, 200: #A7F3D0, 300: #6EE7B7, 400: #34D399,
+  500: #16A34A, 600: #15803D, 700: #166534, 800: #14532D, 900: #052E16,
+  contrast: (
+    50: #052E16, 100: #052E16, 200: #052E16, 300: #052E16, 400: #052E16,
+    500: #FFFFFF, 600: #FFFFFF, 700: #FFFFFF, 800: #FFFFFF, 900: #FFFFFF,
+  )
+);
+$wf-light-primary: mat.m2-define-palette($wf-green-palette, 500, 300, 700);
+$wf-light-theme: mat.m2-define-light-theme((
+  color: (primary: $wf-light-primary, accent: $wf-accent, warn: $wf-warn),
+));
+
+.wf-light {
+  @include mat.all-component-colors($wf-light-theme);
+}
+
+// Decoration is tuned for the dark forge background — neutralise it under a
+// light tenant theme so the auth screens read as a clean light surface.
+body.wf-light::before { display: none; }
+body.wf-light .mat-toolbar.mat-primary {
+  background: var(--wf-bg-2);
+  color: var(--wf-text);
+  border-bottom: 1px solid var(--wf-border);
+  backdrop-filter: none;
+}
+
 :root {
   --wf-bg:         #070B17;
   --wf-bg-2:       #0C1020;
