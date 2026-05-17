@@ -1,8 +1,8 @@
 # Spec: Cross-Tenant Admin Membership & Global Scope
 
-**Status:** Implemented (phases 1-3, 5) — 2026-05-17. Phase 4 (membership
-management API + admin-portal UI) and phase 7 (drop legacy `users.admin_role` /
-`is_super_admin`) remain. See §10.
+**Status:** Implemented (phases 1-3, 5, and the phase-4 membership API) —
+2026-05-17. The phase-4 admin-portal UI and phase 7 (drop legacy
+`users.admin_role` / `is_super_admin`) remain. See §10.
 **Author:** drafted 2026-05-15
 **Affects:** `weldforge-auth` (backend), `weldforge-admin-portal`, agent/LLM docs
 
@@ -198,6 +198,9 @@ Two deviations from the draft, each resolving an internal gap:
   platform-operator credential and is treated as global; a `TENANT_ADMIN` /
   `READ_ONLY` service account stays confined to its home tenant. No
   service-account membership rows exist.
-- **Phase 4 deferred.** The membership-management endpoints (§6.2) and admin-portal
-  UI are not built yet; memberships are currently created only by the V34 seed.
-  Granting a *new* cross-tenant membership to a human admin still needs phase 4.
+- **Phase 4 (membership API) done; UI pending.** `AdminMembershipController`
+  exposes `GET/POST/DELETE /api/admin/users/{id}/memberships` (§6.2), gated on
+  global `SUPER_ADMIN` scope via `TenantAccessor.requireGlobalSuperAdmin()`; a
+  per-tenant `SUPER_ADMIN` grant is rejected, and re-granting an existing
+  (user, tenant) pair updates the role. The admin-portal UI for managing
+  memberships is the remaining phase-4 work.

@@ -179,4 +179,29 @@ public class TenantAccessor {
             throw new AccessDeniedException("Super admin only");
         }
     }
+
+    /**
+     * True when the caller holds platform-wide {@code SUPER_ADMIN} — a global
+     * admin membership ({@code tenant_id IS NULL}) for an end user, or a
+     * {@code SUPER_ADMIN} service-account token. This is the gate for managing
+     * admin memberships (cross-tenant-admin-spec.md §6.2): a tenant-scoped
+     * admin can never mint cross-tenant or global grants.
+     */
+    public boolean isGlobalSuperAdmin() {
+        if (TenantContext.getActorServiceAccountId() != null) {
+            return TenantContext.getAdminRole() == AdminRole.SUPER_ADMIN;
+        }
+        Long userId = TenantContext.getActorUserId();
+        if (userId == null) return false;
+        return adminMembershipRepository.findByUser_Id(userId).stream()
+                .anyMatch(m -> m.isGlobal() && m.getAdminRole() == AdminRole.SUPER_ADMIN);
+    }
+
+    /** Caller must hold global {@code SUPER_ADMIN} scope; throws otherwise. */
+    public void requireGlobalSuperAdmin() {
+        if (!isGlobalSuperAdmin()) {
+            throw new AccessDeniedException(
+                    "Global SUPER_ADMIN scope is required to manage admin memberships");
+        }
+    }
 }
