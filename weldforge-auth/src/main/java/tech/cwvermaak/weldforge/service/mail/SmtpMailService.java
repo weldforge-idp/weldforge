@@ -4,8 +4,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 /**
@@ -54,6 +56,24 @@ public class SmtpMailService implements MailService {
         } catch (Exception e) {
             // MailService contract: a delivery failure must never roll back or
             // block the security operation that triggered the send.
+            log.error("Email delivery to {} failed: {}", to, e.toString());
+        }
+    }
+
+    @Override
+    public void send(String to, String subject, String textBody, String htmlBody) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(from);
+            helper.setTo(to);
+            helper.setSubject(subject);
+            // text + html → a multipart/alternative message: clients that
+            // can't render HTML fall back to the plain-text part.
+            helper.setText(textBody, htmlBody);
+            mailSender.send(message);
+            log.info("Sent email (multipart): to={} subject=\"{}\"", to, subject);
+        } catch (Exception e) {
             log.error("Email delivery to {} failed: {}", to, e.toString());
         }
     }

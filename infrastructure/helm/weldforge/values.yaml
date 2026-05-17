@@ -34,6 +34,9 @@ api:
     APP_KEY_ROTATION_ENABLED: "true"
     APP_KEY_ROTATION_MAX_AGE_DAYS: "90"
     SHUTDOWN_TIMEOUT: "30s"
+    # Public base URL of the Angular auth screens — builds the clickable
+    # link in the password-reset email (.../reset-password?tenant=&token=).
+    APP_FRONTEND_BASE_URL: "https://sso.weldforge.org"
   secrets:
     SPRING_DATASOURCE_PASSWORD: "changeme-cloud-sql-password"
     JWT_SECRET: "changeme-generate-a-256-bit-secret-key-here"
