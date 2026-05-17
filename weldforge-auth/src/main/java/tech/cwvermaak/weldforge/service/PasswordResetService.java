@@ -87,9 +87,18 @@ public class PasswordResetService {
         // Deliver the single-use token through the mail abstraction. The raw
         // token is never written to the application log — LoggingMailService
         // keeps the body (and therefore the token) at DEBUG only.
-        mailService.send(user.getEmail(),
-                "Reset your " + tenantLabel(tenant) + " password",
-                buildResetEmailBody(tenant, rawToken));
+        String subject = "Reset your " + tenantLabel(tenant) + " password";
+        String base = frontendBaseUrl == null ? "" : frontendBaseUrl.trim();
+        if (base.isBlank()) {
+            // No reset-page base URL configured — fall back to a bare-token email.
+            mailService.send(user.getEmail(), subject, buildTokenEmail(tenant, rawToken));
+        } else {
+            String resetUrl = base + "/reset-password?tenant=" + tenant.getSlug()
+                    + "&token=" + rawToken;
+            mailService.send(user.getEmail(), subject,
+                    buildResetTextBody(tenant, resetUrl),
+                    buildResetHtmlBody(tenant, resetUrl));
+        }
 
         auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_RESET_REQUESTED, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
@@ -142,21 +151,63 @@ public class PasswordResetService {
                 ? tenant.getDisplayName() : tenant.getName();
     }
 
-    private String buildResetEmailBody(Tenant tenant, String rawToken) {
-        StringBuilder b = new StringBuilder();
-        b.append("A password reset was requested for your ")
-         .append(tenantLabel(tenant)).append(" account.\n\n");
-        if (frontendBaseUrl != null && !frontendBaseUrl.isBlank()) {
-            b.append("Reset your password here:\n")
-             .append(frontendBaseUrl).append("/reset-password?tenant=")
-             .append(tenant.getSlug()).append("&token=").append(rawToken).append("\n\n");
-        } else {
-            b.append("Use this reset token to set a new password:\n\n")
-             .append(rawToken).append("\n\n");
+    /** Plain-text body — also the fallback part of the multipart message. */
+    private String buildResetTextBody(Tenant tenant, String resetUrl) {
+        return "A password reset was requested for your " + tenantLabel(tenant) + " account.\n\n"
+             + "Reset your password:\n" + resetUrl + "\n\n"
+             + "This link expires in " + EXPIRY_HOURS + " hour(s). "
+             + "If you did not request a reset, you can safely ignore this email.";
+    }
+
+    /** Bare-token email — fallback when no reset-page base URL is configured. */
+    private String buildTokenEmail(Tenant tenant, String rawToken) {
+        return "A password reset was requested for your " + tenantLabel(tenant) + " account.\n\n"
+             + "Use this reset token to set a new password:\n\n" + rawToken + "\n\n"
+             + "This token expires in " + EXPIRY_HOURS + " hour(s). "
+             + "If you did not request a reset, you can safely ignore this email.";
+    }
+
+    /** HTML body — a branded "Reset password" button with the URL shown as a fallback. */
+    private String buildResetHtmlBody(Tenant tenant, String resetUrl) {
+        String html = """
+            <!doctype html>
+            <html><body style="margin:0;padding:0;background:#f3f4f6;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;">
+            <tr><td align="center" style="padding:32px 16px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" style="width:468px;max-width:468px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <tr><td style="padding:32px;">
+            <h1 style="margin:0 0 16px;font-size:20px;color:#111827;">Reset your __LABEL__ password</h1>
+            <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#374151;">A password reset was requested for your account. Click the button below to choose a new password.</p>
+            <table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="border-radius:6px;background:__COLOR__;">
+            <a href="__URL__" style="display:inline-block;padding:12px 32px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">Reset password</a>
+            </td></tr></table>
+            <p style="margin:24px 0 4px;font-size:12px;color:#6b7280;">Or paste this link into your browser:</p>
+            <p style="margin:0;font-size:12px;word-break:break-all;"><a href="__URL__" style="color:__COLOR__;">__URL__</a></p>
+            <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;">This link expires in __HRS__ hour(s). If you did not request a reset, you can safely ignore this email.</p>
+            </td></tr></table>
+            </td></tr></table>
+            </body></html>
+            """;
+        return html
+                .replace("__LABEL__", escapeHtml(tenantLabel(tenant)))
+                .replace("__COLOR__", buttonColor(tenant))
+                .replace("__URL__", escapeHtml(resetUrl))
+                .replace("__HRS__", String.valueOf(EXPIRY_HOURS));
+    }
+
+    /** Tenant primaryColor when it is a valid hex colour, else a neutral default. */
+    private static String buttonColor(Tenant tenant) {
+        Object pc = tenant.getBranding() != null ? tenant.getBranding().get("primaryColor") : null;
+        if (pc instanceof String s && s.matches("#[0-9A-Fa-f]{3,8}")) {
+            return s;
         }
-        b.append("This token expires in ").append(EXPIRY_HOURS)
-         .append(" hour(s). If you did not request a reset, you can safely ignore this email.");
-        return b.toString();
+        return "#2D5FA8";
+    }
+
+    private static String escapeHtml(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private Tenant currentTenant() {

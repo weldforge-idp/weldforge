@@ -26,4 +26,21 @@ public interface MailService {
      *                implementations must keep it out of low-sensitivity logs
      */
     void send(String to, String subject, String body);
+
+    /**
+     * Deliver a multipart email — an HTML body with a plain-text alternative
+     * for clients that don't render HTML.
+     *
+     * <p>The default implementation falls back to {@link #send(String, String, String)}
+     * (plain text only); a transport-backed implementation overrides it to
+     * send a true {@code multipart/alternative} message.
+     *
+     * @param to       recipient address
+     * @param subject  message subject
+     * @param textBody plain-text alternative (may carry a single-use token)
+     * @param htmlBody HTML body
+     */
+    default void send(String to, String subject, String textBody, String htmlBody) {
+        send(to, subject, textBody);
+    }
 }

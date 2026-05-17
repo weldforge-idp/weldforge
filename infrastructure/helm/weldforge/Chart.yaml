@@ -2,7 +2,7 @@ apiVersion: v2
 name: weldforge
 description: Multi-tenant SSO / IAM platform — authentication, OIDC, SAML, SCIM, MFA
 type: application
-version: 1.0.1
+version: 1.0.2
 appVersion: "1.0.0"
 maintainers:
   - name: CW Vermaak
