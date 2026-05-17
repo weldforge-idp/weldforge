@@ -191,7 +191,7 @@ export TOKEN=wf_svc_...</code></pre>
     -H "Content-Type: application/json" \
     -d '{
       "clientId":     "my-agent-app",
-      "clientName":   "My Agent App",
+      "name":         "My Agent App",
       "redirectUris": ["https://my-agent-app.example.com/callback"],
       "grantTypes":   ["authorization_code"],
       "scopes":       ["openid", "email", "profile"]
@@ -211,7 +211,7 @@ export TOKEN=wf_svc_...</code></pre>
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
-      "clientName":              "My SPA",
+      "name":                    "My SPA",
       "tokenEndpointAuthMethod": "none",
       "redirectUris":            ["https://app.example.com/callback"],
       "postLogoutRedirectUris":  ["https://app.example.com"],
