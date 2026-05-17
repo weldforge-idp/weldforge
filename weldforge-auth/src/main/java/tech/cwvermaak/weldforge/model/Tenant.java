@@ -53,8 +53,15 @@ public class Tenant {
     /**
      * Free-form branding payload. The Angular login SPA reads keys like
      * {@code logoUrl, primaryColor, accentColor, tagline, signInLabel,
-     * customCssUrl} and applies them as CSS-variable overrides. Unknown
-     * keys are ignored — additive evolution is safe.
+     * customCssUrl} and applies them as CSS-variable overrides.
+     *
+     * <p>The hosted login pages ({@code LoginController}) additionally read
+     * {@code theme} ({@code light} | {@code dark}, default {@code dark}),
+     * {@code primaryColor}, {@code primaryHoverColor}, {@code appName},
+     * {@code logoUrl} and {@code tagline} to render a tenant-matched
+     * sign-in screen.</p>
+     *
+     * <p>Unknown keys are ignored — additive evolution is safe.</p>
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "branding", columnDefinition = "jsonb")
