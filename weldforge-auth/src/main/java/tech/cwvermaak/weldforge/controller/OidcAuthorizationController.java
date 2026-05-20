@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
@@ -52,6 +53,7 @@ public class OidcAuthorizationController {
     private final OidcClientRepository clientRepository;
     private final OidcAuthorizationService authorizationService;
     private final OidcTokenService tokenService;
+    private final PublicHostProperties publicHost;
 
     @GetMapping("/t/{slug}/oauth2/authorize")
     public ResponseEntity<?> authorize(@PathVariable String slug,
@@ -81,13 +83,13 @@ public class OidcAuthorizationController {
             String returnTo = currentUrl(request);
             String encoded = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(returnTo.getBytes(StandardCharsets.UTF_8));
-            // Carry tenant slug as a query param so the TenantResolverFilter
-            // resolves to this tenant on the POST /login form submission
-            // (the /login path itself has no /t/{slug}/... prefix).
+            // Send the user to the tenant's own subdomain so the
+            // TenantResolverFilter picks up the slug from Host and password
+            // managers see acme.sso.weldforge.org as a distinct site.
             // Trailing slash matches the nginx /login/ proxy block so the
             // browser doesn't pick up a 301 → /login/ on the way through.
-            String loginUrl = "/login/?tenant=" + URLEncoder.encode(slug, StandardCharsets.UTF_8)
-                    + "&oidcReturnTo=" + encoded;
+            String loginUrl = publicHost.originForTenant(slug)
+                    + "/login/?oidcReturnTo=" + encoded;
             return ResponseEntity.status(302).location(URI.create(loginUrl)).build();
         }
 

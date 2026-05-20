@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantAccessor;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.Tenant;
@@ -115,6 +116,9 @@ public class TenantBrandingSteps {
 
         // AuthService has a long collaborator list. For the disabled-tenant
         // case we never reach any of these — the flag check throws first.
+        PublicHostProperties publicHost = new PublicHostProperties();
+        publicHost.setBaseDomain("sso.weldforge.org");
+        publicHost.setScheme("https");
         authService = new AuthService(
                 userRepository,
                 tenantRepository,
@@ -129,7 +133,8 @@ public class TenantBrandingSteps {
                 mock(TenantMfaPolicyService.class),
                 new SimpleMeterRegistry(),
                 mock(LdapUpstreamService.class),
-                mock(CrmProvisioningService.class));
+                mock(CrmProvisioningService.class),
+                publicHost);
 
         passwordResetService = new PasswordResetService(
                 userRepository,
@@ -139,7 +144,8 @@ public class TenantBrandingSteps {
                 mock(PasswordPolicyService.class),
                 auditService,
                 mock(RefreshTokenService.class),
-                mock(MailService.class));
+                mock(MailService.class),
+                publicHost);
     }
 
     @Given("a tenant {string} exists for branding with display name {string}")

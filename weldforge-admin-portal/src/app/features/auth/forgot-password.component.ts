@@ -78,8 +78,10 @@ export class ForgotPasswordComponent {
   private oidcReturnTo: string | null = null;
 
   constructor(private auth: AuthService, route: ActivatedRoute) {
-    const slug = route.snapshot.queryParamMap.get('tenant');
-    if (slug) this.forwardQueryParams['tenant'] = slug;
+    // The tenant is identified by the page host ({slug}.sso.weldforge.org) —
+    // not by a query parameter. Don't forward a tenant= param to the next
+    // page; the next page reads its own host. See docs/auth-url-spec.md.
+    //
     // OIDC continuation forwarded from the login page — passed to the backend
     // so the completed reset can return the user to the calling app.
     this.oidcReturnTo = route.snapshot.queryParamMap.get('oidcReturnTo');

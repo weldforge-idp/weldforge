@@ -10,6 +10,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.AuditEvent;
 import tech.cwvermaak.weldforge.model.AuthProvider;
@@ -52,6 +53,7 @@ public class AuthService {
     private final MeterRegistry meterRegistry;
     private final tech.cwvermaak.weldforge.service.ldap.LdapUpstreamService ldapUpstreamService;
     private final tech.cwvermaak.weldforge.service.crm.CrmProvisioningService crmProvisioningService;
+    private final PublicHostProperties publicHost;
 
     @Transactional
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
@@ -436,6 +438,11 @@ public class AuthService {
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/api/auth");
+        // Scope to the public base-domain so the cookie set on
+        // {slug}.sso.weldforge.org is also sent when /api/auth/refresh runs
+        // on the apex sso.weldforge.org (the SPA's /api proxy origin).
+        String domain = publicHost.cookieDomain();
+        if (domain != null) cookie.setDomain(domain);
         long ttlSeconds = tenantRefreshTtlMs != null && tenantRefreshTtlMs > 0
                 ? tenantRefreshTtlMs / 1000
                 : jwtService.getRefreshTokenExpirationTime();
@@ -458,6 +465,14 @@ public class AuthService {
         // would block legitimate cross-site browser navigation.
         cookie.setAttribute("SameSite", "Lax");
         cookie.setPath("/");
+        // Scope to the public base-domain so a session established on the
+        // tenant subdomain ({slug}.sso.weldforge.org/login) is also sent on
+        // the apex OIDC endpoint (sso.weldforge.org/t/{slug}/oauth2/...).
+        // The JWT itself carries the tenant_id, so the cookie being
+        // visible to other tenant subdomains carries no authentication
+        // (JwtAuthenticationFilter rejects a mismatched tenant).
+        String domain = publicHost.cookieDomain();
+        if (domain != null) cookie.setDomain(domain);
         long ttlSeconds = tenantAccessTtlMs != null && tenantAccessTtlMs > 0
                 ? tenantAccessTtlMs / 1000
                 : jwtService.getExpirationTime();

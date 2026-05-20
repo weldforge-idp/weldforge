@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>For AI Agents &amp; Bots — WeldForge</title>
-<meta name="description" content="Machine-readable integration guide for AI agents: how to onboard a new tenant, integrate an application under an existing tenant, and self-verify the WeldForge platform.">
-<meta name="keywords" content="WeldForge, weldforge, federated identity, SSO, OIDC, SAML, SCIM, multi-tenant IdP, AI agent integration, automated tenant onboarding, API documentation">
+<meta name="description" content="Machine-readable integration guide for AI agents: how to onboard a new tenant, integrate an application under an existing tenant, construct per-tenant auth URLs, and self-verify the WeldForge platform.">
+<meta name="keywords" content="WeldForge, weldforge, federated identity, SSO, OIDC, SAML, SCIM, multi-tenant IdP, AI agent integration, automated tenant onboarding, API documentation, per-tenant subdomain auth URLs">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 <link rel="alternate" type="application/ld+json" href="/ld.json">
@@ -49,6 +49,7 @@
         <div class="cta-row">
             <a class="btn primary" href="#integrate">Integrate an application</a>
             <a class="btn ghost" href="#onboarding">Onboard a new tenant</a>
+            <a class="btn ghost" href="#auth-urls">End-user auth URLs</a>
         </div>
     </div>
 </section>
@@ -161,6 +162,80 @@ curl -sS https://sso.weldforge.org/t/demo/saml2/idp/metadata</code></pre>
             <li><code>POST /t/{slug}/oauth2/token</code> — OAuth 2.0 token endpoint (authorization_code, client_credentials, refresh_token)</li>
             <li><code>GET /saml2/authenticate/{tenant-provider}</code> — initiate SAML SP login</li>
         </ul>
+    </div>
+</section>
+
+<section id="auth-urls">
+    <div class="container">
+        <h2>End-user auth URLs (per-tenant subdomains)</h2>
+        <p class="lead">
+            If you are an AI agent that needs to send a human into the
+            WeldForge sign-in, password-reset, registration or
+            email-verification flow — for example, an integration agent
+            like <strong>WriteBuddy</strong> or <strong>TechMetropolis</strong>
+            assembling a deep link, or an email template you generate on
+            behalf of another product — construct the URL on the
+            <strong>tenant's own subdomain</strong>, not on the apex host
+            with a query parameter.
+        </p>
+
+        <p>
+            Each tenant lives at <code>https://{slug}.sso.weldforge.org</code>.
+            The subdomain is the tenant identity for the auth screens, so
+            browser-built-in password managers (which match on
+            <code>scheme + host</code> and ignore both path and query)
+            treat each tenant as a distinct site. The legacy
+            <code>?tenant=&lt;slug&gt;</code> query-param form has been
+            <strong>removed</strong> — do not generate it.
+        </p>
+
+        <h3>The five paths</h3>
+        <ul class="checklist">
+            <li>Sign-in:         <code>https://{slug}.sso.weldforge.org/login</code></li>
+            <li>Forgot password: <code>https://{slug}.sso.weldforge.org/forgot-password</code></li>
+            <li>Reset password:  <code>https://{slug}.sso.weldforge.org/reset-password?token={raw-token}</code></li>
+            <li>Register:        <code>https://{slug}.sso.weldforge.org/register</code></li>
+            <li>Verify email:    <code>https://{slug}.sso.weldforge.org/verify-email?token={raw-token}</code></li>
+        </ul>
+
+        <h3>Slug rules</h3>
+        <ul class="checklist">
+            <li>Pattern: <code>^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$</code> — lowercase ASCII, digits, internal hyphens, 2–64 chars.</li>
+            <li>Reserved root labels never resolve to a tenant: <code>www</code>, <code>api</code>, <code>admin</code>, <code>app</code>, <code>mail</code>, <code>static</code>.</li>
+            <li>The apex host <code>sso.weldforge.org</code> is the admin portal — not a tenant auth page.</li>
+        </ul>
+
+        <h3>What stays on the apex host</h3>
+        <p>
+            OIDC and SAML <em>deep-link</em> endpoints stay on
+            <code>https://sso.weldforge.org/t/{slug}/…</code>. These are
+            machine-to-machine endpoints that password managers never see,
+            and moving them under a subdomain would force every relying
+            party to re-register. The unauthenticated-redirect from
+            <code>/t/{slug}/oauth2/authorize</code> now bounces to the
+            tenant subdomain's <code>/login</code>, so the cookie that
+            comes back is correctly scoped.
+        </p>
+
+        <h3>Cookie scoping (be aware)</h3>
+        <p>
+            Session cookies (<code>wf_session</code>,
+            <code>refresh_token</code>) are written without a
+            <code>Domain</code> attribute, so the browser confines them to
+            the exact subdomain. A session on
+            <code>acme.sso.weldforge.org</code> does not authenticate
+            against <code>contoso.sso.weldforge.org</code>. If your agent
+            ever proxies a user between two tenants in one session, plan
+            for a re-sign-in per host.
+        </p>
+
+        <p>
+            Authoritative reference:
+            <a href="https://github.com/weldforge-idp/weldforge/blob/main/docs/auth-url-spec.md">
+                <code>docs/auth-url-spec.md</code>
+            </a>
+            in the source repository.
+        </p>
     </div>
 </section>
 

@@ -23,6 +23,34 @@ Every `/api/**` request requires the header `x-app-authorization` carrying one o
 
 End-user authentication is separate: `POST /api/auth/login`, `POST /api/auth/register`, OAuth 2.0 token endpoint `POST /t/{slug}/oauth2/token`.
 
+## Per-tenant auth URLs (where end users sign in)
+
+Each tenant gets its **own subdomain** for the user-facing auth screens, so
+browser and third-party password managers treat each tenant as a distinct
+site. The slug is the leftmost label of the host:
+
+- Sign-in:         `https://{slug}.sso.weldforge.org/login`
+- Forgot password: `https://{slug}.sso.weldforge.org/forgot-password`
+- Reset password:  `https://{slug}.sso.weldforge.org/reset-password?token=…`
+- Register:        `https://{slug}.sso.weldforge.org/register`
+- Verify email:    `https://{slug}.sso.weldforge.org/verify-email?token=…`
+
+`{slug}` must match `^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$` and may **not** be
+one of the reserved root labels: `www`, `api`, `admin`, `app`, `mail`,
+`static`. The legacy `?tenant=<slug>` query-param form is **removed** — do
+not generate URLs with it.
+
+OIDC and SAML *deep-link* endpoints stay on the apex host with a path
+prefix (see "Key URLs" below) because they are machine-to-machine — they
+don't need password-manager distinctness and changing them would force
+relying parties to re-register.
+
+If you are an AI agent that builds deep links into WeldForge for a user
+(e.g. "open the sign-in page" or password-reset emails for another
+product), construct the URL as the subdomain shape above. The session
+cookies set after sign-in are scoped to the exact tenant host and do
+**not** carry across tenants.
+
 ## Key URLs
 
 - API base: `https://sso.weldforge.org`

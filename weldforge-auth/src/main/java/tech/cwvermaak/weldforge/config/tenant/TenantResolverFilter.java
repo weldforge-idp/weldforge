@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -14,26 +15,35 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Resolves the current tenant from the incoming request and stashes the slug
- * in {@link TenantContext}. Resolution order:
+ * Resolves the current tenant from the incoming request and stashes the
+ * slug in {@link TenantContext}. Resolution order:
  *
- *   1. {@code X-Tenant-Slug} header
- *   2. {@code /t/{slug}/...} path prefix
- *   3. {@code tenant} query parameter (handy for OAuth2 redirects that can't carry headers)
- *   4. Fallback to {@code default} so single-tenant callers keep working
+ *   1. {@code X-Tenant-Slug} header — machine clients and the
+ *      super-admin tenant picker.
+ *   2. {@code /t/{slug}/...} path prefix — OIDC/SAML deep-link endpoints
+ *      that stay on the apex host.
+ *   3. Host header subdomain — the per-tenant auth subdomain pattern
+ *      {@code {slug}.{publicHost.baseDomain}}. This is what end-user
+ *      auth pages (login, forgot-password, reset-password, register,
+ *      verify-email) use so password managers see each tenant as a
+ *      distinct site. See {@code docs/auth-url-spec.md}.
+ *   4. Fallback to {@code default} so single-tenant deployments and
+ *      tests without any host/path context still resolve.
  *
- * Runs before the JWT filter so that downstream auth/resolution has the
+ * Runs before the JWT filter so downstream auth/resolution has the
  * tenant in scope.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
+@RequiredArgsConstructor
 public class TenantResolverFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Tenant-Slug";
-    public static final String QUERY_PARAM = "tenant";
     public static final String DEFAULT_TENANT = "default";
 
     private static final Pattern PATH_PREFIX = Pattern.compile("^/t/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])(/|$)");
+
+    private final PublicHostProperties publicHost;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -58,8 +68,12 @@ public class TenantResolverFilter extends OncePerRequestFilter {
             if (m.find()) return m.group(1);
         }
 
-        String qp = request.getParameter(QUERY_PARAM);
-        if (qp != null && !qp.isBlank()) return qp.trim().toLowerCase();
+        // server.forward-headers-strategy=native makes getServerName() reflect
+        // X-Forwarded-Host, so this works behind the GCP load balancer as well
+        // as a direct request to the backend in dev.
+        String host = request.getServerName();
+        String fromHost = publicHost.slugFromHost(host);
+        if (fromHost != null) return fromHost;
 
         return DEFAULT_TENANT;
     }

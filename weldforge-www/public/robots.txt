@@ -1,5 +1,15 @@
-# WeldForge marketing site — crawlable by search engines and AI agents.
+# WeldForge marketing site (www.weldforge.org).
+# Crawlable by search engines and AI agents.
 # See also: /llms.txt, /sitemap.xml, /ai-manifest.json, /ld.json.
+#
+# Per-tenant auth screens live on their own subdomains in the form
+#   https://{slug}.sso.weldforge.org/{login,forgot-password,reset-password,register,verify-email}
+# Those hosts serve their own robots.txt (delivered by the SSO nginx pod)
+# which disallows indexing — login forms don't belong in search results,
+# and an indexed apex copy would defeat the password-manager-distinctness
+# goal of the per-tenant URLs. AI agents that need to know how end users
+# sign in should read /llms.txt or /agents.html on this site, not crawl
+# the auth forms themselves.
 
 User-agent: *
 Allow: /

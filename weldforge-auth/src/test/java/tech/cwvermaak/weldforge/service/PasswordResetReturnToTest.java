@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.util.ReflectionTestUtils;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.PasswordResetToken;
 import tech.cwvermaak.weldforge.model.Tenant;
@@ -52,11 +52,14 @@ class PasswordResetReturnToTest {
         userRepository = mock(UserRepository.class);
         resetTokenRepository = mock(PasswordResetTokenRepository.class);
 
+        PublicHostProperties publicHost = new PublicHostProperties();
+        publicHost.setBaseDomain("sso.weldforge.org");
+        publicHost.setScheme("https");
         service = new PasswordResetService(
                 userRepository, tenantRepository, resetTokenRepository,
                 mock(PasswordEncoder.class), mock(PasswordPolicyService.class),
-                mock(AuditService.class), mock(RefreshTokenService.class), mock(MailService.class));
-        ReflectionTestUtils.setField(service, "frontendBaseUrl", BASE);
+                mock(AuditService.class), mock(RefreshTokenService.class), mock(MailService.class),
+                publicHost);
 
         tenant = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         TenantContext.set("acme");

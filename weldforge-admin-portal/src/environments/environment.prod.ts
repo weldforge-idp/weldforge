@@ -10,5 +10,9 @@
 export const environment = {
   production: true,
   apiBaseUrl: '',
-  appApiKey: ''
+  appApiKey: '',
+  // Public base domain for per-tenant auth subdomains. The portal lives
+  // on the apex sso.weldforge.org; tenant auth screens at
+  // https://{slug}.sso.weldforge.org. See docs/auth-url-spec.md.
+  publicBaseDomain: 'sso.weldforge.org'
 };

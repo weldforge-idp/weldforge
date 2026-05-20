@@ -259,7 +259,7 @@ export class LoginComponent implements OnInit {
               private route: ActivatedRoute) {}
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.queryParamMap.get('tenant') || this.branding.slugFromUrl();
+    const slug = this.branding.slugFromHost();
     if (slug) {
       this.branding.load(slug).subscribe();
     }
@@ -267,9 +267,8 @@ export class LoginComponent implements OnInit {
 
   forwardQueryParams(): Record<string, string> {
     const params: Record<string, string> = {};
-    const slug = this.branding.current()?.slug ?? this.route.snapshot.queryParamMap.get('tenant');
-    if (slug) params['tenant'] = slug;
-    // Carry the OIDC continuation through to forgot/reset-password so a
+    // Tenant identified by the page host — no tenant query param to forward.
+    // Carry only the OIDC continuation through to forgot/reset-password so a
     // password reset can return the user to the calling app.
     const oidcReturnTo = this.route.snapshot.queryParamMap.get('oidcReturnTo');
     if (oidcReturnTo) params['oidcReturnTo'] = oidcReturnTo;

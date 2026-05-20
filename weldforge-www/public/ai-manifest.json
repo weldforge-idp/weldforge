@@ -42,6 +42,22 @@
         "purpose": "An admin whose token carries SUPER_ADMIN / a global admin membership targets a tenant other than their own by adding 'X-WF-Tenant: <slug>'. The effective admin role is re-resolved against that tenant, the call is audited, and a caller with no reach into the target is rejected 403.",
         "spec": "docs/cross-tenant-admin-spec.md"
     },
+    "endUserAuthForms": {
+        "purpose": "User-facing auth screens — where humans land in a browser to sign in, reset a password, register, or verify an email. Lives on per-tenant subdomains so password managers (Chrome/Firefox/Safari/Bitwarden/1Password) treat each tenant as a distinct site.",
+        "hostPattern": "https://{slug}.sso.weldforge.org",
+        "slugPattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$",
+        "reservedRootLabels": ["www", "api", "admin", "app", "mail", "static"],
+        "paths": {
+            "login":          "/login",
+            "forgotPassword": "/forgot-password",
+            "resetPassword":  "/reset-password?token={raw-token}",
+            "register":       "/register",
+            "verifyEmail":    "/verify-email?token={raw-token}"
+        },
+        "removedLegacyForm": "Old URLs of the form https://sso.weldforge.org/{path}?tenant={slug} have been removed. Do not generate them.",
+        "cookieScoping": "Session cookies (wf_session, refresh_token) are set without a Domain attribute, so they are scoped to the exact subdomain. A session on acme.sso.weldforge.org does not authenticate against contoso.sso.weldforge.org.",
+        "spec": "docs/auth-url-spec.md"
+    },
     "endUserAuthentication": {
         "register":       "POST /api/auth/register",
         "passwordLogin":  "POST /api/auth/login",

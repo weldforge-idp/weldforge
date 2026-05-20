@@ -89,8 +89,8 @@ export class RegisterComponent {
   forwardQueryParams: Record<string, string> = {};
 
   constructor(private auth: AuthService, private router: Router, route: ActivatedRoute) {
-    const slug = route.snapshot.queryParamMap.get('tenant');
-    if (slug) this.forwardQueryParams = { tenant: slug };
+    // Tenant is identified by the page host ({slug}.sso.weldforge.org).
+    // No tenant query param to forward to /login. See docs/auth-url-spec.md.
   }
 
   submit(): void {

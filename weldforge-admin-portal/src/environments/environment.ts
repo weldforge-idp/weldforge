@@ -7,5 +7,10 @@
 export const environment = {
   production: false,
   apiBaseUrl: 'http://localhost:8076',
-  appApiKey: ''
+  appApiKey: '',
+  // Public base domain for per-tenant auth subdomains. Local dev runs
+  // single-host, so this is the literal "localhost" — slugFromHost()
+  // returns null on a single-label host, falling back to the tenant
+  // picker. See docs/auth-url-spec.md.
+  publicBaseDomain: 'localhost'
 };
