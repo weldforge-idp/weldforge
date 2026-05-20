@@ -73,6 +73,7 @@ public class User {
      * anti-brute-force lock.
      */
     @Column(nullable = false)
+    @Builder.Default
     private boolean active = true;
 
     // --- Account lockout -------------------------------------
