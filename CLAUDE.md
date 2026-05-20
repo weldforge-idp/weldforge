@@ -176,9 +176,14 @@ JSON; (2) the supported `tenants.branding` keys (`logoUrl`, `primaryColor`,
 `displayFont`, `sansFont`, `tagline`, `eyebrow`, `headline`, `ctaLabel`, etc.)
 plus `displayName`; (3) the per-tenant feature toggles (`registrationEnabled`,
 `passwordRecoveryEnabled`, `emailVerificationRequired`, `returnToCallerEnabled`);
-(4) how the tenant slug enters auth URLs (`?tenant=<slug>` query param or
-`/t/<slug>/...` path prefix). Adopters expect the auth forms to feel native to
-their site — don't leave readers to discover this.
+(4) how the tenant slug enters auth URLs — each tenant lives at
+`https://{slug}.sso.weldforge.org/{login,forgot-password,reset-password,register,verify-email}`,
+its own subdomain so browser and third-party password managers treat each
+tenant as a distinct site (the legacy `?tenant=<slug>` query-param form was
+removed — see `docs/auth-url-spec.md`). The path-prefix `/t/{slug}/...` is
+reserved for OIDC/SAML deep-link endpoints and stays on the apex host.
+Adopters expect the auth forms to feel native to their site — don't leave
+readers to discover this.
 
 ---
 

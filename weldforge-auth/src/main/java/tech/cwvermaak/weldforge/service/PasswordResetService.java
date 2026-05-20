@@ -3,10 +3,10 @@ package tech.cwvermaak.weldforge.service;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.PasswordResetToken;
 import tech.cwvermaak.weldforge.model.Tenant;
@@ -42,10 +42,7 @@ public class PasswordResetService {
     private final AuditService auditService;
     private final RefreshTokenService refreshTokenService;
     private final MailService mailService;
-
-    /** Optional public base URL for the reset page; blank means the email carries the bare token. */
-    @Value("${app.frontend.base-url:}")
-    private String frontendBaseUrl;
+    private final PublicHostProperties publicHost;
 
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final int EXPIRY_HOURS = 1;
@@ -107,13 +104,15 @@ public class PasswordResetService {
         // token is never written to the application log — LoggingMailService
         // keeps the body (and therefore the token) at DEBUG only.
         String subject = "Reset your " + tenantLabel(tenant) + " password";
-        String base = frontendBaseUrl == null ? "" : frontendBaseUrl.trim();
-        if (base.isBlank()) {
-            // No reset-page base URL configured — fall back to a bare-token email.
+        String origin = publicHost.originForTenant(tenant.getSlug());
+        if (origin == null || origin.isBlank()) {
+            // No public-host config — fall back to a bare-token email.
             mailService.send(user.getEmail(), subject, buildTokenEmail(tenant, rawToken));
         } else {
-            String resetUrl = base + "/reset-password?tenant=" + tenant.getSlug()
-                    + "&token=" + rawToken;
+            // Per-tenant subdomain — the password manager that captured the
+            // sign-in URL for this tenant matches the reset link's host too.
+            // See docs/auth-url-spec.md.
+            String resetUrl = origin + "/reset-password?token=" + rawToken;
             mailService.send(user.getEmail(), subject,
                     buildResetTextBody(tenant, resetUrl),
                     buildResetHtmlBody(tenant, resetUrl));
@@ -263,12 +262,19 @@ public class PasswordResetService {
     private String resolveReturnTo(Tenant tenant, String returnTo) {
         if (returnTo == null || returnTo.isBlank()) return null;
         if (!Boolean.TRUE.equals(tenant.getReturnToCallerEnabled())) return null;
-        String base = frontendBaseUrl == null ? "" : frontendBaseUrl.trim();
-        if (base.isBlank()) return null;
+        String base = publicHost.originForTenant(tenant.getSlug());
+        if (base == null || base.isBlank()) return null;
         try {
             String decoded = new String(
                     Base64.getUrlDecoder().decode(returnTo.trim()), StandardCharsets.UTF_8);
-            if (sameOrigin(URI.create(decoded), URI.create(base))) {
+            // Allow same-host (the tenant subdomain itself — return-to-caller
+            // from the in-tenant OIDC flow) or the apex base domain (the
+            // hosted OIDC consent screen). Both share the configured public
+            // base domain. Anything else is treated as off-site.
+            URI target = URI.create(decoded);
+            URI tenantOrigin = URI.create(base);
+            URI apexOrigin = URI.create(publicHost.originForTenant(null));
+            if (sameOrigin(target, tenantOrigin) || sameOrigin(target, apexOrigin)) {
                 return returnTo.trim();
             }
             log.warn("Dropped cross-origin password-reset returnTo for tenant {}", tenant.getSlug());

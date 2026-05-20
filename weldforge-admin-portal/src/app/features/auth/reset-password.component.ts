@@ -94,8 +94,8 @@ export class ResetPasswordComponent {
     if (!this.token) {
       this.error.set('This reset link is missing or invalid. Request a new one from the sign-in page.');
     }
-    const slug = route.snapshot.queryParamMap.get('tenant');
-    if (slug) this.forwardQueryParams['tenant'] = slug;
+    // Tenant is identified by the page host ({slug}.sso.weldforge.org).
+    // No tenant query param to forward.
   }
 
   submit(): void {

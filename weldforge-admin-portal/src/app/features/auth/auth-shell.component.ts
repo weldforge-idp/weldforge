@@ -5,10 +5,11 @@ import { TenantBrandingService } from '../../core/services/tenant-branding.servi
 
 /**
  * Branding-aware visual shell shared by every public auth screen
- * (login, register, forgot/reset password, verify email). Reads
- * `?tenant=` from the URL on init and applies the tenant's CSS-var
- * palette. Slot content into the default ng-content; pass `headline`
- * and optionally `subline` via inputs.
+ * (login, register, forgot/reset password, verify email). Resolves the
+ * tenant slug from the page host ({slug}.sso.weldforge.org) on init
+ * and applies the tenant's CSS-var palette. Slot content into the
+ * default ng-content; pass `headline` and optionally `subline` via
+ * inputs. See docs/auth-url-spec.md.
  */
 @Component({
   selector: 'app-auth-shell',
@@ -123,7 +124,7 @@ export class AuthShellComponent implements OnInit {
   constructor(public branding: TenantBrandingService, private route: ActivatedRoute) {}
 
   ngOnInit(): void {
-    const slug = this.route.snapshot.queryParamMap.get('tenant') || this.branding.slugFromUrl();
+    const slug = this.branding.slugFromHost();
     if (slug && (!this.branding.current() || this.branding.current()?.slug !== slug)) {
       this.branding.load(slug).subscribe();
     }

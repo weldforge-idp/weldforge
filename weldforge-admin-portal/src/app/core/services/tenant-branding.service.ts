@@ -2,6 +2,7 @@ import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { slugFromHost } from './public-host';
 
 export interface TenantBranding {
   slug: string;
@@ -56,11 +57,23 @@ export class TenantBrandingService {
     );
   }
 
-  /** Pull `tenant` from the current URL's query string. */
-  slugFromUrl(search: string = window.location.search): string | null {
-    const params = new URLSearchParams(search);
-    const v = params.get('tenant');
-    return v && v.trim() ? v.trim() : null;
+  /**
+   * Resolve the tenant slug from the current page URL's host. End-user
+   * auth pages live on `https://{slug}.{baseDomain}/…`; the slug is the
+   * leftmost label of the host. Returns null when the host is the apex
+   * domain (admin portal), a reserved root label, or doesn't share the
+   * configured base domain — those cases defer to the super-admin
+   * tenant picker. See docs/auth-url-spec.md.
+   *
+   * Argument is the search string for backwards compatibility; new
+   * callers should use {@link slugFromHost}.
+   */
+  slugFromUrl(_search: string = window.location.search): string | null {
+    return this.slugFromHost();
+  }
+
+  slugFromHost(host: string = window.location.host): string | null {
+    return slugFromHost(host);
   }
 
   private reset(): void {

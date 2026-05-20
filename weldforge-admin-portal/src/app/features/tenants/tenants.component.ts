@@ -512,7 +512,7 @@ interface TenantRow extends Tenant {
             <!-- ==================== Branding & Login ==================== -->
             <section class="wf-section">
               <h4>Branding &amp; login screen</h4>
-              <p class="sub">Customize how the login screen looks and which self-service flows are exposed for tenant <code>{{ t.slug }}</code>. End users land here when they navigate to <code>/login?tenant={{ t.slug }}</code>.</p>
+              <p class="sub">Customize how the login screen looks and which self-service flows are exposed for tenant <code>{{ t.slug }}</code>. End users land here when they navigate to <code>https://{{ t.slug }}.sso.weldforge.org/login</code>.</p>
 
               <div class="wf-grid">
                 <div class="wf-toggle-row">

@@ -34,9 +34,13 @@ api:
     APP_KEY_ROTATION_ENABLED: "true"
     APP_KEY_ROTATION_MAX_AGE_DAYS: "90"
     SHUTDOWN_TIMEOUT: "30s"
-    # Public base URL of the Angular auth screens — builds the clickable
-    # link in the password-reset email (.../reset-password?tenant=&token=).
-    APP_FRONTEND_BASE_URL: "https://sso.weldforge.org"
+    # Public base domain — drives both Host-based tenant resolution
+    # (TenantResolverFilter) and outbound URL construction (password-reset
+    # email link is built as https://{slug}.<base>/reset-password?token=…).
+    # See docs/auth-url-spec.md.
+    APP_PUBLIC_BASE_DOMAIN: "sso.weldforge.org"
+    APP_PUBLIC_SCHEME:      "https"
+    APP_PUBLIC_RESERVED_LABELS: "www,api,admin,app,mail,static"
   secrets:
     SPRING_DATASOURCE_PASSWORD: "changeme-cloud-sql-password"
     JWT_SECRET: "changeme-generate-a-256-bit-secret-key-here"
@@ -71,6 +75,12 @@ frontend:
   ingress:
     enabled: true
     staticIpName: sso-frontend-ip
+    # GCP ManagedCertificate cannot issue wildcards (*.host) — only leaf
+    # certs. The leaf cert below stays in place for the apex
+    # sso.weldforge.org. The wildcard *.sso.weldforge.org needed for the
+    # per-tenant auth subdomains is provisioned out-of-band via Google
+    # Certificate Manager (DNS-authorised) and attached to the ingress
+    # via CertificateMap. See docs/auth-url-spec.md "TLS" section.
     managedCert:
       enabled: true
       name: sso-frontend-cert
@@ -90,8 +100,12 @@ monitoring:
     enabled: false
 
 # --- CORS ---
+# Per-tenant subdomains live under *.sso.weldforge.org. The Spring CORS
+# config is wildcard-aware via the * suffix, so listing the wildcard once
+# covers every tenant. The apex stays explicitly listed for the admin
+# portal / OIDC endpoints.
 cors:
-  allowedOrigins: "https://sso.weldforge.org,https://app.wellspring.org.za"
+  allowedOrigins: "https://sso.weldforge.org,https://*.sso.weldforge.org,https://app.wellspring.org.za"
 
 # --- Outbound email (SMTP / SendGrid) ---
 # Dormant until mail.password is supplied. The deploy workflow sources the

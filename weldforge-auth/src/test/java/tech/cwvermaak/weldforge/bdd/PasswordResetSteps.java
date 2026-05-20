@@ -4,6 +4,7 @@ import io.cucumber.java.en.And;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.AuditEvent;
 import tech.cwvermaak.weldforge.model.AuthProvider;
@@ -147,6 +148,9 @@ public class PasswordResetSteps {
             return null;
         }).when(auditService).recordUserAction(anyString(), any(User.class), anyString(), anyString(), any());
 
+        PublicHostProperties publicHost = new PublicHostProperties();
+        publicHost.setBaseDomain("sso.weldforge.org");
+        publicHost.setScheme("https");
         passwordResetService = new PasswordResetService(
                 userRepository,
                 tenantRepository,
@@ -155,7 +159,8 @@ public class PasswordResetSteps {
                 passwordPolicyService,
                 auditService,
                 refreshTokenService,
-                mailService
+                mailService,
+                publicHost
         );
     }
 

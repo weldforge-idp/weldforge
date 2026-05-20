@@ -61,7 +61,16 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         UrlBasedCorsConfigurationSource staticCors = new UrlBasedCorsConfigurationSource();
         CorsConfiguration corsConfig = new CorsConfiguration();
-        corsProperties.getAllowedOrigins().forEach(corsConfig::addAllowedOrigin);
+        // Origins with a "*" host pattern (e.g. *.sso.weldforge.org for the
+        // per-tenant auth subdomains) must go through addAllowedOriginPattern;
+        // addAllowedOrigin only takes literal origins. Mixing both works.
+        corsProperties.getAllowedOrigins().forEach(o -> {
+            if (o != null && o.contains("*")) {
+                corsConfig.addAllowedOriginPattern(o);
+            } else if (o != null) {
+                corsConfig.addAllowedOrigin(o);
+            }
+        });
         corsProperties.getAllowedMethods().forEach(corsConfig::addAllowedMethod);
         corsConfig.addAllowedHeader("*");
         corsConfig.setAllowCredentials(true);

@@ -8,6 +8,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.*;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
+import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.dto.AuthResponseDto;
 import tech.cwvermaak.weldforge.model.dto.LoginRequestDto;
@@ -24,12 +26,18 @@ import java.util.Map;
  * Hosted login form that closes the OIDC redirect loop.
  *
  * <p>The {@code OidcAuthorizationController} sends unauthenticated callers
- * to {@code /login?tenant=<slug>&oidcReturnTo=<base64-url>}. This
- * controller renders an HTML form, accepts the credentials POST, calls
- * {@link AuthService#login} (which sets the {@code wf_session} cookie via
- * {@code writeSessionCookie}), and 302s back to {@code oidcReturnTo}. The
- * second pass through {@code /oauth2/authorize} now sees an authenticated
- * principal and renders the consent screen.</p>
+ * to {@code https://{slug}.<base-domain>/login/?oidcReturnTo=<base64-url>} —
+ * the per-tenant subdomain so password managers see each tenant as a
+ * distinct site. {@code TenantResolverFilter} maps the Host header to the
+ * slug; this controller picks it up via {@link TenantContext} and never
+ * accepts a {@code tenant} query parameter. See
+ * {@code docs/auth-url-spec.md}.</p>
+ *
+ * <p>The credential POST calls {@link AuthService#login} (which sets the
+ * {@code wf_session} cookie via {@code writeSessionCookie}) and 302s back
+ * to {@code oidcReturnTo}. The second pass through {@code /oauth2/authorize}
+ * — on the apex host — sees the cookie via {@code JwtAuthenticationFilter}
+ * and renders consent.</p>
  *
  * <p>Open-redirect protection: the {@code oidcReturnTo} target is required
  * to be a path on the same origin (starts with {@code /}) — never an
@@ -51,15 +59,16 @@ public class LoginController {
     private final AuthService authService;
     private final TenantRepository tenantRepository;
     private final PasswordResetService passwordResetService;
+    private final PublicHostProperties publicHost;
 
     // ────────────────────────────── /login/ ──────────────────────────────
 
     @GetMapping(value = {"/login", "/login/"}, produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> form(@RequestParam(value = "oidcReturnTo", required = false) String oidcReturnTo,
-                                        @RequestParam(value = "tenant", required = false) String tenantSlug,
                                         @RequestParam(value = "error", required = false) String error) {
+        String tenantSlug = TenantContext.get();
         Tenant tenant = resolveTenant(tenantSlug);
-        String html = renderForm(tenant, tenantSlug, oidcReturnTo, error);
+        String html = renderForm(tenant, oidcReturnTo, error);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
                 .body(html);
@@ -70,7 +79,6 @@ public class LoginController {
                  produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<?> submit(@RequestParam("identifier") String identifier,
                                      @RequestParam("password") String password,
-                                     @RequestParam(value = "tenant", required = false) String tenantSlug,
                                      @RequestParam(value = "oidcReturnTo", required = false) String oidcReturnTo,
                                      HttpServletRequest httpRequest,
                                      HttpServletResponse httpResponse) {
@@ -79,14 +87,14 @@ public class LoginController {
             auth = authService.login(
                     new LoginRequestDto(identifier, password), httpRequest, httpResponse);
         } catch (BadCredentialsException ex) {
-            return rerenderForm(tenantSlug, oidcReturnTo, "Invalid email or password.");
+            return rerenderForm(oidcReturnTo, "Invalid email or password.");
         } catch (RuntimeException ex) {
-            return rerenderForm(tenantSlug, oidcReturnTo, "Sign-in failed: " + ex.getMessage());
+            return rerenderForm(oidcReturnTo, "Sign-in failed: " + ex.getMessage());
         }
 
         if (auth.isMfaRequired() || auth.isMustEnrollMfa()) {
             // Hosted-login MFA flow not yet wired. Tell the user clearly.
-            return rerenderForm(tenantSlug, oidcReturnTo,
+            return rerenderForm(oidcReturnTo,
                     "Multi-factor authentication is required for this account but the hosted "
                   + "login flow does not yet support MFA. Use the API flow instead.");
         }
@@ -101,12 +109,11 @@ public class LoginController {
     // ──────────────────────── /login/forgot ──────────────────────────────
 
     @GetMapping(value = "/login/forgot", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> forgotForm(@RequestParam(value = "tenant", required = false) String tenantSlug,
-                                              @RequestParam(value = "sent", required = false) String sent) {
-        Tenant tenant = resolveTenant(tenantSlug);
+    public ResponseEntity<String> forgotForm(@RequestParam(value = "sent", required = false) String sent) {
+        Tenant tenant = resolveTenant(TenantContext.get());
         String html = sent != null
-                ? renderSent(tenant, tenantSlug)
-                : renderForgotForm(tenant, tenantSlug, null);
+                ? renderSent(tenant)
+                : renderForgotForm(tenant, null);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
                 .body(html);
@@ -115,8 +122,7 @@ public class LoginController {
     @PostMapping(value = "/login/forgot",
                  consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
                  produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<?> forgotSubmit(@RequestParam("identifier") String identifier,
-                                           @RequestParam(value = "tenant", required = false) String tenantSlug) {
+    public ResponseEntity<?> forgotSubmit(@RequestParam("identifier") String identifier) {
         try {
             // requestReset is privacy-preserving: it never throws "user not
             // found" — always 200 + always render the same "if that
@@ -126,8 +132,7 @@ public class LoginController {
             // Swallow — same response for any failure mode.
         }
         return ResponseEntity.status(303)
-                .location(URI.create("/login/forgot?sent=1"
-                        + (tenantSlug == null ? "" : "&tenant=" + tenantSlug)))
+                .location(URI.create("/login/forgot?sent=1"))
                 .build();
     }
 
@@ -135,12 +140,11 @@ public class LoginController {
 
     @GetMapping(value = "/login/reset", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> resetForm(@RequestParam("token") String token,
-                                             @RequestParam(value = "tenant", required = false) String tenantSlug,
                                              @RequestParam(value = "error", required = false) String error) {
-        Tenant tenant = resolveTenant(tenantSlug);
+        Tenant tenant = resolveTenant(TenantContext.get());
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
-                .body(renderResetForm(tenant, tenantSlug, token, error));
+                .body(renderResetForm(tenant, token, error));
     }
 
     @PostMapping(value = "/login/reset",
@@ -148,29 +152,35 @@ public class LoginController {
                  produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<?> resetSubmit(@RequestParam("token") String token,
                                           @RequestParam("newPassword") String newPassword,
-                                          @RequestParam("confirmPassword") String confirmPassword,
-                                          @RequestParam(value = "tenant", required = false) String tenantSlug) {
+                                          @RequestParam("confirmPassword") String confirmPassword) {
         if (newPassword == null || newPassword.length() < 8) {
-            return rerenderReset(tenantSlug, token, "Password must be at least 8 characters.");
+            return rerenderReset(token, "Password must be at least 8 characters.");
         }
         if (!newPassword.equals(confirmPassword)) {
-            return rerenderReset(tenantSlug, token, "Passwords do not match.");
+            return rerenderReset(token, "Passwords do not match.");
         }
         try {
             passwordResetService.resetPassword(token, newPassword);
         } catch (RuntimeException e) {
-            return rerenderReset(tenantSlug, token,
+            return rerenderReset(token,
                     "Reset link is invalid or has expired. Request a new one.");
         }
         // Success — bounce to /login/ so the user can sign in with the new password.
         return ResponseEntity.status(303)
-                .location(URI.create("/login/?tenant=" + (tenantSlug == null ? "" : tenantSlug)
-                        + "&reset=1")).build();
+                .location(URI.create("/login/?reset=1")).build();
     }
 
     // ─────────────────────── helpers ──────────────────────────
 
-    /** Decode the base64url return-to URL and accept only same-origin paths. */
+    /**
+     * Decode the base64url return-to URL and accept only targets on our
+     * own public domain. The OIDC bounce-back lands on the apex host
+     * ({@code sso.weldforge.org/t/{slug}/oauth2/authorize?…}) while the
+     * user is signing in on the tenant subdomain
+     * ({@code {slug}.sso.weldforge.org/login}), so we must keep the
+     * absolute URL — a relative redirect would land back on the
+     * subdomain and miss the OIDC endpoint.
+     */
     private String sanitiseReturnTo(String oidcReturnTo) {
         if (oidcReturnTo == null || oidcReturnTo.isBlank()) return "/";
         String decoded;
@@ -179,18 +189,21 @@ public class LoginController {
         } catch (IllegalArgumentException e) {
             return "/";
         }
-        // Allow /t/{slug}/oauth2/authorize?... — the OIDC return URL — and
-        // reject anything that isn't a same-origin path. Absolute URLs are
-        // refused so a malicious oidcReturnTo can't redirect off-site.
         try {
             URI u = URI.create(decoded);
             if (u.isAbsolute()) {
-                // We accept absolute URLs that point at this host's /t/{slug}/...
-                // path because /authorize generates them that way (currentUrl
-                // builds an absolute URL). Strip down to path + query only.
+                String host = u.getHost();
                 String path = u.getPath() != null ? u.getPath() : "/";
                 if (!path.startsWith("/t/")) return "/";
-                return path + (u.getRawQuery() != null ? "?" + u.getRawQuery() : "");
+                String base = publicHost.getBaseDomain();
+                // Accept the apex host or any tenant subdomain under the
+                // configured base. Anything else — a different domain or a
+                // multi-label subdomain we don't control — is refused so a
+                // malicious oidcReturnTo can't redirect off-site.
+                if (host == null || base == null) return "/";
+                String h = host.toLowerCase();
+                if (!(h.equals(base) || h.endsWith("." + base))) return "/";
+                return decoded;
             }
             return decoded.startsWith("/") ? decoded : "/";
         } catch (IllegalArgumentException e) {
@@ -203,16 +216,15 @@ public class LoginController {
         return tenantRepository.findBySlug(slug).orElse(null);
     }
 
-    private ResponseEntity<String> rerenderForm(String tenantSlug, String oidcReturnTo, String error) {
-        Tenant tenant = resolveTenant(tenantSlug);
+    private ResponseEntity<String> rerenderForm(String oidcReturnTo, String error) {
+        Tenant tenant = resolveTenant(TenantContext.get());
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
-                .body(renderForm(tenant, tenantSlug, oidcReturnTo, error));
+                .body(renderForm(tenant, oidcReturnTo, error));
     }
 
-    private String renderForm(Tenant tenant, String tenantSlug, String oidcReturnTo, String error) {
+    private String renderForm(Tenant tenant, String oidcReturnTo, String error) {
         String safeLabel = escape(brandName(tenant));
-        String safeSlug = escape(tenantSlug);
         String safeReturn = escape(oidcReturnTo);
         String tagline = brandValue(tenant, "tagline");
         String sub = tagline != null ? escape(tagline)
@@ -226,7 +238,6 @@ public class LoginController {
             + "  <p class='wf-sub'>" + sub + "</p>\n"
             + errBlock
             + "  <form method='post' action='/login/' autocomplete='on'>\n"
-            + "    <input type='hidden' name='tenant' value='" + safeSlug + "'>\n"
             + "    <input type='hidden' name='oidcReturnTo' value='" + safeReturn + "'>\n"
             + "    <label><span>Email or username</span>\n"
             + "      <input type='text' name='identifier' autocomplete='username' required autofocus></label>\n"
@@ -234,21 +245,20 @@ public class LoginController {
             + "      <input type='password' name='password' autocomplete='current-password' required></label>\n"
             + "    <button type='submit'>Sign in</button>\n"
             + "  </form>\n"
-            + "  <p class='wf-link'><a href='/login/forgot?tenant=" + safeSlug + "'>Forgot your password?</a></p>\n"
+            + "  <p class='wf-link'><a href='/login/forgot'>Forgot your password?</a></p>\n"
             + "</section>\n";
         return chrome(tenant, "Sign in — " + safeLabel, inner);
     }
 
-    private ResponseEntity<String> rerenderReset(String tenantSlug, String token, String error) {
-        Tenant tenant = resolveTenant(tenantSlug);
+    private ResponseEntity<String> rerenderReset(String token, String error) {
+        Tenant tenant = resolveTenant(TenantContext.get());
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
-                .body(renderResetForm(tenant, tenantSlug, token, error));
+                .body(renderResetForm(tenant, token, error));
     }
 
-    private String renderForgotForm(Tenant tenant, String tenantSlug, String error) {
+    private String renderForgotForm(Tenant tenant, String error) {
         String safeLabel = escape(brandName(tenant));
-        String safeSlug = escape(tenantSlug);
         String errBlock = error == null || error.isBlank() ? ""
                 : "<div class='wf-err'>" + escape(error) + "</div>";
         return chrome(tenant, "Reset password — " + safeLabel,
@@ -257,30 +267,27 @@ public class LoginController {
           + "<p class='wf-sub'>Enter your email and we'll send you a link to choose a new password.</p>"
           + errBlock
           + "<form method='post' action='/login/forgot' autocomplete='on'>"
-          + "  <input type='hidden' name='tenant' value='" + safeSlug + "'>"
           + "  <label><span>Email</span>"
           + "    <input type='email' name='identifier' autocomplete='username' required autofocus></label>"
           + "  <button type='submit'>Send reset link</button>"
           + "</form>"
-          + "<p class='wf-link'><a href='/login/?tenant=" + safeSlug + "'>← Back to sign in</a></p>"
+          + "<p class='wf-link'><a href='/login/'>← Back to sign in</a></p>"
           + "</section>");
     }
 
-    private String renderSent(Tenant tenant, String tenantSlug) {
+    private String renderSent(Tenant tenant) {
         String safeLabel = escape(brandName(tenant));
-        String safeSlug = escape(tenantSlug);
         return chrome(tenant, "Reset link sent — " + safeLabel,
             "<section class='wf-card'>"
           + "<h1>Check your inbox</h1>"
           + "<p class='wf-sub'>If that email is registered, a password-reset link is on its way. "
           + "It expires in 30 minutes.</p>"
-          + "<p class='wf-link'><a href='/login/?tenant=" + safeSlug + "'>← Back to sign in</a></p>"
+          + "<p class='wf-link'><a href='/login/'>← Back to sign in</a></p>"
           + "</section>");
     }
 
-    private String renderResetForm(Tenant tenant, String tenantSlug, String token, String error) {
+    private String renderResetForm(Tenant tenant, String token, String error) {
         String safeLabel = escape(brandName(tenant));
-        String safeSlug = escape(tenantSlug);
         String safeToken = escape(token);
         String errBlock = error == null || error.isBlank() ? ""
                 : "<div class='wf-err'>" + escape(error) + "</div>";
@@ -290,7 +297,6 @@ public class LoginController {
           + "<p class='wf-sub'>At least 8 characters. Use something you don't use anywhere else.</p>"
           + errBlock
           + "<form method='post' action='/login/reset' autocomplete='on'>"
-          + "  <input type='hidden' name='tenant' value='" + safeSlug + "'>"
           + "  <input type='hidden' name='token' value='" + safeToken + "'>"
           + "  <label><span>New password</span>"
           + "    <input type='password' name='newPassword' minlength='8' autocomplete='new-password' required autofocus></label>"

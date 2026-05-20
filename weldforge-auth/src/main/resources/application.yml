@@ -129,6 +129,17 @@ spring:
 #            user-info-uri: https://open-api.tiktok.com/user/info/
 #            user-name-attribute: open_id
 
+# Public-facing host config. Drives both tenant resolution from the Host
+# header (TenantResolverFilter) and outbound URL construction (password-
+# reset emails, OIDC unauthenticated-redirect to the tenant login). See
+# docs/auth-url-spec.md.
+wf:
+  public:
+    base-domain:      ${APP_PUBLIC_BASE_DOMAIN:sso.weldforge.org}
+    scheme:           ${APP_PUBLIC_SCHEME:https}
+    # Subdomain labels that never resolve to a tenant.
+    reserved-labels:  ${APP_PUBLIC_RESERVED_LABELS:www,api,admin,app,mail,static}
+
 app:
   jwt:
     secret: ${JWT_SECRET:2dqSJTLVG5z0Im0APLXYgj9QB19HVfYSfGJnEbXRM8vp+93tw7sRn3+f9JvcUkA2dL0x6sbEEWOqf0IEzEsUBA==}
