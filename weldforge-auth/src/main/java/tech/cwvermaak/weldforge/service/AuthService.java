@@ -282,7 +282,8 @@ public class AuthService {
                 user.getTokenVersion(),
                 tenant.getAccessTtlMs(),
                 tenant.getCustomClaims(),
-                refreshAdminRole);
+                refreshAdminRole,
+                tenantIssuer(tenant));
         long effectiveTtl = tenant.getAccessTtlMs() != null
                 ? tenant.getAccessTtlMs() / 1000
                 : jwtService.getExpirationTime();
@@ -386,6 +387,18 @@ public class AuthService {
 
     // ---- internals ---------------------------------------------------
 
+    /**
+     * Canonical apex issuer URL for a tenant's access tokens. Matches the
+     * {@code issuer} field of {@code /t/{slug}/.well-known/openid-configuration}
+     * so RPs that strictly validate {@code iss} against discovery (e.g. the
+     * Spring Security OAuth2 resource-server defaults) accept the token.
+     */
+    private String tenantIssuer(Tenant tenant) {
+        if (tenant == null || tenant.getSlug() == null) return null;
+        String origin = publicHost.originForTenant(null);
+        return origin + "/t/" + tenant.getSlug();
+    }
+
     private Tenant currentTenant() {
         String slug = TenantContext.get();
         if (slug == null || slug.isBlank()) {
@@ -408,7 +421,8 @@ public class AuthService {
                 user.getTokenVersion(),
                 tenant.getAccessTtlMs(),
                 tenant.getCustomClaims(),
-                adminRoleName);
+                adminRoleName,
+                tenantIssuer(tenant));
 
         Issued refresh = refreshTokenService.issueNew(user, clientIp(httpRequest), userAgent(httpRequest));
         writeRefreshCookie(response, refresh.rawToken(), tenant.getRefreshTtlMs());

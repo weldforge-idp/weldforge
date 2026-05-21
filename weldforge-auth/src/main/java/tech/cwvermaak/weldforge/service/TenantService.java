@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantAccessor;
 import tech.cwvermaak.weldforge.model.SocialProviderType;
 import tech.cwvermaak.weldforge.model.Tenant;
@@ -13,9 +14,12 @@ import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.model.dto.SocialProviderDto;
 import tech.cwvermaak.weldforge.model.dto.TenantBrandingDto;
 import tech.cwvermaak.weldforge.model.dto.TenantDto;
+import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
+
+import java.time.LocalDateTime;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 
@@ -49,7 +53,9 @@ public class TenantService {
     private final TenantRepository tenantRepository;
     private final TenantSocialProviderRepository providerRepository;
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final AuditService auditService;
+    private final PublicHostProperties publicHost;
 
     // ---- Tenant CRUD --------------------------------------------------
 
@@ -136,10 +142,23 @@ public class TenantService {
         tenantAccessor.requireSuperAdmin();
         Tenant t = tenantRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + id + " not found"));
+
+        // Kill every active session for the tenant BEFORE the row goes away.
+        // Bumping token_version invalidates outstanding access JWTs at the
+        // next JwtAuthenticationFilter check; revoking the refresh-token
+        // families closes the refresh-side. Without this, a stolen
+        // pre-deletion session would silently keep working as a stale
+        // identity if the slug were ever reused.
+        int versionsBumped = userRepository.bumpTokenVersionForTenant(id);
+        int refreshRevoked = refreshTokenRepository.revokeAllForTenant(
+                id, LocalDateTime.now(), "tenant_deleted");
+
         tenantRepository.delete(t);
         auditService.recordAdmin(AuditEventTypes.TENANT_DELETE, currentActor(),
                 AuditEventTypes.TARGET_TENANT, String.valueOf(id),
-                AuditService.meta("slug", t.getSlug()));
+                AuditService.meta("slug", t.getSlug(),
+                        "users_invalidated", versionsBumped,
+                        "refresh_tokens_revoked", refreshRevoked));
     }
 
     // ---- Social provider CRUD ----------------------------------------
@@ -308,12 +327,23 @@ public class TenantService {
                 .build();
     }
 
-    private static String requireSlug(String slug) {
+    private String requireSlug(String slug) {
         if (slug == null) throw new IllegalArgumentException("slug is required");
         String normalised = slug.trim().toLowerCase();
         if (!SLUG_FORMAT.matcher(normalised).matches()) {
             throw new IllegalArgumentException(
                 "slug must be lowercase alphanumeric + dashes, 2-64 chars, not starting/ending with '-'");
+        }
+        // Reserved labels (www, api, admin, oauth, login, …) cannot be tenant
+        // slugs — TenantResolverFilter refuses to resolve them, so a tenant
+        // created with one of these names would be permanently unreachable
+        // via its subdomain. Reject at creation rather than letting the
+        // split-brain state happen. See docs/auth-url-spec.md and
+        // PublicHostProperties#reservedLabels for the full list.
+        if (publicHost.getReservedLabels() != null
+                && publicHost.getReservedLabels().contains(normalised)) {
+            throw new IllegalArgumentException(
+                "slug '" + normalised + "' is reserved — pick a different one");
         }
         return normalised;
     }

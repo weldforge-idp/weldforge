@@ -45,6 +45,20 @@ public class JwtService {
     }
 
     /**
+     * Full overload with an explicit issuer claim. Used by {@code AuthService}
+     * to stamp the canonical per-tenant apex URL ({@code https://<base>/t/<slug>})
+     * onto every access token so the OIDC discovery {@code issuer} value
+     * matches what the JWT carries.
+     */
+    public String generateAccessToken(String email, Long tenantId, String tenantSlug,
+                                      boolean superAdmin, int tokenVersion,
+                                      Long tenantTtlMs, Map<String, Object> customClaims,
+                                      String adminRole, String issuer) {
+        return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
+                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer);
+    }
+
+    /**
      * Extended overload — PRD SSO-03 + OA2-07.
      *
      * @param tenantTtlMs  per-tenant TTL override in milliseconds, or null
@@ -62,14 +76,22 @@ public class JwtService {
     }
 
     /**
-     * Full overload with an explicit admin role claim (PRD ADM-02).
-     * The {@code superAdmin} boolean is retained for backwards compat
-     * with older clients that only look at {@code sa}.
+     * Admin-role overload — used by older call sites that don't supply an
+     * issuer. Prefer the overload that takes an explicit {@code issuer}
+     * so the {@code iss} claim matches the OIDC discovery document.
      */
     public String generateAccessToken(String email, Long tenantId, String tenantSlug,
                                       boolean superAdmin, int tokenVersion,
                                       Long tenantTtlMs, Map<String, Object> customClaims,
                                       String adminRole) {
+        return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
+                tokenVersion, tenantTtlMs, customClaims, adminRole, null);
+    }
+
+    private String generateAccessTokenInternal(String email, Long tenantId, String tenantSlug,
+                                               boolean superAdmin, int tokenVersion,
+                                               Long tenantTtlMs, Map<String, Object> customClaims,
+                                               String adminRole, String issuer) {
         Map<String, Object> claims = new LinkedHashMap<>();
         // Custom claims go first so reserved claims below always win on collision.
         if (customClaims != null) {
@@ -87,13 +109,18 @@ public class JwtService {
         claims.put(CLAIM_TOKEN_VERSION, tokenVersion);
 
         long ttl = tenantTtlMs != null && tenantTtlMs > 0 ? tenantTtlMs : accessExpirationMs;
-        return Jwts.builder()
+        JwtBuilder b = Jwts.builder()
                 .subject(email)
                 .claims(claims)
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + ttl))
-                .signWith(getSigningKey())
-                .compact();
+                .expiration(new Date(System.currentTimeMillis() + ttl));
+        // OIDC: iss must match the discovery document. Setting it after the
+        // claims map ensures the registered claim takes precedence over any
+        // tenant-supplied custom claim of the same name.
+        if (issuer != null && !issuer.isBlank()) {
+            b.issuer(issuer);
+        }
+        return b.signWith(getSigningKey()).compact();
     }
 
     private static boolean isReservedClaim(String name) {

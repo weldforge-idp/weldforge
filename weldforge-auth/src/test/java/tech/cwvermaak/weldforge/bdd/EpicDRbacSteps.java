@@ -158,7 +158,13 @@ public class EpicDRbacSteps {
         tenantAccessor = new TenantAccessor(tenantRepository,
                 mock(tech.cwvermaak.weldforge.repository.AdminMembershipRepository.class));
 
-        tenantService = new TenantService(tenantAccessor, tenantRepository, socialRepo, userRepository, auditService);
+        tech.cwvermaak.weldforge.config.tenant.PublicHostProperties publicHost =
+                new tech.cwvermaak.weldforge.config.tenant.PublicHostProperties();
+        publicHost.setBaseDomain("sso.weldforge.org");
+        publicHost.setScheme("https");
+        tenantService = new TenantService(tenantAccessor, tenantRepository, socialRepo, userRepository,
+                mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
+                auditService, publicHost);
         adminService = new AdminService(tenantAccessor, roleRepository, userRepository,
                 envRepo, appClientRepo, mfaService, auditService,
                 mock(tech.cwvermaak.weldforge.service.PasswordResetService.class));

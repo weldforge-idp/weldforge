@@ -28,19 +28,35 @@ https://{slug}.sso.weldforge.org/{path}
 
 ## Reserved root labels
 
-A handful of subdomain labels are reserved for non-tenant uses and may
-**not** be used as tenant slugs. The resolver rejects them and falls back
-as if the host had no recognisable subdomain:
+A list of subdomain labels is reserved for non-tenant uses and may
+**not** be used as tenant slugs. The list is enforced at **two points**:
 
-- `www` — marketing redirects
-- `api` — direct backend access
-- `admin` — admin portal root (if ever split out)
-- `app` — generic app root
-- `mail` — outbound SMTP / inbound parse
-- `static` — CDN assets
+1. **Resolution time** — `TenantResolverFilter` refuses a reserved
+   label as a slug. The request falls back to the default tenant.
+2. **Slug-creation time** — `TenantService.requireSlug` rejects the
+   creation request entirely. Without this, an admin could create a
+   tenant with a reserved slug and the tenant would be permanently
+   unreachable via its subdomain.
 
-Configured via `wf.public.reserved-labels`. Slug-creation should additionally
-refuse these names on the admin side.
+The current list (configurable via `wf.public.reserved-labels`):
+
+- **Infrastructure / well-known:** `www`, `api`, `admin`, `app`,
+  `mail`, `static`, `cdn`, `assets`, `health`, `actuator`, `metrics`,
+  `prometheus`, `grafana`, `swagger`, `api-docs`.
+- **Environment markers:** `dev`, `staging`, `stage`, `test`, `prod`,
+  `production`.
+- **Identity / federation (phishing-prone):** `auth`, `oauth`,
+  `oauth2`, `oidc`, `saml`, `scim`, `sso`, `account`, `accounts`,
+  `login`, `logout`, `signin`, `signup`, `register`, `verify`,
+  `reset`, `password`, `mfa`, `totp`.
+- **Marketing / catch-all:** `blog`, `docs`, `support`, `help`,
+  `status`, `billing`.
+
+The identity-and-federation labels are deliberately broad: a slug like
+`oauth` on a wildcard cert would look authoritative to a user even
+though the operator could be anyone with a credit card. Treat new
+additions to this list as a security action and audit it on every
+release.
 
 ## Public end-user routes
 
@@ -89,6 +105,44 @@ still carry it ignore the query and resolve via the rules above; if no rule
 matches and the request hits a tenant-required path, the request is
 rejected with the same error that an unknown tenant would produce today.
 
+## Access-token `iss` claim
+
+Every access JWT carries
+
+```
+iss = https://<base-domain>/t/<tenant-slug>
+```
+
+— the canonical apex issuer that matches the `issuer` field of
+`https://<base-domain>/t/<tenant-slug>/.well-known/openid-configuration`.
+RPs that validate `iss` strictly against discovery (the Spring Security
+OAuth2 resource-server default, Auth0 SDKs, etc.) will accept the token.
+The issuer is **not** the host the user signed in on — it is always the
+apex, even when the access cookie was set on a tenant subdomain. This
+preserves a stable issuer identity across the auth-URL refactor and
+across any future move of `/login` to a different host shape.
+
+## Tenant deletion revokes all sessions
+
+`TenantService.deleteTenant` performs three steps in one transaction
+before the row goes away:
+
+1. Bump `token_version` on every user in the tenant — every outstanding
+   access JWT for that tenant carries an older version and stops
+   authenticating at `JwtAuthenticationFilter`.
+2. Mark every live `refresh_token` family in the tenant as revoked
+   (`revoked_reason='tenant_deleted'`). A refresh attempt against the
+   apex `/api/auth/refresh` after delete will fail.
+3. Hard-delete the `tenants` row.
+
+Without step 1, a stolen-pre-deletion JWT would silently keep working
+as a stale identity if the slug were ever reused. The slug reuse risk
+itself is not closed by this change — a deleted slug returns to the
+pool and a future tenant can claim it. Operators should consider a
+holdback window before reusing high-value slugs. A formal
+`tenants.deleted_at` + reuse-holdback policy is tracked as a separate
+follow-up (V34 migration).
+
 ## OIDC / SAML endpoints stay on the apex host
 
 OIDC and SAML use **path-prefixed** URLs under the apex host, not
@@ -123,17 +177,89 @@ signed-in principal.
 ## Cookies
 
 Both `wf_session` (access JWT) and `refresh_token` cookies are written
-**without a `Domain` attribute**, so the browser scopes them to the exact
-host that set them. Consequences:
+with `Domain=<base-domain>` (e.g. `sso.weldforge.org`). The browser
+therefore sends them on every `*.sso.weldforge.org` host, **not** just
+the tenant subdomain that set them.
 
-- A user signed into `acme.sso.weldforge.org` is **not** signed into
-  `contoso.sso.weldforge.org` — confirming the per-tenant isolation we
-  want.
-- A super-admin signed into `sso.weldforge.org` (the apex admin portal)
-  does not carry that session into tenant subdomains. They re-authenticate
-  if they navigate to a tenant subdomain directly.
-- `SameSite=Lax` remains so top-level browser navigation (the OIDC bounce
-  back to apex) still carries the cookie.
+**Why this is needed.** The OIDC unauthenticated-redirect from
+`https://sso.weldforge.org/t/<slug>/oauth2/authorize` sends the user to
+`https://<slug>.sso.weldforge.org/login`. After sign-in, the user is
+302'd back to the apex `/t/<slug>/oauth2/authorize` URL — a
+**different host** from the one that just set the session cookie. A
+host-only cookie would not be sent, the apex would see an
+unauthenticated user, and the OIDC consent step would loop forever. The
+parent-domain scope is the trade-off that keeps the apex OIDC flow
+working without giving up password-manager distinctness (which is
+host-based and independent of cookie scope).
+
+**The four mitigations that make this safe:**
+
+1. **JWT tenant binding (load-bearing).** `JwtAuthenticationFilter`
+   compares the JWT's `tenant_id` claim against the request's
+   **implicit** tenant (Host subdomain or `/t/<slug>/` path prefix —
+   NOT the `X-Tenant-Slug` header, which is the explicit
+   cross-tenant channel reserved for super-admins). A mismatch is
+   refused: the JWT is treated as if absent and the request runs
+   anonymous. Without this check, a tenant-A session would silently
+   authenticate the user against tenant B's UI and API on B's
+   subdomain.
+2. **JWT `iss` claim.** Every access token carries
+   `iss=https://<base-domain>/t/<slug>` so a downstream resource
+   server (or our own consent screen) can reject a token minted for
+   the wrong tenant even without a request-time host check.
+3. **`SameSite=Lax` + JSON-only auth POST endpoints.** A malicious
+   `evil.sso.weldforge.org` is *same-site* with
+   `acme.sso.weldforge.org` per the SameSite spec, so the cookie
+   would be sent on a top-level navigation. Our `/api/auth/*` POST
+   endpoints accept `application/json` only, which browsers don't
+   send cross-origin via simple forms, so a classical form-CSRF
+   doesn't fire. The JWT check above closes the rest.
+4. **Reserved-slug allowlist.** Subdomain labels like `oauth`,
+   `login`, `accounts`, `auth` are reserved at both
+   resolution-time AND slug-creation-time (see "Reserved root
+   labels" below). A phishing-prone slug never reaches the
+   `tenants` table.
+
+**Consequences for operators:**
+
+- A super-admin signed into `sso.weldforge.org` (the apex admin
+  portal) carries that session into tenant subdomains for the
+  branding/social-providers public GETs. Their JWT identifies them as
+  super-admin and the tenant-binding check exempts them.
+- A regular tenant-A user landing on `acme.sso.weldforge.org` while
+  carrying a JWT for `contoso` will appear logged-out. They see the
+  acme login form. This is intended.
+- `SameSite=Lax` remains so top-level browser navigation (the OIDC
+  bounce back to apex) still carries the cookie.
+
+## Cross-tenant trust model
+
+The base-domain cookie scope means a malicious tenant — one whose
+operator the platform trusts as much as the next-cheapest plan tier
+allows — has cross-origin read of the *cookie name and Set-Cookie
+behaviour* of its siblings (not the cookie's value, which is
+`HttpOnly`). It cannot use a stolen cookie thanks to (1) above, but a
+hostile tenant operator can still:
+
+- **Phish** by spinning up a plausibly-named tenant
+  (`acme-bank-secure.sso.weldforge.org` with acme's logo). Defences
+  outside this spec: tenant identity-proofing at onboarding,
+  branding-verification badges, abuse reporting.
+- **Run XSS in their own subdomain** and pivot to its own users; this
+  is contained to that tenant by the JWT binding above, but the
+  tenant's users' sessions are still in scope.
+- **Initiate same-site GET navigations** (`window.location =
+  https://acme.sso.weldforge.org/some-link?…`) that carry the
+  victim's cookie. We rely on JSON-only POST endpoints and the JWT
+  binding to neutralise this. **A new mutating endpoint MUST NOT
+  accept form-encoded POST bodies on `/api/auth/*` without also
+  requiring a CSRF token.**
+
+Operators should treat tenant slugs as trust-level identifiers: a
+verified-by-WeldForge tenant should not be visually indistinguishable
+from a freshly-signed-up tenant in any user-visible context. This is
+not a code-level guarantee — it is product policy and is out of scope
+for this spec.
 
 ## Email links
 
@@ -163,6 +289,32 @@ slug from `window.location.host`:
 The `TenantInterceptor` then stamps `X-Tenant-Slug` onto `/api/*`
 requests for the public branding/social-providers GETs, identically to
 the picker-driven flow.
+
+## Search-engine indexing — tenant subdomains are noindex
+
+Every response served from a tenant subdomain
+(`<slug>.<base-domain>`) carries
+
+```
+X-Robots-Tag: noindex, nofollow
+```
+
+The apex host (`<base-domain>`) keeps its normal indexability for the
+marketing site / admin portal landing. Two layers enforce this:
+
+- `TenantSubdomainNoIndexFilter` — stamps the header on every backend
+  response when `PublicHostProperties.slugFromHost(request)` returns
+  non-null.
+- nginx (`infrastructure/helm/weldforge/templates/frontend-nginx-configmap.yaml`)
+  — stamps the same header on SPA and static-asset responses served
+  directly by nginx, keyed off `$host` with the apex explicitly
+  whitelisted.
+
+Why: a wildcard cert + per-tenant login form would otherwise let
+search engines index thousands of tenant-branded sign-in pages —
+fragmenting brand reputation, leaking tenant existence, and weakening
+phishing-detection heuristics that rely on a single canonical
+sign-in URL.
 
 ## DNS
 
@@ -213,6 +365,12 @@ update:
 - `TenantResolverFilterTest`: subdomain resolution + reserved-label
   rejection + apex/default fallback + path-prefix / header priority
   unchanged.
+- `JwtAuthenticationFilterTest`: JWT `tenant_id` is enforced against
+  the implicit tenant (Host subdomain + `/t/<slug>/` path), super-admin
+  exemption, apex fallback. Cross-tenant cookie attempt is rejected.
+- `TenantServiceReservedSlugTest`: reserved labels (`oauth`, `login`,
+  `api`, `ADMIN`) are refused at slug-creation time, regardless of
+  case.
 - `PasswordResetIntegrationTest`: assert reset URL has the
   `{slug}.<base-domain>` host shape and no `tenant=` query parameter.
 - Existing OIDC tests: still pass because OIDC paths stay on the apex

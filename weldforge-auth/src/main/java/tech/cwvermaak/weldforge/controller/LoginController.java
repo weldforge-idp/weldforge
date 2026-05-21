@@ -196,13 +196,14 @@ public class LoginController {
                 String path = u.getPath() != null ? u.getPath() : "/";
                 if (!path.startsWith("/t/")) return "/";
                 String base = publicHost.getBaseDomain();
-                // Accept the apex host or any tenant subdomain under the
-                // configured base. Anything else — a different domain or a
-                // multi-label subdomain we don't control — is refused so a
-                // malicious oidcReturnTo can't redirect off-site.
                 if (host == null || base == null) return "/";
-                String h = host.toLowerCase();
-                if (!(h.equals(base) || h.endsWith("." + base))) return "/";
+                // OIDC bounce-back is ONLY ever to the apex host's
+                // /t/{slug}/oauth2/authorize endpoint. Accepting any
+                // subdomain here would let an attacker who controls a
+                // tenant subdomain trick a victim into sending their
+                // (cross-domain-scoped) session cookie to that subdomain
+                // mid-flow. Apex-only closes that.
+                if (!host.equalsIgnoreCase(base)) return "/";
                 return decoded;
             }
             return decoded.startsWith("/") ? decoded : "/";

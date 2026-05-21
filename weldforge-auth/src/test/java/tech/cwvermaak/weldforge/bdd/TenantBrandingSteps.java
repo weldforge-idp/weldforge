@@ -106,8 +106,13 @@ public class TenantBrandingSteps {
             return t;
         });
 
+        PublicHostProperties publicHost = new PublicHostProperties();
+        publicHost.setBaseDomain("sso.weldforge.org");
+        publicHost.setScheme("https");
         service = new TenantService(tenantAccessor, tenantRepository, providerRepository,
-                                    userRepository, auditService);
+                                    userRepository,
+                                    mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
+                                    auditService, publicHost);
     }
 
     private void ensureAuthWired() {

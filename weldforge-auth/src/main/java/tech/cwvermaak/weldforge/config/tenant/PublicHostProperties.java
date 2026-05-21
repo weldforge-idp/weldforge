@@ -29,9 +29,39 @@ public class PublicHostProperties {
     /** Scheme used when building absolute outbound URLs. */
     private String scheme = "https";
 
-    /** Subdomain labels that are reserved and never resolve to a tenant. */
+    /**
+     * Subdomain labels that may never be used as a tenant slug. Two reasons:
+     *
+     * <ol>
+     *   <li><b>Routing safety</b> — these labels are (or could be) used for
+     *       infra hostnames, so allowing a tenant to claim them would create
+     *       a phishing vector or routing collision.</li>
+     *   <li><b>Brand confusion</b> — labels like {@code oauth}, {@code saml},
+     *       {@code login}, {@code accounts} look authoritative; a tenant
+     *       slug shaped like one of them on a wildcard cert would trick
+     *       users into trusting a credential prompt from a tenant they
+     *       don't know.</li>
+     * </ol>
+     *
+     * <p>Enforced at <b>both</b> resolution time
+     * ({@link #slugFromHost(String)}) and slug-creation time
+     * ({@code TenantService.requireSlug}) — otherwise a tenant could exist
+     * with one of these slugs but be permanently unreachable via its
+     * subdomain.</p>
+     */
     private List<String> reservedLabels = List.of(
-            "www", "api", "admin", "app", "mail", "static");
+            // Infrastructure / well-known
+            "www", "api", "admin", "app", "mail", "static", "cdn", "assets",
+            "health", "actuator", "metrics", "prometheus", "grafana",
+            "swagger", "api-docs",
+            // Environment markers
+            "dev", "staging", "stage", "test", "prod", "production",
+            // Identity / federation labels (phishing-prone)
+            "auth", "oauth", "oauth2", "oidc", "saml", "scim", "sso",
+            "account", "accounts", "login", "logout", "signin", "signup",
+            "register", "verify", "reset", "password", "mfa", "totp",
+            // Marketing / catch-all
+            "blog", "docs", "support", "help", "status", "billing");
 
     public String getBaseDomain() { return baseDomain; }
     public void setBaseDomain(String baseDomain) {
