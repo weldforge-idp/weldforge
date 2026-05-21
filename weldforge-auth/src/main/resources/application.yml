@@ -139,6 +139,9 @@ wf:
     scheme:           ${APP_PUBLIC_SCHEME:https}
     # Subdomain labels that never resolve to a tenant.
     reserved-labels:  ${APP_PUBLIC_RESERVED_LABELS:www,api,admin,app,mail,static}
+    # Days a deleted tenant's slug stays unavailable for reuse. 0 disables
+    # the holdback (testing only — not safe in production).
+    slug-holdback-days: ${APP_PUBLIC_SLUG_HOLDBACK_DAYS:90}
 
 app:
   jwt:
