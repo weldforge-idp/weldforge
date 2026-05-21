@@ -69,6 +69,23 @@ public class TenantController {
         return ResponseEntity.noContent().build();
     }
 
+    // -- Identity proofing (SUPER_ADMIN only) -------------------------
+    //
+    // Flip the verified bit on a tenant. The public branding endpoint
+    // exposes this as `verified: boolean` so the Angular auth-shell can
+    // show an "Unverified tenant" warning before a user types
+    // credentials. See docs/auth-url-spec.md §"Tenant identity-proofing".
+
+    @PostMapping("/{id}/verify")
+    public ResponseEntity<TenantDto> verify(@PathVariable Long id) {
+        return ResponseEntity.ok(tenantService.verifyTenant(id));
+    }
+
+    @PostMapping("/{id}/unverify")
+    public ResponseEntity<TenantDto> unverify(@PathVariable Long id) {
+        return ResponseEntity.ok(tenantService.unverifyTenant(id));
+    }
+
     // -- Social providers ---------------------------------------------
 
     @GetMapping("/{id}/social-providers")

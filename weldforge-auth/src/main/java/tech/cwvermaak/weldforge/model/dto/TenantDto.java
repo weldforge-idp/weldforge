@@ -2,6 +2,7 @@ package tech.cwvermaak.weldforge.model.dto;
 
 import lombok.*;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 @Getter
@@ -39,4 +40,20 @@ public class TenantDto {
 
     /** Custom-login branding (logoUrl, primaryColor, tagline, …). */
     private Map<String, Object> branding;
+
+    /**
+     * Operator contact email — informational today; V2 of identity-proofing
+     * will use it as the verification-challenge target.
+     */
+    private String contactEmail;
+
+    /**
+     * Identity-proofing timestamp. Null = unverified. Flipped only by
+     * {@code POST /api/admin/tenants/{id}/verify} (SUPER_ADMIN-only).
+     * See {@code docs/auth-url-spec.md} §"Tenant identity-proofing".
+     */
+    private LocalDateTime verifiedAt;
+
+    /** User-id of the admin who flipped {@link #verifiedAt}. */
+    private Long verifiedByUserId;
 }

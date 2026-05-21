@@ -22,6 +22,16 @@ public class TenantBrandingDto {
     private Boolean registrationEnabled;
     private Boolean passwordRecoveryEnabled;
 
+    /**
+     * Identity-proofing status — true when a platform super-admin has
+     * marked the tenant as verified. The Angular auth-shell renders an
+     * "Unverified tenant" warning badge when this is false, helping end
+     * users spot a look-alike tenant on a wildcard-subdomain URL before
+     * they type credentials. See {@code docs/auth-url-spec.md}
+     * §"Tenant identity-proofing".
+     */
+    private Boolean verified;
+
     /** See {@code Tenant#branding} for the recognised keys. */
     private Map<String, Object> branding;
 }

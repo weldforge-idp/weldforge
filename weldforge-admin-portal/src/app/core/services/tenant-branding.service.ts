@@ -9,6 +9,13 @@ export interface TenantBranding {
   displayName: string;
   registrationEnabled: boolean;
   passwordRecoveryEnabled: boolean;
+  /**
+   * Identity-proofed by a platform super-admin. When false, the
+   * auth-shell renders an "Unverified tenant" warning badge so users
+   * can spot a look-alike tenant before typing credentials. See
+   * docs/auth-url-spec.md §"Tenant identity-proofing".
+   */
+  verified?: boolean;
   branding?: Record<string, unknown> | null;
 }
 

@@ -127,6 +127,28 @@ public class Tenant {
     @Column(name = "claim_transforms", columnDefinition = "jsonb")
     private List<Map<String, Object>> claimTransforms;
 
+    /**
+     * Operator contact email for the tenant. Used today only as an admin-
+     * visible field; V2 of identity-proofing will send a verification
+     * challenge here and auto-flip {@link #verifiedAt} on success.
+     */
+    @Column(name = "contact_email")
+    private String contactEmail;
+
+    /**
+     * Timestamp at which a SUPER_ADMIN marked the tenant identity-proofed.
+     * Null = unverified (the default). The public branding endpoint
+     * exposes a derived {@code verified: boolean} so the Angular auth-shell
+     * can render an "Unverified tenant" warning badge. See
+     * {@code docs/auth-url-spec.md} §"Tenant identity-proofing".
+     */
+    @Column(name = "verified_at")
+    private LocalDateTime verifiedAt;
+
+    /** Audit trail — which user flipped the verify bit. Nullable. */
+    @Column(name = "verified_by_user_id")
+    private Long verifiedByUserId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

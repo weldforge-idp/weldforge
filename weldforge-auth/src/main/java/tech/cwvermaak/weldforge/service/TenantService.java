@@ -100,6 +100,11 @@ public class TenantService {
                 .accessTtlMs(validateTtl(dto.getAccessTtlMs(), "accessTtlMs"))
                 .refreshTtlMs(validateTtl(dto.getRefreshTtlMs(), "refreshTtlMs"))
                 .customClaims(dto.getCustomClaims())
+                // New tenants are UNVERIFIED by default. A super-admin
+                // marks them verified via the explicit verify endpoint.
+                // contactEmail is stored at create time so V2 of
+                // identity-proofing has a verification target.
+                .contactEmail(dto.getContactEmail())
                 .build();
         Tenant saved = tenantRepository.save(t);
         auditService.recordAdmin(AuditEventTypes.TENANT_CREATE, currentActor(),
@@ -132,6 +137,12 @@ public class TenantService {
         if (dto.getEmailVerificationRequired() != null)  t.setEmailVerificationRequired(dto.getEmailVerificationRequired());
         if (dto.getReturnToCallerEnabled() != null)      t.setReturnToCallerEnabled(dto.getReturnToCallerEnabled());
         if (dto.getBranding() != null)                   t.setBranding(dto.getBranding());
+        // contactEmail can be updated freely; it is NOT a privileged field.
+        // verifiedAt is deliberately NOT settable here — the explicit
+        // verify/unverify endpoints are the only way to flip it, so a
+        // regular tenant admin can't self-promote to verified by PUTting
+        // their own tenant record. See docs/auth-url-spec.md.
+        if (dto.getContactEmail() != null)               t.setContactEmail(dto.getContactEmail());
         // slug is immutable — changing it would break OAuth2 registration IDs.
         auditService.recordAdmin(AuditEventTypes.TENANT_UPDATE, currentActor(),
                 AuditEventTypes.TARGET_TENANT, String.valueOf(t.getId()),
@@ -174,6 +185,62 @@ public class TenantService {
                         "users_invalidated", versionsBumped,
                         "refresh_tokens_revoked", refreshRevoked,
                         "holdback_days", publicHost.getSlugHoldbackDays()));
+    }
+
+    /**
+     * Mark a tenant as identity-proofed. SUPER_ADMIN only — this is a
+     * trust-level signal surfaced on every public branding response, so
+     * a regular tenant admin must not be able to self-promote. Idempotent:
+     * verifying an already-verified tenant is a no-op except for an
+     * audit-trail entry recording the re-verification.
+     *
+     * <p>See {@code docs/auth-url-spec.md} §"Tenant identity-proofing".</p>
+     */
+    @Transactional
+    public TenantDto verifyTenant(Long id) {
+        tenantAccessor.requireSuperAdmin();
+        Tenant t = tenantRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + id + " not found"));
+
+        User actor = currentActor();
+        boolean wasVerified = t.getVerifiedAt() != null;
+        t.setVerifiedAt(LocalDateTime.now());
+        t.setVerifiedByUserId(actor != null ? actor.getId() : null);
+        Tenant saved = tenantRepository.save(t);
+
+        auditService.recordAdmin(AuditEventTypes.TENANT_VERIFIED, actor,
+                AuditEventTypes.TARGET_TENANT, String.valueOf(saved.getId()),
+                AuditService.meta("slug", saved.getSlug(),
+                        "re_verification", wasVerified));
+        return toDto(saved);
+    }
+
+    /**
+     * Revoke a tenant's identity-proofed status. SUPER_ADMIN only.
+     * Useful when the platform later learns a verified tenant was
+     * misrepresenting its identity. Idempotent.
+     */
+    @Transactional
+    public TenantDto unverifyTenant(Long id) {
+        tenantAccessor.requireSuperAdmin();
+        Tenant t = tenantRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + id + " not found"));
+
+        User actor = currentActor();
+        LocalDateTime previousVerifiedAt = t.getVerifiedAt();
+        Long previousVerifier = t.getVerifiedByUserId();
+        t.setVerifiedAt(null);
+        t.setVerifiedByUserId(null);
+        Tenant saved = tenantRepository.save(t);
+
+        auditService.recordAdmin(AuditEventTypes.TENANT_UNVERIFIED, actor,
+                AuditEventTypes.TARGET_TENANT, String.valueOf(saved.getId()),
+                AuditService.meta("slug", saved.getSlug(),
+                        "previously_verified_at",
+                            previousVerifiedAt == null ? "never" : previousVerifiedAt.toString(),
+                        "previously_verified_by_user_id",
+                            previousVerifier == null ? "none" : previousVerifier.toString()));
+        return toDto(saved);
     }
 
     // ---- Social provider CRUD ----------------------------------------
@@ -278,6 +345,7 @@ public class TenantService {
                 .displayName(t.getDisplayName() != null ? t.getDisplayName() : t.getName())
                 .registrationEnabled(t.getRegistrationEnabled() == null ? Boolean.TRUE : t.getRegistrationEnabled())
                 .passwordRecoveryEnabled(t.getPasswordRecoveryEnabled() == null ? Boolean.TRUE : t.getPasswordRecoveryEnabled())
+                .verified(t.getVerifiedAt() != null)
                 .branding(t.getBranding())
                 .build();
     }
@@ -312,6 +380,9 @@ public class TenantService {
                 .emailVerificationRequired(t.getEmailVerificationRequired())
                 .returnToCallerEnabled(t.getReturnToCallerEnabled())
                 .branding(t.getBranding())
+                .contactEmail(t.getContactEmail())
+                .verifiedAt(t.getVerifiedAt())
+                .verifiedByUserId(t.getVerifiedByUserId())
                 .build();
     }
 

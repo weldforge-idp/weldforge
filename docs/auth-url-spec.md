@@ -268,6 +268,64 @@ host-based and independent of cookie scope).
 - `SameSite=Lax` remains so top-level browser navigation (the OIDC
   bounce back to apex) still carries the cookie.
 
+## Tenant identity-proofing
+
+The per-tenant subdomain pattern is, by design, a wildcard: anyone
+who can create a tenant in WeldForge gets a credible-looking
+`{slug}.sso.weldforge.org/login` page. That makes WeldForge an
+attractive phishing platform — a malicious operator could register
+`acme-bank-secure`, lift the real Acme's branding via the public
+`branding` JSON, and lure that company's users into entering
+credentials on `acme-bank-secure.sso.weldforge.org`.
+
+V1 of identity-proofing (V38 migration) attacks the visibility side
+of this problem. The trust side — refusing the dodgy registration in
+the first place — is V2.
+
+### V1 surface
+
+- `tenants.contact_email` — stored at create time, informational.
+- `tenants.verified_at` (nullable timestamp) — null is the default;
+  every existing and newly-created tenant lands UNVERIFIED.
+- `tenants.verified_by_user_id` — FK on `users(id)` ON DELETE SET
+  NULL, audit trail of who flipped the bit.
+- **`POST /api/admin/tenants/{id}/verify`** and
+  **`POST /api/admin/tenants/{id}/unverify`** — SUPER_ADMIN only.
+  Idempotent. Each call emits `tenant.verified` / `tenant.unverified`
+  to the audit log.
+- The public `GET /api/auth/tenants/{slug}/branding` response
+  carries a derived `verified: boolean`.
+- Angular `AuthShellComponent` renders an amber warning banner
+  when `verified === false`:
+
+      Unverified tenant. Confirm the URL <host> matches the site
+      you expected before entering credentials.
+
+The banner is **deliberately styled outside the tenant's branding
+palette** — a malicious tenant could otherwise tone it down via its
+`branding.bgColor` / `branding.textColor` overrides. The colour comes
+from a fixed amber palette and the only thing the tenant controls
+inside the banner is which host string is shown (which is
+`window.location.host`, not anything the operator typed).
+
+The `updateTenant` PUT path is gated to NOT modify `verifiedAt` — a
+regular tenant admin can't self-promote by PUTting their own row.
+
+### V2 roadmap (not in this release)
+
+- **Email-based verification challenge.** Send a token to
+  `contact_email` at create time (or when the operator requests
+  verification). Auto-flip `verifiedAt` on click. Probably gated on
+  the `contact_email` being on the same DNS domain as the tenant's
+  registered OIDC client `webOrigins`, to defeat the "I'll use a
+  free gmail" cheat.
+- **Watchword auto-flagging.** Slugs containing brand-sensitive
+  substrings (`bank`, `pay`, `secure`, `official`, …) auto-queue
+  for human review instead of going live.
+- **Verified-tenant logo badge.** A positive signal next to the
+  tenant's display name in the auth-shell — same idea, opposite
+  polarity.
+
 ## Cross-tenant trust model
 
 The base-domain cookie scope means a malicious tenant — one whose
@@ -416,6 +474,11 @@ update:
   refuse form-encoded, multipart, text/plain, and missing
   Content-Type with a body. GET is unrestricted. `/login/**`
   HTML-form path is unaffected.
+- `TenantServiceVerifyTest`: verify/unverify flip `verifiedAt` and
+  emit audit events; SUPER_ADMIN gate; unknown id throws 404; the
+  branding endpoint exposes `verified=true/false`; re-verification
+  records a meta flag; **the regular `updateTenant` path cannot
+  self-promote** to verified.
 - `PasswordResetIntegrationTest`: assert reset URL has the
   `{slug}.<base-domain>` host shape and no `tenant=` query parameter.
 - Existing OIDC tests: still pass because OIDC paths stay on the apex

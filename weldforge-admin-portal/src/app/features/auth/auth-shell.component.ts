@@ -18,6 +18,11 @@ import { TenantBrandingService } from '../../core/services/tenant-branding.servi
   template: `
     <div class="wf-login-shell">
       <div class="wf-login-card">
+        <div class="wf-unverified-banner" *ngIf="showUnverifiedBanner()" role="alert">
+          <strong>Unverified tenant.</strong>
+          Confirm the URL <code>{{ host() }}</code> matches the site you
+          expected before entering credentials.
+        </div>
         <div class="wf-login-header">
           <img *ngIf="logoUrl() as logo" [src]="logo" [alt]="displayName()" height="44">
           <div class="wf-wordmark" *ngIf="!logoUrl()">{{ wordmark() }}</div>
@@ -99,6 +104,37 @@ import { TenantBrandingService } from '../../core/services/tenant-branding.servi
     :host-context(body.wf-light) .wf-login-card {
       box-shadow: 0 8px 30px rgba(17, 24, 39, 0.10);
     }
+    /* Identity-proofing warning — surfaced when the branding response
+       carries verified=false (or absent). Deliberately amber/warning-coloured
+       rather than tenant-themed so a malicious tenant can't tone it down
+       via its branding map. */
+    .wf-unverified-banner {
+      background: #5a3a08;
+      color: #fde3b1;
+      border: 1px solid #b87a16;
+      border-radius: 3px;
+      padding: 10px 14px;
+      margin-bottom: 18px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .wf-unverified-banner strong { color: #ffd58a; }
+    .wf-unverified-banner code {
+      background: rgba(0, 0, 0, 0.25);
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-family: var(--wf-mono, monospace);
+      font-size: 12px;
+    }
+    :host-context(body.wf-light) .wf-unverified-banner {
+      background: #fef3c7;
+      color: #78350f;
+      border-color: #f59e0b;
+    }
+    :host-context(body.wf-light) .wf-unverified-banner strong { color: #92400e; }
+    :host-context(body.wf-light) .wf-unverified-banner code {
+      background: rgba(0, 0, 0, 0.06);
+    }
   `]
 })
 export class AuthShellComponent implements OnInit {
@@ -120,6 +156,21 @@ export class AuthShellComponent implements OnInit {
     return v ?? (this.branding.current() ? null : '// secure access');
   });
   readonly hideFooter = computed(() => !!this.brandingValue<boolean>('hideFooter') || !!this.branding.current());
+
+  /**
+   * Show the "Unverified tenant" warning only when the branding response
+   * has loaded AND its verified flag is explicitly false. We deliberately
+   * suppress the banner on the unbranded apex (no tenant in scope) and
+   * while branding is still loading — the alternative would be to flash
+   * the warning on every page render, training users to dismiss it.
+   */
+  readonly showUnverifiedBanner = computed(() => {
+    const b = this.branding.current();
+    return !!b && b.verified === false;
+  });
+
+  readonly host = computed(() =>
+    typeof window !== 'undefined' && window.location ? window.location.host : '');
 
   constructor(public branding: TenantBrandingService, private route: ActivatedRoute) {}
 

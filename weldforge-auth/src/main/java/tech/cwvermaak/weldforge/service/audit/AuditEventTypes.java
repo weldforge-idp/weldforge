@@ -31,6 +31,8 @@ public final class AuditEventTypes {
     public static final String TENANT_CREATE          = "tenant.create";
     public static final String TENANT_UPDATE          = "tenant.update";
     public static final String TENANT_DELETE          = "tenant.delete";
+    public static final String TENANT_VERIFIED        = "tenant.verified";
+    public static final String TENANT_UNVERIFIED      = "tenant.unverified";
     public static final String TENANT_PROVISIONED_VIA_BILLING = "tenant.provisioned_via_billing";
 
     /** Cross-tenant admin access via the X-WF-Tenant selector (cross-tenant-admin-spec.md). */
