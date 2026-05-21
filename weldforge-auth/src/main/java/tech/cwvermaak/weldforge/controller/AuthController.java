@@ -21,6 +21,7 @@ import tech.cwvermaak.weldforge.service.EmailVerificationService;
 import tech.cwvermaak.weldforge.service.PasswordResetService;
 import tech.cwvermaak.weldforge.service.TenantSamlService;
 import tech.cwvermaak.weldforge.service.TenantService;
+import tech.cwvermaak.weldforge.service.TenantVerificationService;
 
 import java.util.HashMap;
 import java.util.List;
@@ -37,6 +38,7 @@ public class AuthController {
     private final UserRepository userRepository;
     private final TenantService tenantService;
     private final TenantSamlService tenantSamlService;
+    private final TenantVerificationService tenantVerificationService;
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponseDto> register(@RequestBody RegisterRequestDto request,
@@ -197,5 +199,127 @@ public class AuthController {
     @GetMapping("/tenants/{slug}/saml-providers")
     public ResponseEntity<List<SamlProviderDto>> tenantSamlProviders(@PathVariable String slug) {
         return ResponseEntity.ok(tenantSamlService.listEnabledForSlug(slug));
+    }
+
+    /**
+     * Click-through landing page for the emailed verification link.
+     * Renders a self-contained HTML page with a single "Confirm" button
+     * whose inline JS POSTs to {@link #verifyContact(String)}. The GET
+     * is deliberately non-destructive: email-prefetch and safe-link
+     * scanners can resolve the URL without consuming the token, leaving
+     * the actual flip behind an explicit user click.
+     *
+     * <p>Cache-Control: no-store keeps a corporate proxy from caching
+     * the token-bearing URL.</p>
+     */
+    @GetMapping(value = "/tenants/verify-contact-page",
+                produces = org.springframework.http.MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> verifyContactPage(@RequestParam("token") String token) {
+        String safeToken = htmlEscape(token);
+        String html = """
+            <!doctype html><html lang="en"><head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Verify tenant ownership — WeldForge</title>
+            <style>
+              body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+                     background: #0b1020; color: #e6ebf5;
+                     display: flex; align-items: center; justify-content: center;
+                     min-height: 100vh; margin: 0; }
+              .card { background: #141a30; border: 1px solid #2a3354;
+                      border-radius: 10px; padding: 32px 28px;
+                      max-width: 420px; box-shadow: 0 18px 48px rgba(0,0,0,.55); }
+              h1 { font-size: 20px; margin: 0 0 12px; }
+              p  { font-size: 14px; line-height: 1.5; color: #c8d0e0; margin: 0 0 18px; }
+              button { background: #4A8FF5; color: #fff; border: 0;
+                       padding: 12px 20px; border-radius: 6px;
+                       font: inherit; font-size: 14px; font-weight: 600;
+                       cursor: pointer; width: 100%; }
+              button:hover { background: #5e9eff; }
+              button:disabled { opacity: 0.5; cursor: progress; }
+              .msg { margin-top: 16px; font-size: 13px; }
+              .ok  { color: #6ad19c; }
+              .err { color: #ff8d8d; }
+              code { background: rgba(0,0,0,.25); padding: 1px 5px;
+                     border-radius: 3px; font-size: 12px; }
+            </style></head><body>
+            <div class="card">
+              <h1>Confirm tenant ownership</h1>
+              <p>Click below to confirm that you control the contact email for this WeldForge tenant.
+                 This link can be used once and expires after 48 hours.</p>
+              <button id="go" type="button">Confirm verification</button>
+              <div class="msg" id="msg"></div>
+            </div>
+            <script>
+              const token = %s;
+              const btn = document.getElementById('go');
+              const msg = document.getElementById('msg');
+              btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                msg.textContent = '';
+                msg.className = 'msg';
+                try {
+                  const r = await fetch('/api/auth/tenants/verify-contact?token=' + encodeURIComponent(token), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}'
+                  });
+                  const data = await r.json();
+                  if (r.ok) {
+                    msg.textContent = 'Verified — ' + (data.displayName || data.slug) + ' is now marked verified.';
+                    msg.className = 'msg ok';
+                    btn.style.display = 'none';
+                  } else {
+                    msg.textContent = 'Could not verify: ' + (data.message || 'invalid or expired token');
+                    msg.className = 'msg err';
+                    btn.disabled = false;
+                  }
+                } catch (e) {
+                  msg.textContent = 'Network error — retry?';
+                  msg.className = 'msg err';
+                  btn.disabled = false;
+                }
+              });
+            </script>
+            </body></html>
+            """.formatted("\"" + safeToken + "\"");
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-store")
+                .header("X-Robots-Tag", "noindex, nofollow")
+                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE,
+                        "text/html; charset=UTF-8")
+                .body(html);
+    }
+
+    private static String htmlEscape(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&#39;");
+    }
+
+    /**
+     * Consume an emailed tenant-verification token. Unauthenticated by
+     * design: whoever can read the contact_email inbox holds the
+     * proof. On success the tenant's verified bit flips and the
+     * response carries the slug + display name so the SPA can render a
+     * success page. See docs/auth-url-spec.md §"Tenant identity-proofing".
+     */
+    @PostMapping("/tenants/verify-contact")
+    public ResponseEntity<?> verifyContact(@RequestParam("token") String token) {
+        try {
+            TenantVerificationService.VerificationResult result =
+                    tenantVerificationService.consumeToken(token);
+            return ResponseEntity.ok(Map.of(
+                    "slug",        result.slug(),
+                    "displayName", result.displayName(),
+                    "verified",    true));
+        } catch (IllegalArgumentException e) {
+            // Same vague error for unknown / expired / used — never tell
+            // the caller WHY the token failed, otherwise it becomes an
+            // oracle for token-state probing.
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error",   "invalid_or_expired_token",
+                    "message", e.getMessage()));
+        }
     }
 }
