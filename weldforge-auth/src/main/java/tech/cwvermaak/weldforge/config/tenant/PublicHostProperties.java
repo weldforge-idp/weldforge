@@ -30,6 +30,15 @@ public class PublicHostProperties {
     private String scheme = "https";
 
     /**
+     * Days a deleted tenant's slug stays on holdback before it can be
+     * reused by a new tenant. Defends against identity-confusion
+     * attacks where a stolen pre-deletion session lines up with a
+     * freshly-issued post-recreation token on the same subdomain.
+     * Set to 0 to disable the holdback (testing only — not safe in prod).
+     */
+    private int slugHoldbackDays = 90;
+
+    /**
      * Subdomain labels that may never be used as a tenant slug. Two reasons:
      *
      * <ol>
@@ -71,6 +80,11 @@ public class PublicHostProperties {
     public String getScheme() { return scheme; }
     public void setScheme(String scheme) {
         this.scheme = scheme == null ? "https" : scheme.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public int getSlugHoldbackDays() { return slugHoldbackDays; }
+    public void setSlugHoldbackDays(int slugHoldbackDays) {
+        this.slugHoldbackDays = Math.max(slugHoldbackDays, 0);
     }
 
     public List<String> getReservedLabels() { return reservedLabels; }

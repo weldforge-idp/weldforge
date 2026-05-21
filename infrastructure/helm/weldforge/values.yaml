@@ -41,6 +41,9 @@ api:
     APP_PUBLIC_BASE_DOMAIN: "sso.weldforge.org"
     APP_PUBLIC_SCHEME:      "https"
     APP_PUBLIC_RESERVED_LABELS: "www,api,admin,app,mail,static"
+    # Days a deleted tenant's slug stays unavailable for reuse — closes the
+    # identity-confusion window after a tenant delete. See docs/auth-url-spec.md.
+    APP_PUBLIC_SLUG_HOLDBACK_DAYS: "90"
   secrets:
     SPRING_DATASOURCE_PASSWORD: "changeme-cloud-sql-password"
     JWT_SECRET: "changeme-generate-a-256-bit-secret-key-here"

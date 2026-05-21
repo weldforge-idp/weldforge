@@ -112,6 +112,7 @@ public class TenantBrandingSteps {
         service = new TenantService(tenantAccessor, tenantRepository, providerRepository,
                                     userRepository,
                                     mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
+                                    mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class),
                                     auditService, publicHost);
     }
 

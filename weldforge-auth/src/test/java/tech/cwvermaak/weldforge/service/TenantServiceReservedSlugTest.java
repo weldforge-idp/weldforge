@@ -8,6 +8,7 @@ import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.dto.TenantDto;
 import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
+import tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository;
 import tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
@@ -33,12 +34,13 @@ class TenantServiceReservedSlugTest {
     private final TenantSocialProviderRepository socialRepo = mock(TenantSocialProviderRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
+    private final TenantSlugHoldbackRepository slugHoldbackRepository = mock(TenantSlugHoldbackRepository.class);
     private final AuditService auditService = mock(AuditService.class);
     private final PublicHostProperties publicHost = publicHost();
 
     private final TenantService service = new TenantService(
             accessor, tenantRepository, socialRepo, userRepository,
-            refreshTokenRepository, auditService, publicHost);
+            refreshTokenRepository, slugHoldbackRepository, auditService, publicHost);
 
     @Test
     @DisplayName("Reserved slug 'oauth' is refused at creation")

@@ -14,8 +14,10 @@ import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.model.dto.SocialProviderDto;
 import tech.cwvermaak.weldforge.model.dto.TenantBrandingDto;
 import tech.cwvermaak.weldforge.model.dto.TenantDto;
+import tech.cwvermaak.weldforge.model.TenantSlugHoldback;
 import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
+import tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository;
 import tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 
@@ -54,6 +56,7 @@ public class TenantService {
     private final TenantSocialProviderRepository providerRepository;
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final TenantSlugHoldbackRepository slugHoldbackRepository;
     private final AuditService auditService;
     private final PublicHostProperties publicHost;
 
@@ -153,12 +156,24 @@ public class TenantService {
         int refreshRevoked = refreshTokenRepository.revokeAllForTenant(
                 id, LocalDateTime.now(), "tenant_deleted");
 
+        // Record the release so {@code requireSlug} can refuse the slug
+        // during the holdback window. The actor user-id is left null when
+        // an audit context isn't pinned to a user (machine-driven deletes).
+        User actor = currentActor();
+        slugHoldbackRepository.save(TenantSlugHoldback.builder()
+                .slug(t.getSlug())
+                .releasedAt(LocalDateTime.now())
+                .releasedReason("tenant_deleted")
+                .releasedByUserId(actor != null ? actor.getId() : null)
+                .build());
+
         tenantRepository.delete(t);
-        auditService.recordAdmin(AuditEventTypes.TENANT_DELETE, currentActor(),
+        auditService.recordAdmin(AuditEventTypes.TENANT_DELETE, actor,
                 AuditEventTypes.TARGET_TENANT, String.valueOf(id),
                 AuditService.meta("slug", t.getSlug(),
                         "users_invalidated", versionsBumped,
-                        "refresh_tokens_revoked", refreshRevoked));
+                        "refresh_tokens_revoked", refreshRevoked,
+                        "holdback_days", publicHost.getSlugHoldbackDays()));
     }
 
     // ---- Social provider CRUD ----------------------------------------
@@ -344,6 +359,25 @@ public class TenantService {
                 && publicHost.getReservedLabels().contains(normalised)) {
             throw new IllegalArgumentException(
                 "slug '" + normalised + "' is reserved — pick a different one");
+        }
+        // Slug holdback: a recently-deleted tenant's slug cannot be reclaimed
+        // for {wf.public.slug-holdback-days} days. Defends against an
+        // identity-confusion attack where a stolen pre-deletion session
+        // would silently authenticate against a freshly-recreated tenant
+        // on the same {slug}.{base-domain} subdomain — even after the
+        // delete-time token_version bump, since a future tenant's users
+        // would issue fresh JWTs but the SUBDOMAIN URL itself is the same.
+        int holdbackDays = publicHost.getSlugHoldbackDays();
+        if (holdbackDays > 0) {
+            slugHoldbackRepository.findFirstBySlugOrderByReleasedAtDesc(normalised)
+                    .ifPresent(h -> {
+                        LocalDateTime expiresAt = h.getReleasedAt().plusDays(holdbackDays);
+                        if (expiresAt.isAfter(LocalDateTime.now())) {
+                            throw new IllegalArgumentException(
+                                "slug '" + normalised + "' was recently released and "
+                              + "is on holdback until " + expiresAt + " — pick a different one");
+                        }
+                    });
         }
         return normalised;
     }

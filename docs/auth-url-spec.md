@@ -136,12 +136,48 @@ before the row goes away:
 3. Hard-delete the `tenants` row.
 
 Without step 1, a stolen-pre-deletion JWT would silently keep working
-as a stale identity if the slug were ever reused. The slug reuse risk
-itself is not closed by this change — a deleted slug returns to the
-pool and a future tenant can claim it. Operators should consider a
-holdback window before reusing high-value slugs. A formal
-`tenants.deleted_at` + reuse-holdback policy is tracked as a separate
-follow-up (V34 migration).
+as a stale identity if the slug were ever reused. Step 4 closes the
+slug-reuse side of the same risk — see "Slug-reuse holdback" below.
+
+## Slug-reuse holdback
+
+When a tenant is deleted, its slug is written to the
+`tenant_slug_holdback` table (V37 migration) with the release timestamp.
+`TenantService.requireSlug` refuses any slug whose most recent release
+sits within `wf.public.slug-holdback-days` (default **90 days**) — the
+window in which a stolen pre-deletion session could plausibly still be
+in someone's password manager or browser cache and confuse the user.
+
+Operational notes:
+
+- The same slug may appear in the holdback table multiple times over
+  its lifetime — each delete writes a fresh row. `requireSlug` looks
+  only at the most recent release, so the slug becomes reusable when
+  *that* release ages past the window.
+- `wf.public.slug-holdback-days = 0` disables the check. Acceptable
+  for ephemeral test deployments; not safe in production.
+- The holdback rows live forever by design — they double as a delete
+  audit trail. A future cleanup job can purge entries older than,
+  say, 2× the window.
+- The `released_by_user_id` FK is `ON DELETE SET NULL` so removing an
+  admin doesn't break the holdback ledger.
+
+## Cookies — defence-in-depth
+
+The four mitigations covered above (JWT binding, JWT `iss`,
+`SameSite=Lax`+JSON-only, reserved-slug allowlist) leave one residual
+concern: a developer adding a new `/api/auth/*` mutating endpoint
+might forget the JSON-only invariant and write a form-encoded
+handler. A form-encoded POST does not trigger a CORS preflight, so a
+hostile sibling subdomain (which shares the base-domain cookie) could
+fire one as a classic CSRF. To convert the implicit invariant into a
+hard check, `AuthJsonContentTypeFilter` returns **415 Unsupported
+Media Type** for any `/api/auth/**` mutating request whose body is
+not `application/json` (or one of its `+json` variants). The hosted
+`/login/**` HTML auth-form path is deliberately not covered — it
+accepts form encoding because it's a normal &lt;form&gt; element,
+and an attacker forging a sign-in submits credentials they don't
+have.
 
 ## OIDC / SAML endpoints stay on the apex host
 
@@ -371,6 +407,15 @@ update:
 - `TenantServiceReservedSlugTest`: reserved labels (`oauth`, `login`,
   `api`, `ADMIN`) are refused at slug-creation time, regardless of
   case.
+- `TenantServiceSlugHoldbackTest`: a slug released within the
+  configured window is refused; an expired release is reusable;
+  `slug-holdback-days=0` disables the check; never-released slugs
+  pass.
+- `AuthJsonContentTypeFilterTest`: `/api/auth/**` mutating endpoints
+  accept `application/json` (with or without charset parameter) and
+  refuse form-encoded, multipart, text/plain, and missing
+  Content-Type with a body. GET is unrestricted. `/login/**`
+  HTML-form path is unaffected.
 - `PasswordResetIntegrationTest`: assert reset URL has the
   `{slug}.<base-domain>` host shape and no `tenant=` query parameter.
 - Existing OIDC tests: still pass because OIDC paths stay on the apex

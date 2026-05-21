@@ -164,6 +164,7 @@ public class EpicDRbacSteps {
         publicHost.setScheme("https");
         tenantService = new TenantService(tenantAccessor, tenantRepository, socialRepo, userRepository,
                 mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
+                mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class),
                 auditService, publicHost);
         adminService = new AdminService(tenantAccessor, roleRepository, userRepository,
                 envRepo, appClientRepo, mfaService, auditService,
