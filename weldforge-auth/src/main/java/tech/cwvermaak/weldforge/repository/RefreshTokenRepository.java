@@ -42,4 +42,20 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
     int revokeAllForUser(@Param("userId") Long userId,
                          @Param("now")    LocalDateTime now,
                          @Param("reason") String reason);
+
+    /**
+     * Revoke every live refresh token belonging to a tenant — paired with
+     * {@code UserRepository.bumpTokenVersionForTenant} during tenant
+     * deletion so no stolen-but-not-yet-rotated refresh token can survive
+     * the tenant going away.
+     */
+    @Modifying
+    @Query("""
+        update RefreshToken r
+        set r.revokedAt = :now, r.revokedReason = :reason
+        where r.tenant.id = :tenantId and r.revokedAt is null
+        """)
+    int revokeAllForTenant(@Param("tenantId") Long tenantId,
+                           @Param("now")      LocalDateTime now,
+                           @Param("reason")   String reason);
 }

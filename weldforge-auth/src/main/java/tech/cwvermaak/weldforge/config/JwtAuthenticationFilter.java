@@ -33,6 +33,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
+    private final TenantResolverFilter tenantResolver;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -110,6 +111,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         } else {
             // Back-compat: older tokens without the adm claim use the legacy sa bool.
             adminRole = sa ? AdminRole.SUPER_ADMIN : AdminRole.NONE;
+        }
+
+        // Cross-tenant cookie safety. The wf_session cookie is scoped to the
+        // public base domain so it survives the per-tenant-subdomain →
+        // apex-OIDC-consent bounce. The browser will therefore send a tenant
+        // A session cookie to tenant B's subdomain. Without this check, the
+        // user would be silently authenticated as their home tenant against
+        // tenant B's UI / API — every per-tenant isolation guarantee in
+        // SECURITY_AUDIT_2026-04-15 would collapse.
+        //
+        // The implicit tenant (Host subdomain or /t/{slug}/ path prefix) is
+        // the request's *target* — distinct from the X-Tenant-Slug header,
+        // which is the explicit cross-tenant channel reserved for super-
+        // admins. We refuse to authenticate the JWT when its tenant_id
+        // doesn't match the implicit target. Super-admins are exempt — they
+        // legitimately cross tenant boundaries via the picker.
+        if (slug != null && !slug.isBlank() && !sa) {
+            String implicit = tenantResolver.implicitTenantSlug(request);
+            if (implicit != null && !implicit.equalsIgnoreCase(slug)) {
+                log.warn("jwt_tenant_mismatch jwt_tenant={} request_tenant={} path={} host={}",
+                        slug, implicit, request.getRequestURI(), request.getServerName());
+                filterChain.doFilter(request, response);
+                return;
+            }
         }
 
         if (slug != null && !slug.isBlank()) {

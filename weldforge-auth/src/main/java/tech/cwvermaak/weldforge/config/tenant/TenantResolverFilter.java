@@ -41,9 +41,38 @@ public class TenantResolverFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Tenant-Slug";
     public static final String DEFAULT_TENANT = "default";
 
-    private static final Pattern PATH_PREFIX = Pattern.compile("^/t/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])(/|$)");
+    /**
+     * {@code /t/{slug}/...} path-prefix matcher. Exposed package-public so
+     * downstream filters ({@code JwtAuthenticationFilter}) can compute the
+     * same "implicit tenant" (host or path) they need to enforce against
+     * the JWT's {@code tenant_id} claim — see {@code docs/auth-url-spec.md}
+     * §"Cross-tenant cookie safety".
+     */
+    public static final Pattern PATH_PREFIX =
+            Pattern.compile("^/t/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])(/|$)");
 
     private final PublicHostProperties publicHost;
+
+    /**
+     * Recompute the request's implicit tenant — the slug derived from the
+     * Host header subdomain or the {@code /t/{slug}/...} path prefix, but
+     * NOT from the {@code X-Tenant-Slug} header. The header is the explicit
+     * cross-tenant channel reserved for super-admin and machine clients;
+     * callers that want to enforce per-request tenant binding should compare
+     * the JWT's {@code tenant_id} against this implicit value, not against
+     * the resolver's final pick.
+     *
+     * <p>Returns {@code null} when neither host nor path identifies a
+     * tenant (the apex domain, single-host dev setups, non-tenant paths).</p>
+     */
+    public String implicitTenantSlug(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        if (path != null) {
+            Matcher m = PATH_PREFIX.matcher(path);
+            if (m.find()) return m.group(1);
+        }
+        return publicHost.slugFromHost(request.getServerName());
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -62,18 +91,11 @@ public class TenantResolverFilter extends OncePerRequestFilter {
         String header = request.getHeader(HEADER);
         if (header != null && !header.isBlank()) return header.trim().toLowerCase();
 
-        String path = request.getRequestURI();
-        if (path != null) {
-            Matcher m = PATH_PREFIX.matcher(path);
-            if (m.find()) return m.group(1);
-        }
-
         // server.forward-headers-strategy=native makes getServerName() reflect
         // X-Forwarded-Host, so this works behind the GCP load balancer as well
         // as a direct request to the backend in dev.
-        String host = request.getServerName();
-        String fromHost = publicHost.slugFromHost(host);
-        if (fromHost != null) return fromHost;
+        String implicit = implicitTenantSlug(request);
+        if (implicit != null) return implicit;
 
         return DEFAULT_TENANT;
     }

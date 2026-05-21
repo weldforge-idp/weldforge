@@ -7,11 +7,13 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.test.util.ReflectionTestUtils;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantAccessor;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.model.dto.TenantDto;
+import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
@@ -44,6 +46,7 @@ public class EpicBStep1Steps {
     private TenantRepository tenantRepository;
     private UserRepository userRepository;
     private TenantSocialProviderRepository socialRepo;
+    private RefreshTokenRepository refreshTokenRepository;
     private AuditService auditService;
 
     // Services under test
@@ -61,6 +64,13 @@ public class EpicBStep1Steps {
         this.world = world;
     }
 
+    private static PublicHostProperties publicHostProperties() {
+        PublicHostProperties p = new PublicHostProperties();
+        p.setBaseDomain("sso.weldforge.org");
+        p.setScheme("https");
+        return p;
+    }
+
     private void ensureWired() {
         if (tenantService != null) return;
 
@@ -68,6 +78,7 @@ public class EpicBStep1Steps {
         tenantRepository = mock(TenantRepository.class);
         userRepository = mock(UserRepository.class);
         socialRepo = mock(TenantSocialProviderRepository.class);
+        refreshTokenRepository = mock(RefreshTokenRepository.class);
         auditService = mock(AuditService.class);
 
         // Super admin for all tenant mutations in these tests.
@@ -93,7 +104,7 @@ public class EpicBStep1Steps {
         });
 
         tenantService = new TenantService(tenantAccessor, tenantRepository,
-                socialRepo, userRepository, auditService);
+                socialRepo, userRepository, refreshTokenRepository, auditService, publicHostProperties());
 
         jwtService = new JwtService();
         ReflectionTestUtils.setField(jwtService, "secret", jwtSecret);
