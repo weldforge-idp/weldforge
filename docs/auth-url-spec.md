@@ -311,20 +311,51 @@ inside the banner is which host string is shown (which is
 The `updateTenant` PUT path is gated to NOT modify `verifiedAt` — a
 regular tenant admin can't self-promote by PUTting their own row.
 
-### V2 roadmap (not in this release)
+### V2a — email-based verification challenge
 
-- **Email-based verification challenge.** Send a token to
-  `contact_email` at create time (or when the operator requests
-  verification). Auto-flip `verifiedAt` on click. Probably gated on
-  the `contact_email` being on the same DNS domain as the tenant's
-  registered OIDC client `webOrigins`, to defeat the "I'll use a
-  free gmail" cheat.
-- **Watchword auto-flagging.** Slugs containing brand-sensitive
+`TenantVerificationService` (V39 migration) issues a one-time token
+to the tenant's `contact_email` and flips `verified_at` only when
+the recipient clicks through. This proves *email control*: a
+super-admin no longer has to take the requester's word for it.
+
+- **`POST /api/admin/tenants/{id}/request-verification`** — TENANT_ADMIN
+  of the target tenant (SUPER_ADMIN for any). Mints a random 32-byte
+  token, stores SHA-256(token), mails the raw token (as a clickable
+  URL) to `contact_email`. Pending tokens for the same tenant are
+  invalidated atomically before the new one is issued — at most
+  one live token per tenant at any time.
+- **Email link** points at
+  `https://<base-domain>/api/auth/tenants/verify-contact-page?token=…`
+  — a self-rendered HTML page with a single **Confirm** button. The
+  button uses inline `fetch()` to POST `/api/auth/tenants/verify-contact`.
+  The GET is deliberately non-destructive so email-prefetch and
+  safe-link scanners can resolve the URL without consuming the
+  token; the flip happens only on explicit user click.
+- **`POST /api/auth/tenants/verify-contact?token=…`** — unauthenticated
+  (the token bearer is the proof). Validates expiry + not-used,
+  flips `verified_at`, marks the token used. Returns JSON with
+  `slug` + `displayName`. Failure modes (unknown / expired / used)
+  return the same vague error so the endpoint can't be used as a
+  token-state oracle.
+- **Token TTL**: 48 hours. Tokens are single-use.
+- **Audit**: `tenant.verification.requested` on issuance,
+  `tenant.verified` with `channel: email_challenge` on consumption.
+  The consumption event has `actor=null` because the click-through is
+  anonymous — the audit trail honestly reflects that the bit was
+  flipped by "someone with the email" rather than by a known admin.
+
+### V2 roadmap — still ahead
+
+- **V2b: Domain gating.** Refuse to auto-issue the email challenge
+  when the `contact_email` domain doesn't match one of the tenant's
+  registered OIDC `webOrigins`. Free-gmail contacts fall through to
+  a SUPER_ADMIN review queue.
+- **V2c: Watchword auto-flagging.** Slugs containing brand-sensitive
   substrings (`bank`, `pay`, `secure`, `official`, …) auto-queue
   for human review instead of going live.
-- **Verified-tenant logo badge.** A positive signal next to the
-  tenant's display name in the auth-shell — same idea, opposite
-  polarity.
+- **V2d: Verified-tenant logo badge.** A positive visual signal next
+  to the tenant's display name in the auth-shell — same idea as
+  the V1 warning banner, opposite polarity.
 
 ## Cross-tenant trust model
 
@@ -479,6 +510,13 @@ update:
   branding endpoint exposes `verified=true/false`; re-verification
   records a meta flag; **the regular `updateTenant` path cannot
   self-promote** to verified.
+- `TenantVerificationServiceTest`: V2a email-challenge flow —
+  requestVerification mints + emails + invalidates pending tokens +
+  audits; rejects when contact_email is unset, when caller isn't
+  TENANT_ADMIN, and on unknown tenant id; consumeToken flips
+  `verified_at`, marks the row used, audits with
+  `channel: email_challenge`; rejects unknown / expired / used /
+  blank tokens with the same generic message (no token-state oracle).
 - `PasswordResetIntegrationTest`: assert reset URL has the
   `{slug}.<base-domain>` host shape and no `tenant=` query parameter.
 - Existing OIDC tests: still pass because OIDC paths stay on the apex

@@ -35,6 +35,7 @@ import java.util.Map;
 public class TenantController {
 
     private final TenantService tenantService;
+    private final tech.cwvermaak.weldforge.service.TenantVerificationService tenantVerificationService;
     private final TenantSamlService tenantSamlService;
     private final TenantTwilioService tenantTwilioService;
     private final TenantMfaPolicyService tenantMfaPolicyService;
@@ -84,6 +85,20 @@ public class TenantController {
     @PostMapping("/{id}/unverify")
     public ResponseEntity<TenantDto> unverify(@PathVariable Long id) {
         return ResponseEntity.ok(tenantService.unverifyTenant(id));
+    }
+
+    /**
+     * Issue an email-based verification challenge for the tenant.
+     * TENANT_ADMIN of the target tenant (SUPER_ADMIN for any tenant).
+     * The token is sent to the tenant's contact_email; whoever can
+     * read that inbox completes the proof by clicking the link, at
+     * which point `verified_at` is flipped. See
+     * docs/auth-url-spec.md §"Tenant identity-proofing".
+     */
+    @PostMapping("/{id}/request-verification")
+    public ResponseEntity<Void> requestVerification(@PathVariable Long id) {
+        tenantVerificationService.requestVerification(id);
+        return ResponseEntity.accepted().build();
     }
 
     // -- Social providers ---------------------------------------------
