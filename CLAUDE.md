@@ -133,13 +133,36 @@ null/undefined on first paint.
 
 ## Operational deadlines
 
-### SendGrid free trial ends 2026-07-16
-`weldforge-auth` sends transactional email (password reset, email verification)
-via SendGrid SMTP. The SendGrid account is on a **free trial that ends
-2026-07-16** — downgrade to the permanent Free plan in the SendGrid dashboard
-before then. If the trial lapses, delivery stops with **no visible error** in the
-app (`SmtpMailService` logs a delivery failure but the triggering security
-operation still succeeds), so account recovery silently breaks for every tenant.
+### SendGrid trial perks expire 2026-07-16 — verify, don't downgrade
+`weldforge-auth` sends transactional email (password reset, email verification,
+tenant identity-proofing challenges from PR #37) via SendGrid SMTP. The API key
+lives in GCP Secret Manager as `wf-sendgrid-api-key`.
+
+**Plan state confirmed 2026-05-22 by the account owner.** The SendGrid dashboard
+shows **Free** as "Your Current Plan" — the 2026-07-16 date is when SendGrid's
+*trial-tier perks* on top of Free expire (extended activity history, etc.), not
+a hard plan cliff. After that date the account stays on Free at the standard
+100/day limit. **There is no "Downgrade to Free" button to click; the account
+is already there.**
+
+**How to apply:**
+- Don't try to "downgrade" the account — there's nothing in the SendGrid UI to
+  do.
+- Hold a calendar reminder for **2026-07-14** (48h before the trial-perks
+  expire) to run a smoke test: `curl -X POST https://sso.weldforge.org/api/auth/forgot-password`
+  for a throwaway test account, confirm Activity Feed in SendGrid shows
+  "Delivered". This catches the case where SendGrid's behaviour around trial
+  expiry surprises us.
+- If delivery breaks anyway, fail-safe is a support ticket — the Free tier
+  includes Ticket Support (per the dashboard's own plan-feature listing).
+- The 100/day cap is comfortably above current send volume (single-digit
+  emails per day across all tenants), so the cap itself isn't a concern.
+
+**Why this matters even on the benign reading.** `SmtpMailService` logs a
+delivery failure but the triggering security operation (password reset, email
+verification) still returns success — so if delivery DOES silently break for
+any reason (not just plan changes), account recovery breaks for every tenant
+without a user-visible signal. The 2026-07-14 smoke test is cheap insurance.
 
 ---
 
