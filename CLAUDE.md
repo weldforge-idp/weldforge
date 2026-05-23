@@ -246,6 +246,34 @@ reserved for OIDC/SAML deep-link endpoints and stays on the apex host.
 Adopters expect the auth forms to feel native to their site — don't leave
 readers to discover this.
 
+### Verify operator-asserted infra state before acting on it
+When the user answers a yes/no AskUserQuestion about **external infra
+state** ("DNS is live", "the cert is provisioned", "the secret is
+set") that can be verified independently in seconds with `host` /
+`dig` / `openssl` / `curl` / `kubectl` / `gcloud`, **run the
+verification before merging anything that depends on the answer** —
+even when the user says yes. The user genuinely believes they're
+answering truthfully but humans confuse "I'm about to do this" with
+"I've already done this", check the wrong staging-vs-prod scope, or
+remember a different account.
+
+**Why:** on 2026-05-20, before merging #32 (per-tenant subdomain
+auth URLs), I asked: *"Are the wildcard DNS A-record + wildcard TLS
+cert live in production?"* User selected **"Yes, proceed"**. Five PRs
+later, smoke-test on 2026-05-21 found `host demo.sso.weldforge.org`
+returns NXDOMAIN and the apex cert SAN is `sso.weldforge.org` only.
+Neither piece of infra was live. No regression (legacy URLs still
+worked via apex fallback) but the new URL shape was non-functional
+in prod. A 5-second `host` + `openssl s_client` would have caught it.
+
+**How to apply:** for any user yes/no answer about external state
+verifiable with a one-liner, just run the one-liner. Don't ask the
+user to verify; do it inline. Applies to DNS resolution, TLS cert
+SANs, k8s resource presence, GCP resource state, secret-manager
+existence, ingress IPs, etc. The exception is attestations that
+can't be verified externally (e.g. "I told the team", "the customer
+agreed") — there the user's word is the source of truth.
+
 ---
 
 ## Keeping this portable memory in sync

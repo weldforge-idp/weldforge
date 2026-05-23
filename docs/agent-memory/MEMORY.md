@@ -8,5 +8,6 @@
 - [Deployment pipeline](deployment_pipeline.md) — GitHub Actions, not TeamCity; TEAMCITY.md / deploy.sh comments are stale
 - [Tenant-nesting WIP](tenant_nesting_wip.md) — feat/admin-rest-tenant-nesting@1ff7451 — 5 TS2554 errors in service-accounts.component.ts, thread tenantId via TenantPickerService.outgoingTenantId()
 - [Angular zoneless pitfalls](feedback_angular_zoneless_pitfalls.md) — computed() over a non-signal field freezes; template `!` on lazy-init objects throws at runtime and truncates CD
+- [Verify operator-asserted infra state](feedback_verify_operator_infra_assertions.md) — when the user says "DNS is live" / "cert is provisioned" / "secret is set", run the one-liner check before merging; we got burned by it on 2026-05-20
 - [SendGrid trial deadline](sendgrid_trial_deadline.md) — free trial ends 2026-07-16; downgrade to the free plan before then or transactional email silently stops
 - [Portable memory snapshot](portable_memory_snapshot.md) — memory mirrored to repo docs/agent-memory/ + CLAUDE.md so it survives copy/clone; keep both in sync
