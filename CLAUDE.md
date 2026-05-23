@@ -169,6 +169,57 @@ null/undefined on first paint.
 
 ---
 
+## Open work as of 2026-05-23 (for session resumption)  *(project)*
+
+> Project memory decays — re-verify with the listed commands before
+> acting. This snapshot was taken at the end of the per-tenant-auth-URL
+> + security-hardening + portability session.
+
+### Production state at snapshot time
+- **Per-tenant subdomain auth URLs** (the `*.sso.weldforge.org` shape from
+  `docs/auth-url-spec.md`): **shipped to code but unreachable in prod**.
+  `host demo.sso.weldforge.org` returns NXDOMAIN; apex TLS cert SAN is
+  `DNS:sso.weldforge.org` only. No regression — apex still serves login
+  via the `default` tenant fallback. The visible loss is per-tenant
+  branding on bookmarked legacy URLs.
+- **JWT tenant-binding, iss, slug holdback, 415 Content-Type guard,
+  noindex, tenant verify/unverify, V2a email verification challenge**:
+  all live in prod. Verify: `curl -X POST -H 'Content-Type: application/x-www-form-urlencoded' -d 'a=b' https://sso.weldforge.org/api/auth/login` → **HTTP 415**.
+
+### Open agenda
+1. **Wildcard DNS + TLS** — `*.sso.weldforge.org` A-record + Google
+   Certificate Manager wildcard cert. **Pending user**; needs gcloud +
+   DNS Admin on `weldforge.org`. Runbook:
+   `docs/runbooks/wildcard-tls-setup.md`.
+2. **TechMetropolis + WriteBuddy heads-up** — partners not yet notified
+   of URL-contract change. **Held** until subdomain URLs resolve (sending
+   now would point them at NXDOMAIN). Regenerate drafts from
+   `docs/auth-url-spec.md` when ready.
+3. **Identity-proofing V2b** — domain gate (`contact_email` domain ⊆
+   tenant's OIDC `webOrigins`). Designed in spec, not built.
+4. **Identity-proofing V2c** — watchword auto-flag for phishing-prone
+   slugs (`bank`, `pay`, `secure`, …). Designed in spec, not built.
+5. **Identity-proofing V2d** — positive verified-tenant logo badge.
+   Designed in spec, not built.
+6. **Prometheus alert on `sso.mail.send` failure counter** — orthogonal
+   observability gap from #38: silent SMTP breaks return success to the
+   caller. Not built.
+7. **SendGrid smoke test on 2026-07-14** — 48h before trial perks expire.
+   `curl /api/auth/forgot-password` + check SendGrid Activity Feed.
+8. **`origin/dev` sync** — 61 commits behind main (2026-05-23). Confirm
+   with user before pushing.
+
+### Things explicitly NOT to do on resume
+- **Don't re-send TechMetropolis / WriteBuddy heads-up from cached form.**
+  Regenerate from the live `docs/auth-url-spec.md` — the spec has evolved
+  since the original drafts.
+- **Don't run the wildcard-TLS runbook on the user's behalf.** Needs
+  their gcloud + DNS Admin scope; walk them through it if asked.
+- **Don't `git push origin main:dev`** without explicit user
+  confirmation — `dev` may be intentionally pinned.
+
+---
+
 ## Operational deadlines
 
 ### SendGrid trial perks expire 2026-07-16 — verify, don't downgrade
