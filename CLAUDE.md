@@ -28,6 +28,35 @@ See `README.md` and `LAUNCH.md` for the full platform overview.
 
 ---
 
+## Tenant consumers — the Tech Metropolis trio  *(reference)*
+
+WeldForge serves several adopter tenants; the most active is
+`techmetropolis`. **All three Tech Metropolis customer-facing apps**
+share that one tenant for cross-app SSO. The relevant repos live
+elsewhere; cross-app architecture is at
+`christiaanwvermaak/tech-metropolis-docs`.
+
+| Tech Metropolis component | Repo | Talks to WeldForge how? |
+|---|---|---|
+| Safe Space backend | `christiaanwvermaak/safe_space_backend` | Legacy JSON proxy (`/api/auth/*` with `X-Tenant-Slug: techmetropolis`); HS512 token verification with shared HMAC. |
+| Krusty backend | `christiaanwvermaak/krusty-api` | Same pattern as Safe Space. |
+| Commons microservice | `christiaanwvermaak/tech-metropolis-commons-api` | Same — verifies tokens issued for the same tenant. |
+| WeldForge tenant | tenant slug **`techmetropolis`** (id 6) | |
+
+The platform-wide HMAC secret (`app.jwt.secret` here) is mirrored to
+each consumer's `WELDFORGE_JWT_SECRET` env via GCP Secret Manager
+`wf-jwt-secret`. Rotating it requires rotating every consumer at the
+same time, since they all verify with the same key.
+
+Known consumer-side bug worth knowing about (out of scope for
+weldforge-auth itself but planned): failed-login audit + lockout
+counter writes happen inside `AuthService.login`'s `@Transactional`;
+the `BadCredentialsException` rolls them back. Result: failed logins
+are not audited and account lockout never engages. `REQUIRES_NEW` on
+the audit/lockout writes when next touched here.
+
+---
+
 ## Infrastructure & production access  *(reference)*
 
 - **GitHub repo:** `weldforge-idp/weldforge` (private). Default branch `main`.
