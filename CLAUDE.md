@@ -138,15 +138,24 @@ at commit `1a321df`, **not merged to `main`**. Files: `PlatformSettings(+Dto,
 Repository, Service)`, `PlatformSettingsAdminController`, an early `MailService`,
 `V33__platform_settings.sql`, and `platform-settings.service.ts`. Before relying
 on any PlatformSettings class, check `git ls-tree HEAD -r | grep PlatformSettings`.
-Migration-number hazard: `feat/host-based-tenant-routing` also introduced a
-`V33__tenant_hosts.sql` — whichever lands on `main` first wins V33; the other
-must renumber.
+
+**Migration-version collision (UPDATED 2026-05-23).** The earlier note said V33
+was contested between this branch and `feat/host-based-tenant-routing`
+(`V33__tenant_hosts.sql`). Neither merged: a third unrelated change landed
+`V33__oidc_public_clients_and_origins.sql` on main, and main has since
+reached **V40** (`V40__add_leap_tenant.sql`). Both stale-V33 branches now
+need to renumber to the next free slot (V41 at time of writing) when revived.
+Run `ls weldforge-auth/src/main/resources/db/migration/ | tail -5` before
+merging either branch.
 
 ### origin/dev is behind main
-As of 2026-05-14, `origin/dev` had drifted well behind `origin/main` (~25
-commits). Fast-forward when ready: `git push origin main:dev` (main is strictly
-ahead; if branch protection blocks it, open a no-op PR). **Confirm with the user
-first** — the drift may be intentional.
+As of 2026-05-23, `origin/dev` is **61 commits behind `origin/main`** —
+the drift has compounded from 1 (2026-05-04) → 25 (2026-05-14) → 61
+(2026-05-23) as PRs kept landing on main. Re-check with
+`git rev-list --count origin/main ^origin/dev` before quoting the
+number. Fast-forward when ready: `git push origin main:dev` (main is
+strictly ahead; if branch protection blocks it, open a no-op PR).
+**Confirm with the user first** — the drift may be intentional.
 
 ### Admin REST tenant-nesting refactor — WIP
 Branch `feat/admin-rest-tenant-nesting` at `1ff7451` moves the admin REST surface

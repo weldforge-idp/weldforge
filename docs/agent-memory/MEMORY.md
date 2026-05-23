@@ -1,5 +1,6 @@
-- [PlatformSettings on its own branch](platform_settings_wip.md) — committed on feature/write-buddy-integration@1a321df, NOT on main; V33 slot collides with host-routing's V33__tenant_hosts.sql
-- [Dev sync pending](dev_branch_behind.md) — origin/dev now ~25 commits behind main; fast-forward command ready, awaiting user go-ahead
+- [Tech Metropolis tenant trio](tenant_tech_metropolis.md) — `techmetropolis` (id 6) is the most active tenant; Safe Space + Krusty + Commons all share it for cross-app SSO via a shared HS512 secret in `wf-jwt-secret`
+- [PlatformSettings on its own branch](platform_settings_wip.md) — committed on feature/write-buddy-integration@1a321df, NOT on main; V33 slot is now occupied by an unrelated migration so the branch must renumber on revival (main is at V40)
+- [Dev sync pending](dev_branch_behind.md) — origin/dev is 61 commits behind main (as of 2026-05-23) and growing; fast-forward command ready, awaiting user go-ahead
 - [GitHub auth account](github_account.md) — christiaanwvermaak is the right user for weldforge-idp/weldforge; gh credential helper flips between accounts
 - [Git push needs token-in-URL](feedback_git_push_token_in_url.md) — gh credential helper returns wrong account's token; use https://user:token@host form
 - [Repo + cluster reference](reference_infra.md) — weldforge-idp/weldforge, GKE cluster, kubectl context
