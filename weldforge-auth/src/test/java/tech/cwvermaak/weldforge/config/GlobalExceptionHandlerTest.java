@@ -8,7 +8,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.MultipartException;
+import tech.cwvermaak.weldforge.service.security.PasswordPolicyViolation;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,5 +71,35 @@ class GlobalExceptionHandlerTest {
         assertThat(resp.getBody()).containsEntry("error", "internal_error");
         assertThat(resp.getBody()).containsEntry("message", "An unexpected error occurred");
         assertThat(resp.getBody().get("message").toString()).doesNotContain("Something broke");
+    }
+
+    @Test
+    void missingRequestParameterReturns400() {
+        ResponseEntity<Map<String, Object>> resp = handler.handleMissingParam(
+                new MissingServletRequestParameterException("response_type", "String"), request);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getBody()).containsEntry("error", "missing_parameter");
+        assertThat(resp.getBody().get("message").toString()).contains("response_type");
+    }
+
+    @Test
+    void multipartParseFailureReturns400() {
+        ResponseEntity<Map<String, Object>> resp = handler.handleMultipart(
+                new MultipartException("Failed to parse multipart servlet request"), request);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getBody()).containsEntry("error", "malformed_request");
+    }
+
+    @Test
+    void passwordPolicyViolationReturns400WithReasons() {
+        List<String> reasons = List.of("at least 12 characters", "at least one digit");
+        ResponseEntity<Map<String, Object>> resp = handler.handlePasswordPolicy(
+                new PasswordPolicyViolation(reasons), request);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getBody()).containsEntry("error", "password_policy");
+        assertThat(resp.getBody().get("message").toString()).contains("at least 12 characters");
+        @SuppressWarnings("unchecked")
+        List<String> echoed = (List<String>) resp.getBody().get("reasons");
+        assertThat(echoed).containsExactlyElementsOf(reasons);
     }
 }
