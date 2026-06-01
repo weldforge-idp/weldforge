@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
-import tech.cwvermaak.weldforge.model.AuditEvent;
 import tech.cwvermaak.weldforge.model.AuthProvider;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
@@ -26,6 +25,7 @@ import tech.cwvermaak.weldforge.service.audit.AuditService;
 import tech.cwvermaak.weldforge.service.mfa.MfaService;
 import tech.cwvermaak.weldforge.service.security.AccountLockedException;
 import tech.cwvermaak.weldforge.service.security.AccountLockoutService;
+import tech.cwvermaak.weldforge.service.security.FailedLoginRecorder;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService.Issued;
@@ -54,6 +54,7 @@ public class AuthService {
     private final tech.cwvermaak.weldforge.service.ldap.LdapUpstreamService ldapUpstreamService;
     private final tech.cwvermaak.weldforge.service.crm.CrmProvisioningService crmProvisioningService;
     private final PublicHostProperties publicHost;
+    private final FailedLoginRecorder failedLoginRecorder;
 
     @Transactional
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
@@ -115,11 +116,7 @@ public class AuthService {
                 .orElse(null);
 
         if (user == null) {
-            meterRegistry.counter("sso.auth.login", "outcome", "failure", "tenant", tenant.getSlug()).increment();
-            auditService.recordAnonymous(AuditEventTypes.AUTH_LOGIN_FAILED,
-                    AuditEvent.Outcome.FAILURE, tenant.getId(),
-                    request.getIdentifier(), AuditEventTypes.TARGET_USER, null,
-                    AuditService.meta("reason", "unknown_user"));
+            failedLoginRecorder.unknownUser(tenant, request.getIdentifier());
             throw new BadCredentialsException("Invalid credentials");
         }
 
@@ -128,12 +125,7 @@ public class AuthService {
         // credentials" outward to avoid leaking which accounts have been
         // disabled, but the audit log carries the real reason.
         if (!user.isActive()) {
-            meterRegistry.counter("sso.auth.login", "outcome", "failure", "tenant", tenant.getSlug()).increment();
-            auditService.recordAnonymous(AuditEventTypes.AUTH_LOGIN_FAILED,
-                    AuditEvent.Outcome.FAILURE, tenant.getId(),
-                    request.getIdentifier(), AuditEventTypes.TARGET_USER,
-                    String.valueOf(user.getId()),
-                    AuditService.meta("reason", "user_inactive"));
+            failedLoginRecorder.inactiveUser(tenant, user, request.getIdentifier(), null);
             throw new BadCredentialsException("Invalid credentials");
         }
 
@@ -149,13 +141,7 @@ public class AuthService {
 
         if (user.getPassword() == null
                 || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            lockoutService.recordFailure(user);
-            meterRegistry.counter("sso.auth.login", "outcome", "failure", "tenant", tenant.getSlug()).increment();
-            auditService.recordAnonymous(AuditEventTypes.AUTH_LOGIN_FAILED,
-                    AuditEvent.Outcome.FAILURE, tenant.getId(),
-                    request.getIdentifier(), AuditEventTypes.TARGET_USER,
-                    String.valueOf(user.getId()),
-                    AuditService.meta("reason", "bad_password"));
+            failedLoginRecorder.badPassword(tenant, user, request.getIdentifier());
             throw new BadCredentialsException("Invalid credentials");
         }
 
@@ -209,12 +195,7 @@ public class AuthService {
                                                       HttpServletRequest httpRequest,
                                                       HttpServletResponse response) {
         if (!user.isActive()) {
-            meterRegistry.counter("sso.auth.login", "outcome", "failure", "tenant", tenant.getSlug()).increment();
-            auditService.recordAnonymous(AuditEventTypes.AUTH_LOGIN_FAILED,
-                    AuditEvent.Outcome.FAILURE, tenant.getId(),
-                    user.getEmail(), AuditEventTypes.TARGET_USER,
-                    String.valueOf(user.getId()),
-                    AuditService.meta("reason", "user_inactive", "source", "ldap"));
+            failedLoginRecorder.inactiveUser(tenant, user, user.getEmail(), "ldap");
             throw new BadCredentialsException("Invalid credentials");
         }
         try {
@@ -328,9 +309,7 @@ public class AuthService {
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
         if (user.getPassword() == null
                 || !passwordEncoder.matches(currentPassword, user.getPassword())) {
-            auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_CHANGE_FAILED, user,
-                    AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
-                    AuditService.meta("reason", "bad_current_password"));
+            failedLoginRecorder.badCurrentPassword(user);
             throw new BadCredentialsException("Current password is incorrect");
         }
         passwordPolicyService.validate(newPassword);

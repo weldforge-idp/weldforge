@@ -33,6 +33,7 @@ import tech.cwvermaak.weldforge.service.mail.MailService;
 import tech.cwvermaak.weldforge.service.ldap.LdapUpstreamService;
 import tech.cwvermaak.weldforge.service.mfa.MfaService;
 import tech.cwvermaak.weldforge.service.security.AccountLockoutService;
+import tech.cwvermaak.weldforge.service.security.FailedLoginRecorder;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 
@@ -140,7 +141,8 @@ public class TenantBrandingSteps {
                 new SimpleMeterRegistry(),
                 mock(LdapUpstreamService.class),
                 mock(CrmProvisioningService.class),
-                publicHost);
+                publicHost,
+                mock(FailedLoginRecorder.class));
 
         passwordResetService = new PasswordResetService(
                 userRepository,
