@@ -23,6 +23,10 @@ env:
   K8S_NAMESPACE: sso
   HELM_RELEASE: weldforge
   WIF_PROVIDER: projects/42633983307/locations/global/workloadIdentityPools/github-actions/providers/github-actions
+  # Opt JS actions into the Node.js 24 runtime ahead of GitHub's 2026-09-16
+  # forced removal of Node 20 (default flip is 2026-06-16). Surfaces any
+  # action-side incompatibilities in CI before they bite a production deploy.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   WIF_SA: gha-deployer@weldforge.iam.gserviceaccount.com
 
 jobs:

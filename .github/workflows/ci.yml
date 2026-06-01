@@ -15,6 +15,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Opt JS actions into the Node.js 24 runtime ahead of GitHub's 2026-09-16
+  # forced removal of Node 20 (default flip is 2026-06-16). Surfaces any
+  # action-side incompatibilities in CI before they bite a production deploy.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   backend:
     name: Backend — JUnit + Cucumber
