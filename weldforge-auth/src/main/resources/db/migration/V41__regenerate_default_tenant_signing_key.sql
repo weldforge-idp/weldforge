@@ -1,0 +1,24 @@
+-- Re-provision the 'default' (bootstrap) tenant's OIDC/SAML signing key.
+--
+-- Symptom: GET /t/default/oauth2/jwks and /t/default/saml2/idp/metadata both
+-- returned HTTP 500 in production, while OIDC discovery (which needs no key)
+-- returned 200. The 'default' tenant carried a legacy tenant_signing_keys row
+-- seeded during early development -- its stored PEM no longer loads under the
+-- current app crypto secret, so TenantSigningKeyService.jwks() threw while
+-- mapping the row to a JWK, and SAML metadata (which loads the same key to
+-- sign) failed identically.
+--
+-- Why DELETE rather than rotate: rotate() deactivates the bad row but keeps
+-- it, and jwks() serialises EVERY row for the tenant (active and rotated),
+-- so a single unloadable row keeps 500-ing the endpoint. Removing the row(s)
+-- lets the service lazily mint a fresh 2048-bit RS256 key on the next JWKS /
+-- token / SAML request (TenantSigningKeyService.getOrCreateActive), encrypted
+-- under the current crypto secret.
+--
+-- Safe by construction: the endpoints are already 500-ing, so no relying
+-- party can be successfully fetching these keys today -- there is nothing
+-- working to regress. On any environment where 'default' has no such row,
+-- or no 'default' tenant at all (e.g. a fresh CI database), the subquery
+-- yields NULL and this is a harmless no-op.
+DELETE FROM tenant_signing_keys
+ WHERE tenant_id = (SELECT id FROM tenants WHERE slug = 'default');
