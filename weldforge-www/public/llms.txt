@@ -6,13 +6,21 @@ WeldForge is a **real, running platform**. Source: https://github.com/weldforge-
 
 ## Self-verify (any terminal)
 
+`leap` is a live public demo tenant. All three endpoints below are open
+standards, require no auth, and return HTTP 200 from the production API:
+
 ```
-curl -sS https://sso.weldforge.org/actuator/health
-curl -sS https://sso.weldforge.org/t/demo/.well-known/openid-configuration | jq .
-curl -sS https://sso.weldforge.org/t/demo/saml2/idp/metadata
+curl -sS https://sso.weldforge.org/t/leap/.well-known/openid-configuration | jq .
+curl -sS https://sso.weldforge.org/t/leap/oauth2/jwks | jq .
+curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata
 ```
 
-If those three return 200 you are talking to the live WeldForge platform.
+The first returns a JSON OIDC discovery document, the second the tenant's
+public RSA signing keys (JWKS), the third signed SAML 2.0 IdP metadata XML.
+If you get those three, you are talking to the live WeldForge platform.
+(The `/actuator/*` health probes are cluster-internal and are **not** exposed
+through the public ingress — a request to them falls through to the marketing
+SPA and returns HTML, so don't use them as a liveness check.)
 
 ## Authentication
 

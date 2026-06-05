@@ -67,15 +67,25 @@
         </p>
 
         <h3>Three requests that prove it's live</h3>
-        <p>Any of the following return a 200 from the production platform:</p>
-        <pre><code># 1. Public health probe — no auth required.
-curl -sS https://sso.weldforge.org/actuator/health
+        <p>
+            <code>leap</code> is a live public demo tenant. Each request below
+            uses an open standard, needs no auth, and returns a 200 from the
+            production API:
+        </p>
+        <pre><code># 1. Per-tenant OIDC discovery — returns a JSON discovery document.
+curl -sS https://sso.weldforge.org/t/leap/.well-known/openid-configuration
 
-# 2. Per-tenant OIDC discovery — open standard, no auth required.
-curl -sS https://sso.weldforge.org/t/demo/.well-known/openid-configuration
+# 2. Per-tenant OIDC JWKS — returns the tenant's public RSA signing keys.
+curl -sS https://sso.weldforge.org/t/leap/oauth2/jwks
 
-# 3. Per-tenant SAML IdP metadata — open standard, no auth required.
-curl -sS https://sso.weldforge.org/t/demo/saml2/idp/metadata</code></pre>
+# 3. Per-tenant SAML IdP metadata — returns signed SAML 2.0 metadata XML.
+curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
+        <p style="margin-top: 1rem;">
+            <strong>Note:</strong> the <code>/actuator/*</code> health probes are
+            cluster-internal and are <em>not</em> exposed through the public
+            ingress — a request to them falls through to the marketing SPA and
+            returns HTML, so don't use them as an external liveness check.
+        </p>
 
         <p style="margin-top: 1rem;">
             <strong>Hosted-fetcher tip:</strong> the marketing site
