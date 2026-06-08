@@ -80,6 +80,18 @@ the audit/lockout writes when next touched here.
 - **Cloud SQL:** instance `weldforge-db`, database `weldforge`.
 - **Public URL:** `https://sso.weldforge.org`. Internal API health:
   `kubectl -n sso exec deploy/sso-api -c sso-api -- curl -s http://localhost:8080/actuator/health`.
+  Note `/actuator/**` is **not** exposed through the public ingress — an
+  external request to it falls through to the marketing SPA and returns HTML,
+  so it's useless as an outside-in liveness check (use a live tenant's OIDC
+  discovery instead).
+- **`leap` — the live public demo tenant.** Slug `leap` (seeded by
+  `V40__add_leap_tenant.sql`); it's the canonical "prove WeldForge is live"
+  tenant that `weldforge.org`'s `llms.txt` / `agents.html` self-verify steps
+  point at. All of its public protocol endpoints return 200, no auth:
+  `https://sso.weldforge.org/t/leap/{.well-known/openid-configuration,oauth2/jwks,saml2/idp/metadata}`.
+  Use `leap` (not `demo` — there is no `demo` tenant) for any public
+  self-verify / smoke test. The `default` bootstrap tenant also serves these
+  now (its legacy signing key was regenerated in `V41`, PR #47, 2026-06-05).
 - **Outbound email:** SendGrid SMTP (`smtp.sendgrid.net`); the API key lives in
   GCP Secret Manager as `wf-sendgrid-api-key` and is injected at deploy time —
   never commit it.
@@ -217,6 +229,75 @@ null/undefined on first paint.
   their gcloud + DNS Admin scope; walk them through it if asked.
 - **Don't `git push origin main:dev`** without explicit user
   confirmation — `dev` may be intentionally pinned.
+
+---
+
+## Session log 2026-06-08 — shipped + how to resume  *(project)*
+
+> Re-verify with the listed commands before acting. Supersedes specifics in
+> the 2026-05-23 snapshot above where they conflict.
+
+### Shipped this session (all merged to `main` unless noted)
+- **PR #46** — fixed `weldforge.org`'s agent self-verify. `llms.txt` /
+  `agents.html` told agents to curl `/actuator/health` (not public — falls
+  through to the marketing SPA → HTML) and `/t/demo/...` (no `demo` tenant →
+  404). Repointed at the live **`leap`** tenant (OIDC discovery, JWKS, SAML
+  metadata, all 200). Deployed via `deploy-www`. See [[leap demo tenant]] note
+  in the infra section.
+- **PR #47** — `V41__regenerate_default_tenant_signing_key.sql`. The `default`
+  tenant's JWKS + SAML metadata were **500-ing** in prod (legacy
+  `tenant_signing_keys` row whose PEM no longer loaded under the current crypto
+  secret). Migration deletes `default`'s key rows; the service lazily re-mints a
+  clean RS256 key. Verified 200 post-deploy. Migrations now at **V41**.
+- **PR #48** — JMeter non-functional test suite at **`perf/jmeter/`**
+  (`01-load`, `02-performance-baseline`, `03-spike`, `04-security`, plus
+  `run.ps1` / `seed.ps1` / README). Placed at **repo root on purpose** so
+  test-only edits don't match the `weldforge-auth/**` trigger in
+  `deploy-gcp.yml`. [merge state: confirm with `gh pr view 48`.]
+
+### Resume here: run the NFT suite locally (was blocked on Docker)
+- **Blocker:** Docker Desktop is installed but its daemon won't start — **WSL2
+  is not installed** (`wsl --status` → not installed). Fix: admin PowerShell
+  `wsl --install`, **reboot**, start Docker Desktop, wait for "Engine running".
+  (Or switch Docker Desktop to the Hyper-V backend.)
+- **Then:** `cd weldforge-auth && docker compose up -d --build` → app on
+  `:8076`, Postgres on `:5437`. App boots on all-defaults (the dev
+  `app.crypto.secret` + baked `JWT_SECRET` defaults; social OAuth2 is commented
+  out in `application.yml`). A local **`.env`** (gitignored) already exists in
+  `weldforge-auth/` with a non-empty `JWT_SECRET` (compose has no fallback, so
+  an unset var would override the app default with "").
+- **Seed + run:** `perf/jmeter/seed.ps1 -Tenant leap`, then
+  `perf/jmeter/run.ps1 -Plan 02-performance-baseline` (baseline first). JMeter
+  lives at `C:\dev\tools\jmeter`. Tenant is selected by the **`X-Tenant-Slug`**
+  header; login body is `{identifier,password}`.
+- **Test gotchas:** rate limiting is ON by default (login 10/15min, register
+  5/60min) — set `APP_RATE_LIMIT_ENABLED=false` for an auth-throughput
+  baseline; BCrypt cost 12 makes real logins ~hundreds of ms by design; lockout
+  is 5/15min. SAML metadata (XML signing) is the CPU-heaviest read path.
+
+### Backlog reconciliation (the 2026-05-23 agenda is partly stale)
+- **Done:** failed-login audit + lockout in a new transaction (**#44** — the
+  old "consumer-side bug planned" note is resolved); 400-not-500 hardening
+  (#43); identity-proofing **V1 (#36)** and **V2a (#37)**.
+- **Genuinely open to implement:** identity-proofing **V2b** (domain gate),
+  **V2c** (watchword auto-flag), **V2d** (verified badge) — all spec'd in
+  `docs/auth-url-spec.md` §349-356. And **mail-send instrumentation + alert**:
+  the `sso.mail.send` counter **does not exist yet** (grep is empty), so this is
+  *instrument the Micrometer counter first*, then add the Prometheus alert —
+  closes the silent-account-recovery-failure gap.
+- **Stale WIP branches** (each ~1 commit ahead, 40-48 behind `main`):
+  `feat/admin-rest-tenant-nesting`, `feat/host-based-tenant-routing`,
+  `feat/cross-tenant-membership-api`, `docs/fix-oidc-client-name-field` — rebase
+  + migration-renumber or retire. `origin/dev` is now **71 behind** main.
+- Architecture note for evaluations: the OIDC/OAuth2 **issuer** + SAML **IdP**
+  are hand-rolled (no Spring Authorization Server; `grep` = 0). Crypto
+  primitives are library-backed (JJWT, Yubico WebAuthn, samstevens TOTP).
+
+### Uncommitted at session end (not on a branch)
+- `CLAUDE.md` + `docs/agent-memory/reference_infra.md` — the `leap`-tenant note
+  and this session log (commit these).
+- Pre-existing, **not mine**: `weldforge-auth/.idea/*` deletions,
+  `weldforge-auth/mvnw`, `weldforge-www/scripts/deploy.sh`. Leave them.
 
 ---
 
