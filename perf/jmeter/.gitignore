@@ -1,0 +1,5 @@
+# JMeter run outputs (regenerated per run)
+results/
+*.jtl
+*.log
+_v.*
