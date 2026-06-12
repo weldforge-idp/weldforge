@@ -177,7 +177,7 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
 
 <section id="auth-urls">
     <div class="container">
-        <h2>End-user auth URLs (per-tenant subdomains)</h2>
+        <h2>End-user auth URLs (where humans sign in)</h2>
         <p class="lead">
             If you are an AI agent that needs to send a human into the
             WeldForge sign-in, password-reset, registration or
@@ -185,34 +185,48 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
             like <strong>WriteBuddy</strong> or <strong>TechMetropolis</strong>
             assembling a deep link, or an email template you generate on
             behalf of another product — construct the URL on the
-            <strong>tenant's own subdomain</strong>, not on the apex host
-            with a query parameter.
+            <strong>apex host</strong> as shown below. Do not use a legacy
+            query parameter, and do not yet use per-tenant subdomains
+            (see "planned, not yet live" below).
         </p>
 
         <p>
-            Each tenant lives at <code>https://{slug}.sso.weldforge.org</code>.
-            The subdomain is the tenant identity for the auth screens, so
-            browser-built-in password managers (which match on
-            <code>scheme + host</code> and ignore both path and query)
-            treat each tenant as a distinct site. The legacy
+            The auth screens are served from the apex host today. The
+            <code>reset-password</code> and <code>verify-email</code> tokens
+            are tenant-scoped, so the apex host resolves the correct tenant
+            from the token. The legacy
             <code>?tenant=&lt;slug&gt;</code> query-param form has been
             <strong>removed</strong> — do not generate it.
         </p>
 
         <h3>The five paths</h3>
         <ul class="checklist">
-            <li>Sign-in:         <code>https://{slug}.sso.weldforge.org/login</code></li>
-            <li>Forgot password: <code>https://{slug}.sso.weldforge.org/forgot-password</code></li>
-            <li>Reset password:  <code>https://{slug}.sso.weldforge.org/reset-password?token={raw-token}</code></li>
-            <li>Register:        <code>https://{slug}.sso.weldforge.org/register</code></li>
-            <li>Verify email:    <code>https://{slug}.sso.weldforge.org/verify-email?token={raw-token}</code></li>
+            <li>Sign-in:         <code>https://sso.weldforge.org/login</code></li>
+            <li>Forgot password: <code>https://sso.weldforge.org/forgot-password</code></li>
+            <li>Reset password:  <code>https://sso.weldforge.org/reset-password?token={raw-token}</code></li>
+            <li>Register:        <code>https://sso.weldforge.org/register</code></li>
+            <li>Verify email:    <code>https://sso.weldforge.org/verify-email?token={raw-token}</code></li>
         </ul>
 
-        <h3>Slug rules</h3>
+        <h3>Per-tenant subdomains — planned, not yet live</h3>
+        <p>
+            The target design gives each tenant its own subdomain
+            (<code>https://{slug}.sso.weldforge.org/login</code> and the
+            same five paths) so browser-built-in password managers (which
+            match on <code>scheme + host</code> and ignore both path and
+            query) treat each tenant as a distinct site. This needs
+            wildcard DNS + TLS that is <strong>not yet provisioned in
+            production</strong>: <code>{slug}.sso.weldforge.org</code>
+            currently returns NXDOMAIN and the apex certificate covers
+            <code>sso.weldforge.org</code> only.
+            <strong>Until it ships, do not generate subdomain auth URLs —
+            use the apex host above.</strong>
+        </p>
+
+        <h3>Slug rules (apply once subdomains ship)</h3>
         <ul class="checklist">
             <li>Pattern: <code>^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$</code> — lowercase ASCII, digits, internal hyphens, 2–64 chars.</li>
             <li>Reserved root labels never resolve to a tenant: <code>www</code>, <code>api</code>, <code>admin</code>, <code>app</code>, <code>mail</code>, <code>static</code>.</li>
-            <li>The apex host <code>sso.weldforge.org</code> is the admin portal — not a tenant auth page.</li>
         </ul>
 
         <h3>What stays on the apex host</h3>
@@ -221,10 +235,7 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
             <code>https://sso.weldforge.org/t/{slug}/…</code>. These are
             machine-to-machine endpoints that password managers never see,
             and moving them under a subdomain would force every relying
-            party to re-register. The unauthenticated-redirect from
-            <code>/t/{slug}/oauth2/authorize</code> now bounces to the
-            tenant subdomain's <code>/login</code>, so the cookie that
-            comes back is correctly scoped.
+            party to re-register.
         </p>
 
         <h3>Cookie scoping (be aware)</h3>
@@ -232,11 +243,11 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
             Session cookies (<code>wf_session</code>,
             <code>refresh_token</code>) are written without a
             <code>Domain</code> attribute, so the browser confines them to
-            the exact subdomain. A session on
-            <code>acme.sso.weldforge.org</code> does not authenticate
-            against <code>contoso.sso.weldforge.org</code>. If your agent
-            ever proxies a user between two tenants in one session, plan
-            for a re-sign-in per host.
+            the exact host that set them. On the apex host today all tenants
+            share that host; once per-tenant subdomains ship, a session on
+            <code>acme.sso.weldforge.org</code> will not authenticate
+            against <code>contoso.sso.weldforge.org</code>, so plan for a
+            re-sign-in per host if your agent proxies a user between tenants.
         </p>
 
         <p>
@@ -307,7 +318,7 @@ export TOKEN=wf_svc_...</code></pre>
         <p>Then fetch the per-tenant discovery document to configure your OIDC library:</p>
         <pre><code>curl $HOST/t/$TENANT/.well-known/openid-configuration | jq</code></pre>
 
-        <h3>A.1b — Administering another tenant (cross-tenant admins)</h3>
+        <h3 id="cross-tenant">A.1b — Administering another tenant (cross-tenant admins)</h3>
         <p>
             An admin whose <code>wf_svc_*</code> token carries
             <code>SUPER_ADMIN</code>, or a user holding a global admin
@@ -399,12 +410,10 @@ curl -X POST $HOST/api/admin/tenants \
 
 # 2. Issue a service-account token for day-to-day admin work.
 #    NOTE: POST /api/admin/service-accounts creates the account in the
-#    CALLER'S OWN tenant — there is currently no cross-tenant target
-#    parameter, and user / OIDC-client creation is caller-tenant-scoped
-#    too. To bootstrap an admin for a newly created tenant, sign in to the
-#    admin portal in that tenant's context and mint the token there.
-#    (Explicit cross-tenant admin is planned — see the repository's
-#    docs/cross-tenant-admin-spec.md.)
+#    CALLER'S OWN tenant. To administer a different tenant, add an
+#    X-WF-Tenant: <slug> header to the /api/admin/** call — requires
+#    SUPER_ADMIN or a global admin membership, and the access is audited
+#    (see A.1b above).
 curl -X POST $HOST/api/admin/service-accounts \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
@@ -432,6 +441,29 @@ curl $HOST/t/newco/saml2/idp/metadata</code></pre>
             <li style="margin-bottom: .5rem;">From the portal, or via <code>POST /api/admin/service-accounts</code>, mint a <code>SUPER_ADMIN</code> service-account token for agent use.</li>
             <li>Revoke the seed account once your own admin is in place.</li>
         </ol>
+
+        <h3>B.4 — Decommission a tenant</h3>
+        <p>
+            Deleting a tenant is <strong>irreversible</strong> and immediate: it removes the
+            tenant and everything scoped to it — users, OIDC clients, service accounts, and the
+            tenant's signing keys. Any relying party that validates tokens against the tenant's
+            issuer or JWKS <strong>breaks at once</strong>, so create and cut over to the
+            replacement tenant first, and confirm nothing still depends on the old issuer. Requires
+            a <code>wf_svc_*</code> token with the <code>SUPER_ADMIN</code> role.
+        </p>
+        <pre><code>export HOST=https://sso.weldforge.org
+export TOKEN=wf_svc_...  # SUPER_ADMIN service-account token
+
+# 1. Find the tenant's numeric id (delete is by id, not slug).
+curl -s $HOST/api/admin/tenants \
+    -H "x-app-authorization: $TOKEN" | jq '.[] | {id, slug}'
+
+# 2. Delete it (returns 204 No Content).
+curl -X DELETE $HOST/api/admin/tenants/{id} \
+    -H "x-app-authorization: $TOKEN"
+
+# 3. Verify it is gone — the tenant JWKS now 404s with "Unknown tenant".
+curl -s $HOST/t/{slug}/oauth2/jwks</code></pre>
     </div>
 </section>
 
