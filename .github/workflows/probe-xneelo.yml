@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: TCP reachability probe
+        env:
+          WWW_FTP_HOST: ${{ secrets.WWW_FTP_HOST }}
         run: |
           echo "Runner egress IP: $(curl -s --max-time 10 https://api.ipify.org || echo unknown)"
           echo "Resolving weldforge.org:"; getent hosts weldforge.org || true
@@ -36,3 +38,15 @@ jobs:
           probe weldforge.org 22
           probe weldforge.org 2222
           probe weldforge.org 443
+          echo "--- configured deploy host (WWW_FTP_HOST secret; value masked) ---"
+          if [ -z "$WWW_FTP_HOST" ]; then
+            echo "WWW_FTP_HOST is EMPTY/unset"
+          else
+            if [ "$WWW_FTP_HOST" = "weldforge.org" ]; then
+              echo "secret host == weldforge.org (SAME as the working local push)"
+            else
+              echo "secret host != weldforge.org (DIFFERENT from the working local push)"
+            fi
+            probe "$WWW_FTP_HOST" 21
+            probe "$WWW_FTP_HOST" 22
+          fi
