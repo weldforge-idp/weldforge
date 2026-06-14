@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8076
   shutdown: graceful
   # Honour X-Forwarded-* from the GCP HTTPS load balancer (and any other
   # TLS-terminating proxy) so generated absolute URLs — OIDC issuer,
@@ -183,7 +183,7 @@ app:
       rp-id:   ${APP_MFA_WEBAUTHN_RP_ID:localhost}
       rp-name: ${APP_MFA_WEBAUTHN_RP_NAME:WeldForge}
       # Comma-separated list of origins the library will accept.
-      origins: ${APP_MFA_WEBAUTHN_ORIGINS:http://localhost:4200,http://localhost:8080}
+      origins: ${APP_MFA_WEBAUTHN_ORIGINS:http://localhost:4200,http://localhost:8076}
 
   key-rotation:
     enabled: ${APP_KEY_ROTATION_ENABLED:false}

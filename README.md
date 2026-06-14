@@ -52,8 +52,8 @@ cd weldforge/weldforge-auth
 docker compose up -d postgres
 ./mvnw spring-boot:run
 # ──
-# Admin portal seeded at http://localhost:8080 with bootstrap credentials
-# logged to stdout. Swagger UI at http://localhost:8080/swagger-ui/index.html
+# Admin portal seeded at http://localhost:8076 with bootstrap credentials
+# logged to stdout. Swagger UI at http://localhost:8076/swagger-ui/index.html
 # (requires x-app-authorization header — see the tutorials page).
 ```
 

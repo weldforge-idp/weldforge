@@ -56,7 +56,7 @@ data:
         }
 
         location /api/ {
-            proxy_pass http://sso-api:8080/api/;
+            proxy_pass http://sso-api:8076/api/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -68,7 +68,7 @@ data:
         # uptime monitors can hit the API without exposing the richer
         # actuator endpoints. Returns {"status":"UP"} from HealthController.
         location = /health {
-            proxy_pass http://sso-api:8080/health;
+            proxy_pass http://sso-api:8076/health;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -77,7 +77,7 @@ data:
         }
 
         location /saml2/ {
-            proxy_pass http://sso-api:8080/saml2/;
+            proxy_pass http://sso-api:8076/saml2/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -85,7 +85,7 @@ data:
         }
 
         location /t/ {
-            proxy_pass http://sso-api:8080/t/;
+            proxy_pass http://sso-api:8076/t/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -93,7 +93,7 @@ data:
         }
 
         location /scim/ {
-            proxy_pass http://sso-api:8080/scim/;
+            proxy_pass http://sso-api:8076/scim/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -23,7 +23,7 @@ services:
     build: .
     restart: always
     ports:
-      - "8076:8080"
+      - "8076:8076"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME:-weldforge}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}

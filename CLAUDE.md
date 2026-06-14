@@ -79,7 +79,7 @@ the audit/lockout writes when next touched here.
   can revert to an unrelated cluster.
 - **Cloud SQL:** instance `weldforge-db`, database `weldforge`.
 - **Public URL:** `https://sso.weldforge.org`. Internal API health:
-  `kubectl -n sso exec deploy/sso-api -c sso-api -- curl -s http://localhost:8080/actuator/health`.
+  `kubectl -n sso exec deploy/sso-api -c sso-api -- curl -s http://localhost:8076/actuator/health`.
   Note `/actuator/**` is **not** exposed through the public ingress — an
   external request to it falls through to the marketing SPA and returns HTML,
   so it's useless as an outside-in liveness check (use a live tenant's OIDC

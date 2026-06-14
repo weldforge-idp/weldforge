@@ -31,10 +31,10 @@ RUN chown -R sso:sso /app
 
 USER sso
 
-EXPOSE 8080
+EXPOSE 8076
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD curl -sf http://localhost:8080/actuator/health/liveness || exit 1
+  CMD curl -sf http://localhost:8076/actuator/health/liveness || exit 1
 
 ENTRYPOINT ["java", \
   "-XX:+UseContainerSupport", \
