@@ -28,3 +28,11 @@ Feature: SAML IdP mode
     Given tenant "globex" is configured for SAML IdP with SP "https://app.globex.test/saml"
     When an AuthnRequest from "https://app.globex.test/saml" is validated for tenant "acme"
     Then the SAML IdP request is rejected
+
+  Scenario: A well-formed AuthnRequest's issuer is parsed safely
+    When a raw SAML AuthnRequest from "https://app.acme.test/saml" is parsed
+    Then the parsed SAML issuer is "https://app.acme.test/saml"
+
+  Scenario: A SAML message carrying a DOCTYPE is rejected (XXE defense)
+    When a SAML AuthnRequest containing a DOCTYPE is parsed
+    Then the SAML message is rejected as unsafe
