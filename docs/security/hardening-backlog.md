@@ -32,6 +32,7 @@ single-use**, and (3) **governance documentation**.
 | F4 | **Constant-time `client_secret` compare** in introspection + revocation (matched the token endpoint, which already did this). | `controller/OidcIntrospectRevokeController.java` |
 | F5 | **Clock-skew tolerance (60s)** added to all five JWT verifiers; also removed a dead double-parse in userinfo. | `service/JwtService.java`, `service/oidc/OidcIntrospectionService.java`, `service/oidc/OidcRevocationService.java`, `controller/OidcUserinfoController.java`, `controller/OidcLogoutController.java` |
 | F6 | **Doc accuracy** — fixed README's false "Spring Authorization Server" claim, qualified the "independent audit" wording, corrected migration count (V34→V41) and Java version (21→25). | `README.md` |
+| F7 | **Consent-flow CSRF (B-OIDC-1)** — the consent form now carries a signed, per-render `consent_csrf` token bound to the authenticated user + tenant; `decide()` requires a valid one whose subject matches the session principal. A cross-site auto-submit can't mint or read such a token, so consent CSRF is blocked despite global CSRF being disabled. | `service/JwtService.java`, `controller/OidcAuthorizationController.java` |
 
 ---
 
@@ -86,13 +87,14 @@ factors. Fix: require a current valid second factor to remove the last factor; r
 
 ### OAuth2 / OIDC
 
-**B-OIDC-1 · High · Consent-flow CSRF.** `config/SecurityConfig.java` disables CSRF
-globally; `/t/*/oauth2/authorize/decide` is `permitAll` and authenticates via session
-cookie with no anti-CSRF token in the consent form
-(`controller/OidcAuthorizationController.java` `renderConsent`). A malicious site can
-auto-submit consent for a logged-in user. Fix: embed a per-session signed CSRF token as a
-hidden field and verify it in `decide`. (Note: F2 closed the open-redirect on the same
-endpoint, but the CSRF gap remains.)
+**B-OIDC-1 · High · Consent-flow CSRF. ✅ FIXED (F7).** `/t/*/oauth2/authorize/decide`
+is `permitAll` with global CSRF disabled. The consent form now embeds a signed,
+per-render `consent_csrf` token (`JwtService.generateConsentCsrfToken`) bound to the
+authenticated user + tenant; `decide()` calls `verifyConsentCsrf` and rejects with
+`access_denied` unless the token is validly signed, unexpired, of purpose
+`consent_csrf`, and its subject/tenant match the session principal and slug. An attacker
+can neither mint such a token (no signing secret) nor read it from the legitimate render
+(Same-Origin Policy), so the cross-site auto-submit is blocked.
 
 **B-OIDC-2 · High · `/authorize` returns JSON errors instead of spec redirects.**
 `controller/OidcAuthorizationController.java` (`handle`). Once `client_id`+`redirect_uri`

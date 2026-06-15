@@ -59,6 +59,30 @@ class JwtServiceTest {
     }
 
     @Test
+    @DisplayName("consent CSRF token carries purpose=consent_csrf, the user email as sub, and the tenant slug")
+    void consentCsrfToken_carriesExpectedClaims() {
+        String token = jwt.generateConsentCsrfToken("alice@acme.test", 42L, "acme");
+        Claims claims = jwt.parse(token);
+
+        assertThat(claims.getSubject()).isEqualTo("alice@acme.test");
+        assertThat(claims.get(JwtService.CLAIM_TENANT_SLUG)).isEqualTo("acme");
+        assertThat(claims.get(JwtService.CLAIM_PURPOSE)).isEqualTo(JwtService.PURPOSE_CONSENT_CSRF);
+        assertThat(jwt.isConsentCsrf(claims)).isTrue();
+    }
+
+    @Test
+    @DisplayName("purpose claims do not cross over: access/mfa tokens are not consent_csrf and vice versa")
+    void purposeClaims_areIsolated() {
+        Claims access = jwt.parse(jwt.generateAccessToken("alice@acme.test", 1L, "acme", false));
+        Claims mfa = jwt.parse(jwt.generateMfaChallengeToken(1L, 1L, "acme"));
+        Claims consent = jwt.parse(jwt.generateConsentCsrfToken("alice@acme.test", 1L, "acme"));
+
+        assertThat(jwt.isConsentCsrf(access)).isFalse();
+        assertThat(jwt.isConsentCsrf(mfa)).isFalse();
+        assertThat(jwt.isMfaChallenge(consent)).isFalse();
+    }
+
+    @Test
     @DisplayName("tamper-detected signatures fail validation")
     void tamperedToken_failsValidation() {
         String token = jwt.generateAccessToken("alice@acme.test", 1L, "acme", false);

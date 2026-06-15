@@ -22,8 +22,11 @@ public class JwtService {
     public static final String CLAIM_TOKEN_VERSION = "ver";
     public static final String PURPOSE_MFA_CHALLENGE = "mfa_challenge";
     public static final String PURPOSE_ACCESS       = "access";
+    public static final String PURPOSE_CONSENT_CSRF = "consent_csrf";
 
     private static final long MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000L;
+    /** Consent CSRF tokens outlive the 5-min code TTL slightly to tolerate a slow user. */
+    private static final long CONSENT_CSRF_TTL_MS = 10 * 60 * 1000L;
 
     @Value("${app.jwt.secret}")
     private String secret;
@@ -169,6 +172,35 @@ public class JwtService {
     public boolean isMfaChallenge(io.jsonwebtoken.Claims claims) {
         Object p = claims.get(CLAIM_PURPOSE);
         return PURPOSE_MFA_CHALLENGE.equals(p == null ? null : p.toString());
+    }
+
+    /**
+     * Anti-CSRF token for the OIDC consent screen. Minted at /authorize render
+     * time, bound to the authenticated user (sub = email) and tenant, and
+     * embedded as a hidden field. The /authorize/decide endpoint requires a
+     * valid one whose subject matches the session principal — an attacker
+     * cross-site-submitting the consent form cannot mint or read such a token
+     * (it requires the signing secret, and the Same-Origin Policy blocks
+     * reading the rendered form), so consent CSRF is prevented even though the
+     * decide endpoint is permitAll and global CSRF is disabled.
+     */
+    public String generateConsentCsrfToken(String email, Long tenantId, String tenantSlug) {
+        Map<String, Object> claims = new LinkedHashMap<>();
+        claims.put(CLAIM_TENANT_ID, tenantId);
+        claims.put(CLAIM_TENANT_SLUG, tenantSlug == null ? "" : tenantSlug);
+        claims.put(CLAIM_PURPOSE, PURPOSE_CONSENT_CSRF);
+        return Jwts.builder()
+                .subject(email)
+                .claims(claims)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + CONSENT_CSRF_TTL_MS))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public boolean isConsentCsrf(io.jsonwebtoken.Claims claims) {
+        Object p = claims.get(CLAIM_PURPOSE);
+        return PURPOSE_CONSENT_CSRF.equals(p == null ? null : p.toString());
     }
 
     public Claims parse(String token) {
