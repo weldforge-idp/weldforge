@@ -95,7 +95,7 @@ App ────────► │  │    Resilience4j circuit breakers       
 SP ─────────► │  └──────────────────────────────────────────────┘ │
               │                                                   │
               │  ┌─ Postgres 14+ ──────────────────────────────┐ │
-              │  │    Flyway-managed schema (V41 migrations)    │ │
+              │  │    Flyway-managed schema (V44 migrations)    │ │
               │  │    Tenant-scoped queries enforced at DAO     │ │
               │  └──────────────────────────────────────────────┘ │
               │                                                   │
@@ -160,9 +160,23 @@ cryptographic primitives and dependency SCA, followed by a validation pass. See
 [SECURITY_AUDIT_2026-04-15.md](SECURITY_AUDIT_2026-04-15.md) and
 [VALIDATION_REPORT_2026-04-17.md](VALIDATION_REPORT_2026-04-17.md). A full
 independent third-party penetration test has **not** yet been completed; the
-in-progress hardening backlog is tracked in
+hardening backlog is tracked in
 [docs/security/hardening-backlog.md](docs/security/hardening-backlog.md), with a
 consolidated [threat model](docs/threat-model.md).
+
+**Recent hardening (June 2026).** Secret-hygiene boot validation (fail-fast on
+weak/default secrets); OAuth2 consent CSRF token, deny-path open-redirect fix and
+scope enforcement; constant-time client-secret checks and JWT clock-skew
+tolerance; MFA TOTP anti-replay and single-use challenge tokens; tenant-scoped
+admin-role assignment; SAML inbound XXE-hardened parsing and per-SP AuthnRequest
+signature verification. See the backlog (F1–F12) for details.
+
+**Operating WeldForge:**
+[Configuration reference](docs/security/configuration-reference.md) ·
+[Production bootstrap](docs/runbooks/production-bootstrap.md) ·
+[Key rotation](docs/runbooks/key-rotation.md) ·
+[Incident response](docs/runbooks/incident-response.md) ·
+[Relying-party onboarding](docs/integrations/relying-party-onboarding.md).
 
 To report a security issue, email **security@weldforge.org**. Do not open a
 public GitHub issue. We acknowledge within 48 hours and publish a CVE with

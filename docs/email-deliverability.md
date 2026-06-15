@@ -20,8 +20,8 @@ Everything is gated on the SendGrid API key being present in Secret Manager
 (`api-secret.yaml` renders `SPRING_MAIL_*` only when `mail.password` is set).
 To go live:
 
-1. Obtain a SendGrid API key with the **Mail Send** scope only (see
-   `docs/sendgrid-setup.md` or the registration steps).
+1. Obtain a SendGrid API key with the **Mail Send** scope only (via the SendGrid
+   dashboard → Settings → API Keys), then follow the registration steps below.
 2. Store it in GCP Secret Manager:
    ```bash
    printf '%s' 'SG.xxxxxxxx' | gcloud secrets create wf-sendgrid-api-key \

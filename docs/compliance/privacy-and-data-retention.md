@@ -12,7 +12,7 @@
 >
 > Scope: the `weldforge-auth` Spring Boot backend and its PostgreSQL database
 > (Cloud SQL instance `weldforge-db`), hosted on GCP `africa-south1`
-> (Johannesburg). Last reviewed against the schema at migration **V41**.
+> (Johannesburg). Last reviewed against the schema at migration **V44**.
 
 WeldForge markets itself as **"POPIA-native by design"** (`README.md`,
 `LAUNCH.md`). This document is the substantiation of that claim. POPIA (the
@@ -256,8 +256,8 @@ of personal data is discovered. As Operator, WeldForge must additionally notify
 the affected **tenant Responsible Party** (who then notifies its data subjects).
 
 - **Cross-reference:** the incident-response runbook at
-  `docs/runbooks/incident-response.md` — **this file does not exist yet.**
-  **TODO:** author it, covering: detection → containment → assessment →
+  [`docs/runbooks/incident-response.md`](../runbooks/incident-response.md), which
+  covers: detection → containment → assessment →
   §22 notification decision tree → Regulator + tenant + data-subject
   notification templates → post-incident review.
 - The **append-only `audit_events` log** (with IP/user-agent) is the primary

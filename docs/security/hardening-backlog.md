@@ -53,13 +53,18 @@ relevant file(s), and the intended remediation.
 returns the matched ±1-window time-step via a constant-time compare; the step is persisted
 in `user_mfa_factors.last_totp_step` and any code whose step is `<=` the last accepted one
 is rejected as a replay (RFC 6238). SMS and backup codes were already single-use.
+*Residual (Low):* a device whose clock is behind the server can have a valid current code
+rejected after a prior future-skewed acceptance — benign, but a possible support signal.
 
 **B-MFA-2 · High · MFA challenge token is reusable for its full 5-minute window. ✅ FIXED (F9).**
 Challenge tokens now carry a `jti` (`JwtService.generateMfaChallengeToken`).
 `resolveChallenge` rejects a token whose `jti` is recorded in the new
 `consumed_mfa_challenge` table, and `MfaService.consumeChallenge` records it once the
 second factor is verified (called from `MfaController.verify`), so the token is one-shot;
-a `ConsumedMfaChallengeCleanup` job prunes expired rows hourly. Combined with B-MFA-1,
+a `ConsumedMfaChallengeCleanup` job prunes expired rows hourly. *Operational residuals
+(Low):* table growth depends on that single in-process scheduler (no DB TTL); and the
+single-use check is skipped for tokens without a `jti` — correct for deploy rollover, but
+note a rollback to a pre-F9 build re-opens replay. Combined with B-MFA-1,
 replaying a challenge token now fails on both the spent-jti and the spent-TOTP-step checks.
 *Residual:* the token is still not bound to the client IP/UA captured at password-verify
 time — deferred (IP/UA binding risks false rejects on mobile network changes; revisit if
@@ -160,9 +165,13 @@ HKDF.
 gaps:
 - **(a) AuthnRequest signatures are never verified.** ✅ **FIXED (F12)** — per-SP
   `wantAuthnRequestSigned` flag enables XSW-resistant signature verification against the
-  SP cert. *Minor residual:* the IdP-level metadata still advertises
-  `WantAuthnRequestsSigned="false"` (it's IdP-wide; enforcement is per-SP). Cosmetic —
-  consider surfacing a tenant default later.
+  SP cert. The flag is now settable through the admin API (`SamlServiceProviderDto`,
+  added during the 2026-06 docs pass) — previously it required raw SQL.
+- **(d) IdP metadata advertises `WantAuthnRequestsSigned="false"`** while enforcement is
+  per-SP (`SamlIdpService.generateMetadata`). **OPEN (Low).** More than cosmetic: a
+  compliant SP reads the metadata and won't sign, so flipping `wantAuthnRequestSigned=true`
+  on an SP can break its login until the SP is separately told to sign. Surface a
+  tenant-level default or per-SP metadata, and document the ordering in the onboarding guide.
 - **(b) inbound XML was parsed by `indexOf`/substring string-scanning, not a hardened DOM
   parser.** ✅ **FIXED (F11)** via `SamlInboundMessageParser` (XXE-hardened, namespace-aware).
 - **(c) no replay / `InResponseTo` correlation.** **OPEN** — track issued request IDs /
@@ -248,7 +257,12 @@ deprecated `X-XSS-Protection` header in the nginx configmap.
 - ✅ [compliance/privacy-and-data-retention.md](../compliance/privacy-and-data-retention.md)
   — POPIA data inventory, retention, data-subject rights, sub-processors (draft, needs
   legal review).
-- ◻ **Still needed:** in-repo OIDC/SAML/SCIM integration & deprovisioning guides; a
-  Mail-send Micrometer counter (`sso.mail.send`) + Prometheus alert on failures; backup/DR
-  procedure with RPO/RTO; sync remaining stale facts (LAUNCH.md HN template stack version;
-  `weldforge-www/TEAMCITY.md` is obsolete — deploy is GitHub Actions).
+- ✅ [security/configuration-reference.md](configuration-reference.md) — every
+  security-relevant flag/secret, defaults, and the fail-fast rules.
+- ✅ [integrations/relying-party-onboarding.md](../integrations/relying-party-onboarding.md)
+  — OIDC/SAML/SCIM onboarding incl. enabling signed AuthnRequests + deprovisioning.
+- ✅ [runbooks/production-bootstrap.md](../runbooks/production-bootstrap.md) — required
+  secrets + first non-dev deploy.
+- ◻ **Still needed:** a Mail-send Micrometer counter (`sso.mail.send`) + Prometheus alert
+  on failures; backup/DR procedure with RPO/RTO; sync remaining stale facts (LAUNCH.md HN
+  template stack version; `weldforge-www/TEAMCITY.md` is obsolete — deploy is GitHub Actions).

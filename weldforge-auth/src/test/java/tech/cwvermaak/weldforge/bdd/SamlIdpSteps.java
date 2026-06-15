@@ -380,4 +380,20 @@ public class SamlIdpSteps {
         assertThat(lastError).isInstanceOf(
                 tech.cwvermaak.weldforge.service.saml.SamlMessageException.class);
     }
+
+    @When("an SP {string} is registered requiring signed AuthnRequests")
+    public void registerSpRequiringSignature(String entityId) {
+        var dto = tech.cwvermaak.weldforge.model.dto.SamlServiceProviderDto.builder()
+                .entityId(entityId).acsUrl(entityId + "/acs")
+                .wantAuthnRequestSigned(true).build();
+        samlIdpService.create(dto);
+    }
+
+    @Then("the registered SP {string} requires signed AuthnRequests")
+    public void registeredSpRequiresSignature(String entityId) {
+        var dto = samlIdpService.list().stream()
+                .filter(d -> entityId.equals(d.getEntityId()))
+                .findFirst().orElseThrow();
+        assertThat(dto.getWantAuthnRequestSigned()).isTrue();
+    }
 }
