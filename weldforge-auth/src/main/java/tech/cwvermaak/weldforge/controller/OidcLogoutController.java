@@ -199,6 +199,7 @@ public class OidcLogoutController {
         var publicKey = signingKeyService.loadPublicKey(activeKey);
         return io.jsonwebtoken.Jwts.parser()
                 .verifyWith(publicKey)
+                .clockSkewSeconds(60)
                 .build()
                 .parseSignedClaims(jwt)
                 .getPayload();

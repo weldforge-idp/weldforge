@@ -301,6 +301,54 @@ null/undefined on first paint.
 
 ---
 
+## Session log 2026-06-15 — identity review + security hardening pass  *(project)*
+
+> Re-verify with the listed commands before acting. Work landed on branch
+> `security/hardening-pass-2026-06` (commit it / open a PR when ready).
+
+A six-domain expert review (OIDC/OAuth2, SAML, token crypto/key-mgmt,
+authN/MFA, multi-tenancy/SCIM, docs) produced a prioritized findings set.
+The full catalogue — what's fixed and what's open, each with severity +
+file refs + remediation — now lives in **`docs/security/hardening-backlog.md`**
+(the canonical to-do). Companion governance docs added the same session:
+`docs/threat-model.md`, `docs/runbooks/key-rotation.md`,
+`docs/runbooks/incident-response.md`,
+`docs/compliance/privacy-and-data-retention.md` (POPIA — draft, needs legal
+review).
+
+### Shipped this session (code, compiles + 145 BDD / full unit suite green)
+- **Secret hygiene** — removed the burned production-shape HMAC default from
+  `application.yml`; new `config/security/SecretHygieneValidator` always
+  enforces min secret length and, when `APP_REQUIRE_SECURE_SECRETS=true`
+  (now set on cluster deploys in `infrastructure/helm/weldforge/values.yaml`),
+  refuses to boot on a known dev/placeholder secret. Local dev still boots on
+  defaults (flag unset). Prod already injects real secrets via Secret Manager
+  → `secretRef`, so removing the default is safe there.
+- **OAuth2 consent open-redirect** fixed — `decide()` re-validates
+  `redirect_uri` against the client's registered list before any 302.
+- **OAuth2 scope enforcement** — requested scopes restricted to the client's
+  registered set ∪ standard OIDC scopes; *backward-compatible* (only enforced
+  when a client has a non-empty scope list, so live RPs don't break — tighten
+  per backlog B-OIDC-4).
+- **Constant-time `client_secret`** compare in introspect/revoke; **60s
+  clock-skew** on all five JWT verifiers; dead double-parse removed in userinfo.
+- **README accuracy** — killed the false "Spring Authorization Server" claim,
+  qualified the "independent audit" wording, fixed V34→V41 and Java 21→25.
+
+### Top open items (see backlog for the rest)
+SAML IdP (B-SAML-1: AuthnRequest sigs unverified + string-scanned XML + no
+replay), consent-form CSRF token (B-OIDC-1), MFA single-use (B-MFA-1 TOTP
+replay, B-MFA-2 challenge `jti`), JWT iss/aud + HMAC key-ring (B-JWT-1/2),
+`setAdminRole` tenant-scoping (B-TEN-1), `X-Forwarded-For` trust (B-AUTH-1),
+SSRF denylist (B-LEGACY-1), V2 plaintext-key redaction (B-LEGACY-3).
+
+### Not done deliberately
+Did **not** touch the pre-existing uncommitted working-tree changes
+(`weldforge-auth/mvnw`, `weldforge-www/scripts/deploy.sh`,
+`config/tenant/PublicHostProperties.java`, `.idea/*` deletions) — not mine.
+
+---
+
 ## Operational deadlines
 
 ### SendGrid trial perks expire 2026-07-16 — verify, don't downgrade

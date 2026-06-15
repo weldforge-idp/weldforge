@@ -95,7 +95,7 @@ App ────────► │  │    Resilience4j circuit breakers       
 SP ─────────► │  └──────────────────────────────────────────────┘ │
               │                                                   │
               │  ┌─ Postgres 14+ ──────────────────────────────┐ │
-              │  │    Flyway-managed schema (V34 migrations)    │ │
+              │  │    Flyway-managed schema (V41 migrations)    │ │
               │  │    Tenant-scoped queries enforced at DAO     │ │
               │  └──────────────────────────────────────────────┘ │
               │                                                   │
@@ -114,7 +114,7 @@ Runs as one jar + one database. Scales horizontally behind a load balancer
 | Backend | Spring Boot 3.5.8, Java 25, JPA/Hibernate 6 |
 | Database | PostgreSQL 14+, Flyway migrations |
 | SAML | OpenSAML 4 + Spring Security SAML |
-| OAuth2 / OIDC | Spring Authorization Server + custom issuer |
+| OAuth2 / OIDC | Hand-rolled issuer (JJWT-signed; no Spring Authorization Server) |
 | MFA | Custom TOTP, Yubico WebAuthn, Twilio SMS |
 | PKI | Bouncy Castle (CA / CRL / OCSP / client certs) |
 | Payments | Stripe (first gateway; abstraction supports Paddle / PayFast / Yoco / Peach) |
@@ -140,7 +140,7 @@ Six supported topologies, [documented in full here](https://www.weldforge.org/de
 
 ```
 weldforge/
-├── weldforge-auth/              # Spring Boot backend (Java 21)
+├── weldforge-auth/              # Spring Boot backend (Java 25)
 │   ├── src/main/java/.../            # Production code
 │   ├── src/main/resources/           # application.yml + Flyway migrations
 │   └── src/test/java/.../bdd/        # Cucumber BDD coverage
@@ -148,16 +148,21 @@ weldforge/
 ├── weldforge-www/               # Marketing site (github.com/weldforge-idp -> weldforge.org)
 ├── infrastructure/
 │   └── helm/weldforge/             # Helm chart deployed to GKE Autopilot (weldforge-gke, africa-south1)
-├── SECURITY_AUDIT_2026-04-15.md  # Independent security audit (April 2026)
-└── VALIDATION_REPORT_2026-04-17.md
+├── SECURITY_AUDIT_2026-04-15.md  # Internal security review — Phase 1 (passive)
+└── VALIDATION_REPORT_2026-04-17.md  # Follow-up validation pass
 ```
 
 ## Security
 
-WeldForge went through an independent security audit in April 2026 covering
-OWASP Top 10, authentication, authorisation, data protection, cryptographic
-primitives and dependency SCA. See [SECURITY_AUDIT_2026-04-15.md](SECURITY_AUDIT_2026-04-15.md)
-for the full report.
+WeldForge underwent an internal security review in April 2026 (Phase 1, passive
+analysis) covering OWASP Top 10, authentication, authorisation, data protection,
+cryptographic primitives and dependency SCA, followed by a validation pass. See
+[SECURITY_AUDIT_2026-04-15.md](SECURITY_AUDIT_2026-04-15.md) and
+[VALIDATION_REPORT_2026-04-17.md](VALIDATION_REPORT_2026-04-17.md). A full
+independent third-party penetration test has **not** yet been completed; the
+in-progress hardening backlog is tracked in
+[docs/security/hardening-backlog.md](docs/security/hardening-backlog.md), with a
+consolidated [threat model](docs/threat-model.md).
 
 To report a security issue, email **security@weldforge.org**. Do not open a
 public GitHub issue. We acknowledge within 48 hours and publish a CVE with
