@@ -123,6 +123,26 @@ class MfaServiceTest {
     }
 
     @Test
+    @DisplayName("verifyChallenge(TOTP) accepts a fresh time-step then rejects the same step as a replay")
+    void verifyTotp_antiReplay() {
+        MfaFactor totp = MfaFactor.builder()
+                .id(10L).user(user).type(MfaFactorType.TOTP)
+                .totpSecretEnc("SECRET").enabled(true).verified(true).build();
+        when(factorRepo.findByUserIdAndType(42L, MfaFactorType.TOTP)).thenReturn(List.of(totp));
+        when(totpService.matchingStep("SECRET", "123456")).thenReturn(java.util.OptionalLong.of(100L));
+
+        var req = tech.cwvermaak.weldforge.model.dto.MfaVerifyRequestDto.builder()
+                .type(MfaFactorType.TOTP).code("123456").build();
+
+        // First use of step 100 succeeds and records it on the factor.
+        assertThat(mfa.verifyChallenge(user, req)).isTrue();
+        assertThat(totp.getLastTotpStep()).isEqualTo(100L);
+
+        // Replaying the same code (same step) is now rejected.
+        assertThat(mfa.verifyChallenge(user, req)).isFalse();
+    }
+
+    @Test
     @DisplayName("hasVerifiedFactor only counts enabled + verified rows")
     void hasVerifiedFactor_looksForEnabledAndVerified() {
         when(factorRepo.findByUserIdAndEnabledTrueAndVerifiedTrue(42L))
