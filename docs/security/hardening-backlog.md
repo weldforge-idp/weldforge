@@ -33,6 +33,7 @@ single-use**, and (3) **governance documentation**.
 | F5 | **Clock-skew tolerance (60s)** added to all five JWT verifiers; also removed a dead double-parse in userinfo. | `service/JwtService.java`, `service/oidc/OidcIntrospectionService.java`, `service/oidc/OidcRevocationService.java`, `controller/OidcUserinfoController.java`, `controller/OidcLogoutController.java` |
 | F6 | **Doc accuracy** — fixed README's false "Spring Authorization Server" claim, qualified the "independent audit" wording, corrected migration count (V34→V41) and Java version (21→25). | `README.md` |
 | F7 | **Consent-flow CSRF (B-OIDC-1)** — the consent form now carries a signed, per-render `consent_csrf` token bound to the authenticated user + tenant; `decide()` requires a valid one whose subject matches the session principal. A cross-site auto-submit can't mint or read such a token, so consent CSRF is blocked despite global CSRF being disabled. | `service/JwtService.java`, `controller/OidcAuthorizationController.java` |
+| F8 | **TOTP anti-replay (B-MFA-1)** — TOTP verification now records the accepted time-step (`user_mfa_factors.last_totp_step`) and rejects any code whose step is `<=` the last accepted one, both at login and on enrollment activation. `TotpService.matchingStep` returns the matched step via a constant-time check over the ±1 window. | `V42__mfa_totp_anti_replay.sql`, `model/MfaFactor.java`, `service/mfa/TotpService.java`, `service/mfa/MfaService.java` |
 
 ---
 
@@ -43,12 +44,11 @@ relevant file(s), and the intended remediation.
 
 ### Authentication & MFA
 
-**B-MFA-1 · High · TOTP codes are replayable within their validity window.**
-`service/mfa/MfaService.java` (`verifyTotp`), `service/mfa/TotpService.java`. A valid
-TOTP is accepted for its whole ±1-step (~90s) window and never marked consumed (SMS and
-backup codes *are* single-use). Fix: persist the last-accepted time-step per factor
-(e.g. a `last_totp_step` column) and reject any code whose step is `<=` the last accepted —
-the RFC 6238 anti-replay measure.
+**B-MFA-1 · High · TOTP codes are replayable within their validity window. ✅ FIXED (F8).**
+`verifyTotp` (and the enrollment-activation path) now use `TotpService.matchingStep`, which
+returns the matched ±1-window time-step via a constant-time compare; the step is persisted
+in `user_mfa_factors.last_totp_step` and any code whose step is `<=` the last accepted one
+is rejected as a replay (RFC 6238). SMS and backup codes were already single-use.
 
 **B-MFA-2 · High · MFA challenge token is reusable for its full 5-minute window.**
 `service/JwtService.java` (`generateMfaChallengeToken`), `service/mfa/MfaService.java`

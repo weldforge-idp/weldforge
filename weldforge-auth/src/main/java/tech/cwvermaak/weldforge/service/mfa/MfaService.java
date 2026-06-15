@@ -109,10 +109,14 @@ public class MfaService {
         if (factor.getType() != MfaFactorType.TOTP) {
             throw new IllegalArgumentException("Factor is not a TOTP factor");
         }
-        if (!totpService.verify(factor.getTotpSecretEnc(), code)) {
+        java.util.OptionalLong step = totpService.matchingStep(factor.getTotpSecretEnc(), code);
+        if (step.isEmpty()) {
             throw new BadCredentialsException("Invalid code");
         }
         factor.setVerified(true);
+        // Record the activation step so the same code can't be replayed for the
+        // first login (RFC 6238 anti-replay).
+        factor.setLastTotpStep(step.getAsLong());
         factor.setLastUsedAt(LocalDateTime.now());
         auditService.recordUserAction(AuditEventTypes.MFA_FACTOR_ACTIVATE, user,
                 AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factor.getId()),
@@ -375,8 +379,18 @@ public class MfaService {
     private boolean verifyTotp(User user, String code) {
         if (code == null || code.isBlank()) return false;
         for (MfaFactor f : mfaFactorRepository.findByUserIdAndType(user.getId(), MfaFactorType.TOTP)) {
-            if (Boolean.TRUE.equals(f.getEnabled()) && Boolean.TRUE.equals(f.getVerified())
-                    && totpService.verify(f.getTotpSecretEnc(), code)) {
+            if (Boolean.TRUE.equals(f.getEnabled()) && Boolean.TRUE.equals(f.getVerified())) {
+                java.util.OptionalLong step = totpService.matchingStep(f.getTotpSecretEnc(), code);
+                if (step.isEmpty()) continue;
+                long s = step.getAsLong();
+                // RFC 6238 anti-replay: reject a code whose time-step was already
+                // accepted (covers replay of the same code within its ±1 window).
+                if (f.getLastTotpStep() != null && s <= f.getLastTotpStep()) {
+                    log.warn("Rejected replayed TOTP code for factor {} (step {} <= last accepted {})",
+                            f.getId(), s, f.getLastTotpStep());
+                    continue;
+                }
+                f.setLastTotpStep(s);
                 f.setLastUsedAt(LocalDateTime.now());
                 return true;
             }
