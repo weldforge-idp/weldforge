@@ -68,14 +68,32 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
                                        @AuthenticationPrincipal String email,
                                        HttpServletRequest request) {
-        if (!"code".equals(responseType)) {
-            throw new OidcAuthorizationException("unsupported_response_type",
-                    "Only response_type=code is supported");
-        }
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
 
-        // ---- Step 1: not authenticated → redirect to login ---------
+        // ---- Step 1: validate client_id + redirect_uri FIRST ----------
+        // Per RFC 6749 §4.1.2.1, errors may only be redirected back to the
+        // redirect_uri once the client and redirect_uri are known-good. An
+        // unknown client or an unregistered redirect_uri must NOT redirect
+        // (the target may be attacker-controlled) — they return a 400.
+        OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
+                .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
+                        "Unknown client_id for this tenant"));
+
+        if (!client.getRedirectUriList().contains(redirectUri)) {
+            throw new OidcAuthorizationException("invalid_request",
+                    "redirect_uri does not match a registered URI");
+        }
+
+        // ---- Step 2: redirect_uri is trusted — protocol errors now go
+        // back to it with error + state (RFC 6749 §4.1.2.1), instead of a
+        // JSON 400 that breaks conformant RP error handling. ------------
+        if (!"code".equals(responseType)) {
+            throw new OidcAuthorizationException("unsupported_response_type",
+                    "Only response_type=code is supported", redirectUri, state);
+        }
+
+        // ---- Step 3: not authenticated → redirect to login ---------
         // Spring Security materialises the principal as the string
         // "anonymousUser" for unauthenticated requests (see
         // AnonymousAuthenticationToken), so a null/blank check alone
@@ -97,16 +115,7 @@ public class OidcAuthorizationController {
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(slug, email)
                 .orElseThrow(() -> new EntityNotFoundException("User not in tenant"));
 
-        OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
-                .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
-                        "Unknown client_id for this tenant"));
-
-        if (!client.getRedirectUriList().contains(redirectUri)) {
-            throw new OidcAuthorizationException("invalid_request",
-                    "redirect_uri does not match a registered URI");
-        }
-
-        // ---- Step 2: render consent ---------------------------------
+        // ---- Step 4: render consent ---------------------------------
         // Anti-CSRF token bound to this authenticated user + tenant. The
         // decide endpoint requires it back and checks the binding, so a
         // cross-site auto-submit of the consent form is rejected.
@@ -230,7 +239,18 @@ public class OidcAuthorizationController {
     }
 
     @ExceptionHandler(OidcAuthorizationException.class)
-    public ResponseEntity<Map<String, String>> handle(OidcAuthorizationException ex) {
+    public ResponseEntity<?> handle(OidcAuthorizationException ex) {
+        // RFC 6749 §4.1.2.1: once redirect_uri is validated, errors redirect
+        // back to it carrying error/error_description/state. Pre-validation
+        // errors (unknown client, bad redirect_uri) are not redirectable and
+        // fall through to a JSON 400.
+        if (ex.isRedirectable()) {
+            String url = appendQuery(ex.getRedirectUri(),
+                    "error", ex.getErrorCode(),
+                    "error_description", ex.getMessage(),
+                    "state", ex.getState());
+            return ResponseEntity.status(302).location(URI.create(url)).build();
+        }
         Map<String, String> body = new LinkedHashMap<>();
         body.put("error", ex.getErrorCode());
         body.put("error_description", ex.getMessage());

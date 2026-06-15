@@ -38,6 +38,7 @@ single-use**, and (3) **governance documentation**.
 | F10 | **`setAdminRole` tenant-scoping (B-TEN-1)** — the target user is now resolved via `findByIdAndTenantId` through the caller's resolved tenant (matching every other user mutation), so a super-admin can only set admin roles within the tenant they've switched into (the X-WF-Tenant switch is audited). Covered by TDD unit tests + BDD `tenant_isolation.feature` scenarios. | `service/AdminService.java` |
 | F11 | **SAML inbound XML hardening (B-SAML-1 part b)** — replaced the IdP's `indexOf`/substring scanning of inbound AuthnRequest/LogoutRequest with an XXE-hardened, namespace-aware DOM parser (`SamlInboundMessageParser`, DOCTYPE forbidden, external entities disabled). Resists parser-differential, comment/CDATA and namespace-prefix tricks, and is the prerequisite for AuthnRequest signature verification. TDD unit tests + BDD `saml_idp.feature` (issuer parse + DOCTYPE/XXE rejection). | `service/saml/SamlInboundMessageParser.java`, `service/saml/SamlMessageException.java`, `controller/SamlIdpController.java` |
 | F12 | **SAML AuthnRequest signature verification (B-SAML-1 part a)** — per-SP `wantAuthnRequestSigned` flag; when set, inbound AuthnRequest/LogoutRequest signatures are verified against the SP's certificate by an XSW-resistant validator (single signature, enveloped over the root, single reference to the root ID, secure validation). Unsigned/invalid requests are rejected; SPs that don't opt in are unaffected. TDD unit tests (real signatures, incl. tamper/wrong-key/unsigned/no-ID) + BDD `saml_idp.feature` scenarios. | `V44__saml_sp_want_authn_request_signed.sql`, `model/SamlServiceProvider.java`, `service/saml/SamlSignatureValidator.java`, `service/saml/SamlIdpService.java`, `controller/SamlIdpController.java` |
+| F13 | **`/authorize` spec-conformant error redirects (B-OIDC-2)** — once `client_id`+`redirect_uri` are validated, protocol errors (e.g. `unsupported_response_type`) now redirect to the registered `redirect_uri` with `error`+`state` (RFC 6749 §4.1.2.1) instead of a JSON 400. Pre-validation errors (unknown client, unregistered redirect_uri) stay non-redirecting 400s, so the deny/error path can't become an open redirect. `OidcAuthorizationException` carries an optional redirect target; unit-tested handler. | `service/oidc/OidcAuthorizationException.java`, `controller/OidcAuthorizationController.java` |
 
 ---
 
@@ -108,12 +109,13 @@ authenticated user + tenant; `decide()` calls `verifyConsentCsrf` and rejects wi
 can neither mint such a token (no signing secret) nor read it from the legitimate render
 (Same-Origin Policy), so the cross-site auto-submit is blocked.
 
-**B-OIDC-2 · High · `/authorize` returns JSON errors instead of spec redirects.**
-`controller/OidcAuthorizationController.java` (`handle`). Once `client_id`+`redirect_uri`
-are validated, RFC 6749 §4.1.2.1 requires errors to redirect to `redirect_uri` with
-`error`+`state`. Returning JSON 400 breaks conformant RP error handling and drops `state`.
-Fix: render post-validation errors as a 302; keep pre-validation errors (unknown
-client/bad redirect_uri) non-redirecting.
+**B-OIDC-2 · High · `/authorize` returns JSON errors instead of spec redirects. ✅ FIXED (F13).**
+`authorize()` now validates `client_id`+`redirect_uri` first; once the `redirect_uri` is
+trusted, protocol errors are thrown with a redirect target and `handle()` returns a 302 to
+`redirect_uri` carrying `error`/`error_description`/`state` (RFC 6749 §4.1.2.1). Pre-validation
+errors (unknown client, unregistered redirect_uri) remain non-redirecting 400s. *Residual
+(Low):* `invalid_scope` is still surfaced at consent/code-issue time rather than redirected
+at `/authorize` (scope is validated in the service) — see `B-OIDC-4`.
 
 **B-OIDC-3 · Medium · userinfo/introspection don't check `token_type`/audience.**
 `controller/OidcUserinfoController.java`, `service/oidc/OidcIntrospectionService.java`.
