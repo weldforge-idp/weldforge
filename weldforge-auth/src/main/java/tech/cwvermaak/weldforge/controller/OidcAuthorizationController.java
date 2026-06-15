@@ -54,6 +54,7 @@ public class OidcAuthorizationController {
     private final OidcAuthorizationService authorizationService;
     private final OidcTokenService tokenService;
     private final PublicHostProperties publicHost;
+    private final tech.cwvermaak.weldforge.service.JwtService jwtService;
 
     @GetMapping("/t/{slug}/oauth2/authorize")
     public ResponseEntity<?> authorize(@PathVariable String slug,
@@ -106,8 +107,12 @@ public class OidcAuthorizationController {
         }
 
         // ---- Step 2: render consent ---------------------------------
+        // Anti-CSRF token bound to this authenticated user + tenant. The
+        // decide endpoint requires it back and checks the binding, so a
+        // cross-site auto-submit of the consent form is rejected.
+        String csrfToken = jwtService.generateConsentCsrfToken(email, tenant.getId(), slug);
         String html = renderConsent(slug, user, client, redirectUri, scope, state, nonce,
-                codeChallenge, codeChallengeMethod);
+                codeChallenge, codeChallengeMethod, csrfToken);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
                 .body(html);
@@ -129,6 +134,7 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "nonce", required = false) String nonce,
                                        @RequestParam(value = "code_challenge", required = false) String codeChallenge,
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
+                                       @RequestParam(value = "csrf_token", required = false) String csrfToken,
                                        @AuthenticationPrincipal String email) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
@@ -136,6 +142,13 @@ public class OidcAuthorizationController {
             throw new OidcAuthorizationException("login_required",
                     "Session expired before consent — please log in again");
         }
+
+        // CSRF guard: the consent form carries a signed token bound to the
+        // authenticated user + tenant. Verify it before acting on the
+        // decision — this is what stops a cross-site forged submission of the
+        // consent form (decide is permitAll and global CSRF is disabled).
+        verifyConsentCsrf(csrfToken, email, slug);
+
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(slug, email)
                 .orElseThrow(() -> new EntityNotFoundException("User not in tenant"));
 
@@ -226,6 +239,29 @@ public class OidcAuthorizationController {
 
     // ---- Helpers -----------------------------------------------------
 
+    /**
+     * Verify the consent CSRF token: it must be a validly-signed, unexpired
+     * {@code consent_csrf} token whose subject is the authenticated user and
+     * whose tenant claim matches the slug being acted on. Any failure throws
+     * {@code access_denied} rather than proceeding.
+     */
+    private void verifyConsentCsrf(String csrfToken, String email, String slug) {
+        if (csrfToken == null || csrfToken.isBlank()) {
+            throw new OidcAuthorizationException("access_denied", "Missing consent token");
+        }
+        try {
+            io.jsonwebtoken.Claims claims = jwtService.parse(csrfToken);
+            boolean ok = jwtService.isConsentCsrf(claims)
+                    && email.equalsIgnoreCase(claims.getSubject())
+                    && slug.equals(String.valueOf(claims.get(tech.cwvermaak.weldforge.service.JwtService.CLAIM_TENANT_SLUG)));
+            if (!ok) {
+                throw new OidcAuthorizationException("access_denied", "Invalid consent token");
+            }
+        } catch (io.jsonwebtoken.JwtException | IllegalArgumentException e) {
+            throw new OidcAuthorizationException("access_denied", "Invalid or expired consent token");
+        }
+    }
+
     private static Map<String, Object> buildResponse(IssuedTokens tokens, List<String> scopes) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("access_token", tokens.accessToken());
@@ -269,7 +305,8 @@ public class OidcAuthorizationController {
      */
     private static String renderConsent(String slug, User user, OidcClient client, String redirectUri,
                                         String scope, String state, String nonce,
-                                        String codeChallenge, String codeChallengeMethod) {
+                                        String codeChallenge, String codeChallengeMethod,
+                                        String csrfToken) {
         String appName = client.getName() != null && !client.getName().isBlank()
                 ? client.getName() : client.getClientId();
         String scopesHtml = Arrays.stream(scope.split("\\s+"))
@@ -308,6 +345,7 @@ public class OidcAuthorizationController {
                 + hidden("nonce", nonce)
                 + hidden("code_challenge", codeChallenge)
                 + hidden("code_challenge_method", codeChallengeMethod)
+                + hidden("csrf_token", csrfToken)
                 + "<div class=\"actions\">"
                 + "<button class=\"deny\" type=\"submit\" name=\"decision\" value=\"deny\">Deny</button>"
                 + "<button class=\"allow\" type=\"submit\" name=\"decision\" value=\"allow\">Allow</button>"
