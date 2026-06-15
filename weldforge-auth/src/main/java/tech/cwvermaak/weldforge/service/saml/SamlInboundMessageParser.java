@@ -38,6 +38,33 @@ public final class SamlInboundMessageParser {
      *         a DOCTYPE (rejected to prevent XML External Entity attacks)
      */
     public static ParsedMessage parse(String xml) {
+        Document doc = parseHardened(xml);
+        try {
+            Element root = doc.getDocumentElement();
+            if (root == null) {
+                throw new SamlMessageException("SAML message has no root element");
+            }
+            String rootLocal = localName(root);
+            String messageId = emptyToNull(root.getAttribute("ID"));
+            String issuer = firstIssuer(doc);
+            return new ParsedMessage(rootLocal, issuer, messageId);
+        } catch (SamlMessageException e) {
+            throw e;
+        } catch (Exception e) {
+            // Covers DOCTYPE rejection, malformed XML, encoding errors, etc.
+            throw new SamlMessageException("invalid SAML message: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Parse SAML XML into a DOM with all the XXE defenses applied (DOCTYPE
+     * forbidden, external entities disabled, secure processing). Shared with
+     * {@link SamlSignatureValidator} so signature verification runs over the
+     * same hardened parse. Package-visible.
+     *
+     * @throws SamlMessageException on empty, malformed, or DOCTYPE-bearing input
+     */
+    static Document parseHardened(String xml) {
         if (xml == null || xml.isBlank()) {
             throw new SamlMessageException("empty SAML message");
         }
@@ -52,20 +79,8 @@ public final class SamlInboundMessageParser {
             dbf.setXIncludeAware(false);
             dbf.setExpandEntityReferences(false);
             DocumentBuilder db = dbf.newDocumentBuilder();
-
-            Document doc = db.parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
-            Element root = doc.getDocumentElement();
-            if (root == null) {
-                throw new SamlMessageException("SAML message has no root element");
-            }
-            String rootLocal = localName(root);
-            String messageId = emptyToNull(root.getAttribute("ID"));
-            String issuer = firstIssuer(doc);
-            return new ParsedMessage(rootLocal, issuer, messageId);
-        } catch (SamlMessageException e) {
-            throw e;
+            return db.parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
-            // Covers DOCTYPE rejection, malformed XML, encoding errors, etc.
             throw new SamlMessageException("invalid SAML message: " + e.getMessage());
         }
     }
