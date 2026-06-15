@@ -46,21 +46,15 @@ public class OidcUserinfoController {
 
         Claims claims;
         try {
-            // Resolve the kid from the JWS header so we pick the right key.
-            String kid = Jwts.parser()
-                    .keyLocator(jws -> signingKeyService.loadPublicKey(
-                            signingKeyService.requireByKid(jws.get("kid").toString())))
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload()
-                    .getId() != null ? null : null;
-            // The above pattern is awkward — we re-parse to actually grab the
-            // claims now that the locator side-effect cached the key.
+            // The key locator reads the kid from the JWS header and returns
+            // the matching tenant public key, so a single parse both verifies
+            // the signature and yields the claims.
             claims = Jwts.parser()
                     .keyLocator(jws -> {
                         TenantSigningKey row = signingKeyService.requireByKid(jws.get("kid").toString());
                         return signingKeyService.loadPublicKey(row);
                     })
+                    .clockSkewSeconds(60)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();

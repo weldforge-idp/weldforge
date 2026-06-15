@@ -139,6 +139,19 @@ public class OidcAuthorizationController {
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(slug, email)
                 .orElseThrow(() -> new EntityNotFoundException("User not in tenant"));
 
+        // The consent form posts redirect_uri back as a hidden field, so a
+        // forged POST could supply an attacker-controlled URI. Re-validate it
+        // against the client's registered list BEFORE any redirect (both the
+        // allow and deny branches build a 302 from it) — otherwise the deny
+        // path is an open redirect. Validation only happened at /authorize.
+        OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
+                .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
+                        "Unknown client_id for this tenant"));
+        if (!client.getRedirectUriList().contains(redirectUri)) {
+            throw new OidcAuthorizationException("invalid_request",
+                    "redirect_uri does not match a registered URI");
+        }
+
         if (!"allow".equals(decision)) {
             // Per RFC 6749 §4.1.2.1, deny redirects back with an error.
             String url = appendQuery(redirectUri,

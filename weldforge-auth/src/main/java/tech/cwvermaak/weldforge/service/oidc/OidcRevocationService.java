@@ -58,6 +58,7 @@ public class OidcRevocationService {
                         }
                         return signingKeyService.loadPublicKey(row);
                     })
+                    .clockSkewSeconds(60)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();

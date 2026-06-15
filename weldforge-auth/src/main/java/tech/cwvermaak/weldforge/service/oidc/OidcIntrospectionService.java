@@ -58,6 +58,7 @@ public class OidcIntrospectionService {
                         }
                         return signingKeyService.loadPublicKey(row);
                     })
+                    .clockSkewSeconds(60)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();

@@ -56,6 +56,10 @@ public class OidcAuthorizationService {
     /** Authorization codes are valid for 5 minutes. */
     private static final long CODE_TTL_SECONDS = 300;
 
+    /** Standard OIDC scopes that are always permitted regardless of client registration. */
+    private static final java.util.Set<String> STANDARD_OIDC_SCOPES =
+            java.util.Set.of("openid", "profile", "email", "address", "phone", "offline_access");
+
     private final OidcClientRepository clientRepository;
     private final OAuthAuthorizationCodeRepository codeRepository;
     private final AuditService auditService;
@@ -93,6 +97,22 @@ public class OidcAuthorizationService {
         if (!client.getRedirectUriList().contains(request.redirectUri())) {
             throw new OidcAuthorizationException("invalid_request",
                     "redirect_uri does not match a registered URI");
+        }
+
+        // RFC 6749 §3.3 / OIDC Core §3.1.2.1: the granted scope must be
+        // restricted to what the client is registered for. Enforced only when
+        // the client has an explicit scope list (legacy clients registered
+        // without one are left unconstrained to avoid breaking live RPs — see
+        // docs/security/hardening-backlog.md to tighten this). The standard
+        // OIDC scopes are always permitted.
+        List<String> allowedScopes = client.getScopeList();
+        if (allowedScopes != null && !allowedScopes.isEmpty()) {
+            for (String requested : request.scopes()) {
+                if (!STANDARD_OIDC_SCOPES.contains(requested) && !allowedScopes.contains(requested)) {
+                    throw new OidcAuthorizationException("invalid_scope",
+                            "Scope '" + requested + "' is not registered for this client");
+                }
+            }
         }
 
         if (Boolean.TRUE.equals(client.getRequirePkce())) {

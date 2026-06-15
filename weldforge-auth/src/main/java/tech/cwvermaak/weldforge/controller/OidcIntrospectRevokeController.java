@@ -70,7 +70,7 @@ public class OidcIntrospectRevokeController {
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
 
         OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId).orElse(null);
-        if (client == null || !clientSecret.equals(client.getClientSecret())) {
+        if (client == null || !constantTimeEquals(clientSecret, client.getClientSecret())) {
             return ResponseEntity.status(401).build();
         }
 
@@ -82,7 +82,15 @@ public class OidcIntrospectRevokeController {
 
     private boolean verifyClient(Tenant tenant, String clientId, String clientSecret) {
         return clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
-                .map(c -> clientSecret != null && clientSecret.equals(c.getClientSecret()))
+                .map(c -> constantTimeEquals(clientSecret, c.getClientSecret()))
                 .orElse(false);
+    }
+
+    /** Constant-time secret comparison — avoids a timing oracle on the client secret. */
+    private static boolean constantTimeEquals(String a, String b) {
+        if (a == null || b == null) return false;
+        return java.security.MessageDigest.isEqual(
+                a.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                b.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }
