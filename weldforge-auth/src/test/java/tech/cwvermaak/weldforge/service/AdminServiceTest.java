@@ -177,4 +177,66 @@ class AdminServiceTest {
         verify(roleRepo, never()).findByIdAndTenantId(any(), any());
         verify(userRepo, never()).save(any());
     }
+
+    // ─────────────────────────── setAdminRole (B-TEN-1) ───────────────────
+
+    @Test
+    @DisplayName("setAdminRole grants a console role to a user in the caller's tenant and bumps tokenVersion")
+    void setAdminRole_sameTenant_happyPath() {
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").tokenVersion(2).build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        admin.setAdminRole(42L, tech.cwvermaak.weldforge.model.AdminRole.TENANT_ADMIN);
+
+        assertThat(target.getAdminRole()).isEqualTo(tech.cwvermaak.weldforge.model.AdminRole.TENANT_ADMIN);
+        assertThat(target.isSuperAdmin()).isFalse();
+        assertThat(target.getTokenVersion()).isEqualTo(3);
+        verify(userRepo).save(target);
+        verify(auditService).recordAdmin(eq("admin.role.assigned"), any(), any(), eq("42"), any());
+    }
+
+    @Test
+    @DisplayName("setAdminRole refuses a target in another tenant — lookup is tenant-scoped (B-TEN-1)")
+    void setAdminRole_crossTenantTargetIsHidden() {
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        // The target lives in another tenant, so the tenant-scoped lookup misses.
+        when(userRepo.findByIdAndTenantId(999L, 7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> admin.setAdminRole(999L,
+                tech.cwvermaak.weldforge.model.AdminRole.SUPER_ADMIN))
+                .isInstanceOf(EntityNotFoundException.class);
+
+        // No privilege was granted and nothing was audited as a grant.
+        verify(userRepo, never()).save(any());
+        verify(auditService, never()).recordAdmin(eq("admin.role.assigned"), any(), any(), any(), any());
+        // It must NOT fall back to an unscoped lookup.
+        verify(userRepo, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("setAdminRole requires SUPER_ADMIN — a lesser caller is rejected before any mutation")
+    void setAdminRole_nonSuperAdmin_denied() {
+        doThrow(new org.springframework.security.access.AccessDeniedException("not super admin"))
+                .when(tenantAccessor).requireSuperAdmin();
+
+        assertThatThrownBy(() -> admin.setAdminRole(42L,
+                tech.cwvermaak.weldforge.model.AdminRole.TENANT_ADMIN))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+
+        verify(userRepo, never()).findByIdAndTenantId(any(), any());
+        verify(userRepo, never()).findById(any());
+        verify(userRepo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("setAdminRole rejects a null role before touching the repository")
+    void setAdminRole_nullRole_rejected() {
+        assertThatThrownBy(() -> admin.setAdminRole(42L, null))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(userRepo, never()).save(any());
+    }
 }

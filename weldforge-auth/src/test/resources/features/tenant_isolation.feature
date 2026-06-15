@@ -23,3 +23,14 @@ Feature: Tenant isolation
     When I try to reset MFA for the user "eve@globex.test"
     Then the operation is rejected as "not found"
     And no MFA factors are removed
+
+  Scenario: A super admin can set a console role for a user in their own tenant
+    Given I am authenticated as "alice@acme.test"
+    When I grant the admin role "TENANT_ADMIN" to user "alice@acme.test"
+    Then user "alice@acme.test" has admin role "TENANT_ADMIN"
+
+  Scenario: A super admin cannot set the admin role of a user in another tenant
+    Given I am authenticated as "alice@acme.test"
+    When I try to grant the admin role "SUPER_ADMIN" to user "eve@globex.test"
+    Then the operation is rejected as "not found"
+    And user "eve@globex.test" still has admin role "NONE"

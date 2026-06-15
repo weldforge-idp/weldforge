@@ -35,6 +35,7 @@ single-use**, and (3) **governance documentation**.
 | F7 | **Consent-flow CSRF (B-OIDC-1)** — the consent form now carries a signed, per-render `consent_csrf` token bound to the authenticated user + tenant; `decide()` requires a valid one whose subject matches the session principal. A cross-site auto-submit can't mint or read such a token, so consent CSRF is blocked despite global CSRF being disabled. | `service/JwtService.java`, `controller/OidcAuthorizationController.java` |
 | F8 | **TOTP anti-replay (B-MFA-1)** — TOTP verification now records the accepted time-step (`user_mfa_factors.last_totp_step`) and rejects any code whose step is `<=` the last accepted one, both at login and on enrollment activation. `TotpService.matchingStep` returns the matched step via a constant-time check over the ±1 window. | `V42__mfa_totp_anti_replay.sql`, `model/MfaFactor.java`, `service/mfa/TotpService.java`, `service/mfa/MfaService.java` |
 | F9 | **MFA challenge single-use (B-MFA-2)** — challenge tokens now carry a `jti`; `resolveChallenge` rejects a `jti` already recorded in `consumed_mfa_challenge`, and `consumeChallenge` records it on the first successful MFA completion. An hourly job prunes expired rows. | `V43__consumed_mfa_challenge.sql`, `model/ConsumedMfaChallenge.java`, `repository/ConsumedMfaChallengeRepository.java`, `service/JwtService.java`, `service/mfa/MfaService.java`, `service/mfa/ConsumedMfaChallengeCleanup.java`, `controller/MfaController.java` |
+| F10 | **`setAdminRole` tenant-scoping (B-TEN-1)** — the target user is now resolved via `findByIdAndTenantId` through the caller's resolved tenant (matching every other user mutation), so a super-admin can only set admin roles within the tenant they've switched into (the X-WF-Tenant switch is audited). Covered by TDD unit tests + BDD `tenant_isolation.feature` scenarios. | `service/AdminService.java` |
 
 ---
 
@@ -176,12 +177,14 @@ migrating IdP message build/sign to OpenSAML (already on the classpath).
 
 ### Multi-tenancy / SCIM / audit
 
-**B-TEN-1 · High · `setAdminRole` is unscoped and off the audited cross-tenant path.**
-`service/AdminService.java`. Loads the target via `findById` (no tenant filter) and can
-grant SUPER_ADMIN in any tenant with no `ADMIN_CROSS_TENANT_ACCESS` audit event. Fix:
-resolve via `findByIdAndTenantId` through the request's resolved tenant so the cross-tenant
-switch is required and audited; if a deliberate global-by-id capability is wanted, give it
-a distinct, explicitly-audited endpoint.
+**B-TEN-1 · High · `setAdminRole` is unscoped and off the audited cross-tenant path. ✅ FIXED (F10).**
+`AdminService.setAdminRole` now resolves the target via
+`findByIdAndTenantId(targetUserId, tenantAccessor.requireTenantId())` — identical to every
+other user mutation in the class — so a super-admin can only set admin roles on users in the
+tenant they have (audibly, via `X-WF-Tenant`) switched into; a target in another tenant
+returns `not found` with no grant and no audit. Verified by `AdminServiceTest` (happy-path,
+cross-tenant-hidden, non-super-admin-denied, null-role) and `tenant_isolation.feature`
+(positive + negative scenarios).
 
 **B-TEN-2 · Medium · Failed cross-tenant switches aren't audited.**
 `config/tenant/CrossTenantSelectorFilter.java`. Only successful switches are logged. Emit
