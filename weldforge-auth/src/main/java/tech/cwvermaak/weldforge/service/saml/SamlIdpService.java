@@ -95,6 +95,7 @@ public class SamlIdpService {
                 .attributeMappings(dto.getAttributeMappings())
                 .enabled(dto.getEnabled() != null ? dto.getEnabled() : true)
                 .encryptAssertions(Boolean.TRUE.equals(dto.getEncryptAssertions()))
+                .wantAuthnRequestSigned(Boolean.TRUE.equals(dto.getWantAuthnRequestSigned()))
                 .build();
         spRepository.save(sp);
 
@@ -120,6 +121,7 @@ public class SamlIdpService {
         if (dto.getAttributeMappings() != null) sp.setAttributeMappings(dto.getAttributeMappings());
         if (dto.getEnabled() != null) sp.setEnabled(dto.getEnabled());
         if (dto.getEncryptAssertions() != null) sp.setEncryptAssertions(dto.getEncryptAssertions());
+        if (dto.getWantAuthnRequestSigned() != null) sp.setWantAuthnRequestSigned(dto.getWantAuthnRequestSigned());
 
         auditService.recordAdmin(AuditEventTypes.SAML_SP_UPDATE, null,
                 AuditEventTypes.TARGET_SAML_SP, String.valueOf(sp.getId()),
@@ -598,6 +600,7 @@ public class SamlIdpService {
                 .attributeMappings(sp.getAttributeMappings())
                 .enabled(sp.getEnabled())
                 .encryptAssertions(sp.getEncryptAssertions())
+                .wantAuthnRequestSigned(sp.getWantAuthnRequestSigned())
                 .build();
     }
 

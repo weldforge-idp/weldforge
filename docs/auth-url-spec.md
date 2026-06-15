@@ -210,6 +210,34 @@ session cookie scoped to that host, and the user is bounced back to the
 apex `/t/{slug}/oauth2/authorize` URL where the consent screen now sees a
 signed-in principal.
 
+### Consent-screen integrity controls (shipped)
+
+The server-rendered consent screen at `/t/{slug}/oauth2/authorize` and its
+`POST /t/{slug}/oauth2/authorize/decide` handler carry three controls — important
+because `decide` is `permitAll` and global CSRF is disabled (the API is otherwise
+Bearer-token authenticated):
+
+1. **Signed `consent_csrf` token.** `/authorize` mints a short-lived signed token
+   bound to the authenticated subject + tenant
+   (`JwtService.generateConsentCsrfToken`); `decide` rejects with `access_denied`
+   any submission whose token is missing, malformed, expired, or whose
+   subject/tenant claims don't match the acting user and path slug
+   (`verifyConsentCsrf`). This blocks cross-site auto-submit of the consent form —
+   an attacker can neither mint the token (no signing secret) nor read it from the
+   legitimate render (Same-Origin Policy).
+2. **`redirect_uri` re-validation in `decide`.** The form posts `redirect_uri` back
+   as a hidden field; `decide` re-checks it against the client's registered list
+   before building *either* the allow or deny 302 — closing what was otherwise an
+   open redirect on the deny path.
+3. **Scope restriction.** Granted scope is restricted to the client's registered
+   scope list (standard OIDC scopes always allowed); unregistered scopes are
+   rejected with `invalid_scope`. Clients registered without an explicit scope list
+   are currently left unconstrained (tracked as `B-OIDC-4` in
+   `security/hardening-backlog.md`).
+
+See [security/hardening-backlog.md](security/hardening-backlog.md) (F2/F3/F7) and
+the [threat model](threat-model.md) scenario S6.
+
 ## Cookies
 
 Both `wf_session` (access JWT) and `refresh_token` cookies are written

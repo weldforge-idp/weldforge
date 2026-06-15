@@ -40,10 +40,11 @@ in place — the source of truth is GSM, and the way to push a rotated secret in
 the running pods is to **add a new GSM version and re-run the deploy** (or run
 `helm upgrade` manually, see `infrastructure/README.md`).
 
-`SecretHygieneValidator` refuses to boot the app outside dev/test if
-`JWT_SECRET` or `APP_CRYPTO_SECRET` is still a known dev default or shorter than
-64 bytes (`APP_REQUIRE_SECURE_SECRETS=true` is set in prod values) — so generate
-strong values.
+`SecretHygieneValidator` refuses to boot the app if a secret is too short
+(`JWT_SECRET` < 64 bytes for HS512, `APP_CRYPTO_SECRET` < 16 chars — enforced in
+every profile) or, when `APP_REQUIRE_SECURE_SECRETS=true` (set in prod values),
+is still a known dev/placeholder default — so generate strong values. See
+[../security/configuration-reference.md](../security/configuration-reference.md).
 
 ---
 

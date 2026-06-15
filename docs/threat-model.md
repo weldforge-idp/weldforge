@@ -112,7 +112,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 |--------|--------|-----------------|
 | **S** | Phishing tenant impersonation (`acme-bank-secure.sso…`) | Reserved-label allowlist (resolution + creation time), V1 unverified banner, V2a email-control challenge (`auth-url-spec.md`); **open:** V2b/V2c (`B-TEN`/spec roadmap, `M3`) |
 | **S** | Stolen tenant-A cookie replayed on tenant-B subdomain | **JWT-authoritative tenant binding** — `JwtAuthenticationFilter` compares JWT `tid`/`tenant` to the *implicit* tenant (host/path, not `X-Tenant-Slug`); mismatch ⇒ runs anonymous |
-| **T** | Cross-site request forgery on auth POSTs | `SameSite=Lax` + **JSON-only** `AuthJsonContentTypeFilter` (415 on form-encoded `/api/auth/**`); **open:** consent-form CSRF token (`B-OIDC-1`) |
+| **T** | Cross-site request forgery on auth POSTs | `SameSite=Lax` + **JSON-only** `AuthJsonContentTypeFilter` (415 on form-encoded `/api/auth/**`); consent-form CSRF closed — signed per-render `consent_csrf` token required by `decide()` (`B-OIDC-1`, F7) |
 | **R** | User denies an action | Per-action audit events (`AuditService`) on login/MFA/reset/profile/OIDC |
 | **I** | Tenant existence / branding enumeration | Tenant subdomains `noindex` (`TenantSubdomainNoIndexFilter` + nginx); generic errors |
 | **D** | Credential stuffing / brute force | `RateLimitingFilter` (login 10/15m, register 5/60m) + per-user lockout 5/15m; **open:** XFF spoof + in-memory buckets (`B-AUTH-1`) |
@@ -131,7 +131,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | STRIDE | Threat | Control / status |
 |--------|--------|------------------|
 | **E/I** | Horizontal read of another tenant's rows | DAO queries filter by the **resolved** `tenantId` (`findByIdAndTenantId`, `findByTenantId…`); audit's tenant-isolation findings satisfied (`cross-tenant-admin-spec.md` §7) |
-| **E** | Admin-role grant in an arbitrary tenant | **Open:** `AdminService.setAdminRole` loads by id without tenant scope (`B-TEN-1`) |
+| **E** | Admin-role grant in an arbitrary tenant | Closed (F10): `AdminService.setAdminRole` resolves the target via `findByIdAndTenantId` on the audited resolved tenant (`B-TEN-1`). Residual: per-tenant SUPER_ADMIN write-guard for the deferred membership API (`B-TEN-4`) |
 | **T** | SQL injection | Parameterised JPA/Hibernate; no string-built SQL on the auth paths |
 
 ### TB4 — App ⇄ outbound (webhooks, CRM, SMTP, LDAP, SMS)
@@ -148,7 +148,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | STRIDE | Threat | Control / status |
 |--------|--------|------------------|
 | **S** | Forged token accepted by an RP | Per-tenant RS256; RPs validate against tenant JWKS; `iss` matches discovery |
-| **T** | SAML assertion forgery / XML Signature Wrapping | Assertion signed (XML-DSig, enveloped, exclusive C14N, SHA-256), encrypt-after-sign; **open:** AuthnRequest signatures unverified + string-scan XML parse + no replay (`B-SAML-1`) |
+| **T** | SAML assertion forgery / XML Signature Wrapping | Assertion signed (XML-DSig, enveloped, exclusive C14N, SHA-256), encrypt-after-sign; inbound XML now XXE-hardened DOM-parsed (F11) and AuthnRequest signatures verified per-SP via an XSW-resistant validator (`wantAuthnRequestSigned`, F12); **open:** no `InResponseTo`/replay correlation (`B-SAML-1`(c)) |
 | **I** | Over-release of user attributes to an SP | Per-SP attribute release policy (`_release` allowlist, SAM-08) |
 | **E** | Over-broad OIDC scope | Scope restricted to client's registered list **when non-empty**; **open:** empty-list clients unconstrained (`B-OIDC-4`) |
 | **T** | Open redirect via `redirect_uri` / consent deny path | `redirect_uri` checked against the client's registered list at authorize and at `decide` (F2); reset `returnTo` is same-origin validated |
@@ -173,7 +173,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | STRIDE | Threat | Control / status |
 |--------|--------|------------------|
 | **E** | Tenant admin self-promotes to verified / super-admin | `updateTenant` cannot set `verifiedAt`; per-tenant `SUPER_ADMIN` downgraded to `TENANT_ADMIN` at read time (`cross-tenant-admin-spec.md` §5) |
-| **R** | Cross-tenant action without trace | Successful switch emits `admin.cross_tenant.access`; **open:** denied switches unaudited (`B-TEN-2`); unscoped `setAdminRole` bypasses the audited path (`B-TEN-1`) |
+| **R** | Cross-tenant action without trace | Successful switch emits `admin.cross_tenant.access`; `setAdminRole` is now tenant-scoped through the audited switch (`B-TEN-1`, F10); **open:** denied switches still unaudited (`B-TEN-2`) |
 
 ---
 
@@ -253,24 +253,33 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   encrypt-after-sign (`SamlIdpService`). The ACS/Audience/Recipient come from
   **stored SP config**, not from the request, and an authenticated browser
   session is required to issue one.
-- **Residual risk.** **High (`B-SAML-1`).** Inbound `AuthnRequest` signatures
-  are **never verified** (metadata hardcodes `WantAuthnRequestsSigned="false"`);
-  inbound XML is string-scanned rather than parsed with the XXE-hardened
-  `SamlMetadataParser`; there is no `InResponseTo`/replay correlation. Also:
-  `KeyInfo`/metadata-cert/issuer mismatch (`B-SAML-3`) and legacy CBC + OAEP-SHA1
-  encryption (`B-SAML-2`).
+- **Mitigations added (2026-06).** Inbound AuthnRequest/LogoutRequest are now
+  parsed with an XXE-hardened, namespace-aware DOM parser (`SamlInboundMessageParser`,
+  F11), closing the string-scan/parser-differential and XXE exposure. AuthnRequest
+  signatures are verified per-SP when `wantAuthnRequestSigned` is set, via an
+  **XSW-resistant** validator (`SamlSignatureValidator`, F12): single signature,
+  enveloped over the root, single reference to the root ID, secure validation.
+- **Residual risk.** **Medium (`B-SAML-1`(c)).** No `InResponseTo`/replay
+  correlation yet — requests/assertions are not single-use at the SP. Minor:
+  the IdP metadata still advertises `WantAuthnRequestsSigned="false"` while
+  enforcement is per-SP — a compliant SP reads that and won't sign, so flipping
+  `wantAuthnRequestSigned=true` can break that SP's login until it is told to
+  sign (`B-SAML-1`(d)). Also `KeyInfo`/metadata-cert/issuer mismatch (`B-SAML-3`)
+  and legacy CBC + OAEP-SHA1 encryption (`B-SAML-2`).
 
 ### S6 — Consent / CSRF
 - **Threat.** A malicious site auto-submits the OIDC consent decision for a
   logged-in user, granting an attacker's client.
 - **Mitigation.** `SameSite=Lax` cookies; the JSON-only filter blocks classic
   form-CSRF on `/api/auth/**`; `redirect_uri` is registered-list-validated at
-  authorize and `decide` (F2 closed the deny-path open redirect).
-- **Residual risk.** **High (`B-OIDC-1`).** The consent form (`/t/*/oauth2/
-  authorize/decide`) is cookie-authenticated with **no anti-CSRF token** and CSRF
-  is globally disabled. The standing rule (`auth-url-spec.md`) — no
-  cookie-authed mutating endpoint without a CSRF token — is not yet met for
-  consent.
+  authorize and `decide` (F2 closed the deny-path open redirect). The consent
+  form now carries a signed per-render `consent_csrf` token bound to the
+  authenticated user + tenant, which `decide()` requires and validates before
+  acting (`JwtService.generateConsentCsrfToken` + `verifyConsentCsrf`, F7) — an
+  attacker can neither mint the token nor read it cross-origin.
+- **Residual risk.** Low. Consent CSRF is closed (`B-OIDC-1`). Separately,
+  `/authorize` still returns errors as JSON rather than spec redirects
+  (`B-OIDC-2`) — a conformance gap, not a CSRF hole.
 
 ### S7 — MFA bypass / replay
 - **Threat.** Replay a captured TOTP within its window, or reuse a leaked MFA
@@ -280,11 +289,15 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   OIDC step-up enforces `max_age`/`require_mfa` freshness
   (`OidcAuthorizationService.enforceStepUp`). The `mfa_challenge` JWT is purpose-
   scoped so it can't authenticate API calls.
-- **Residual risk.** **High.** TOTP codes are **replayable** within the ±1-step
-  (~90s) window — no last-step tracking (`B-MFA-1`). The challenge token is
-  reusable for its full 5-minute window (no `jti`, not session/IP-bound,
-  `B-MFA-2`). Self-service MFA reset is password-only and unthrottled
-  (`B-AUTH-5`).
+- **Mitigations added (2026-06).** TOTP replay is closed (F8/`B-MFA-1`): the
+  accepted time-step is persisted (`user_mfa_factors.last_totp_step`) and any
+  step `<=` the last accepted is rejected. Challenge-token reuse is closed
+  (F9/`B-MFA-2`): tokens carry a `jti` recorded in `consumed_mfa_challenge` on
+  first successful use, so the token is one-shot.
+- **Residual risk.** Low. The challenge token is still not IP/UA-bound
+  (deferred — `B-MFA-2` note); self-service MFA reset is password-only and
+  unthrottled (`B-AUTH-5`); a clock-behind device can have a current code
+  rejected after a prior future-skewed acceptance (benign, `B-MFA-1` note).
 
 ### S8 — Credential stuffing
 - **Threat.** Automated login attempts with breached credential lists.
@@ -335,12 +348,8 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 
 | Area | Item(s) | Severity |
 |------|---------|----------|
-| SAML AuthnRequest signatures unverified + XML string-scan + no replay | **B-SAML-1** | High |
-| OIDC consent-form CSRF token missing | **B-OIDC-1** | High |
-| TOTP replay within validity window | **B-MFA-1** | High |
-| MFA challenge-token reuse (no `jti`, unbound) | **B-MFA-2** | High |
 | Shared-HMAC: no `aud`/`iss` validation; no key-ring | **B-JWT-1**, **B-JWT-2** | High |
-| Unscoped `setAdminRole` off the audited path | **B-TEN-1** | High |
+| SAML: no `InResponseTo`/replay correlation (sig verify + XXE parse now done) | **B-SAML-1**(c) | Medium |
 | `X-Forwarded-For` trusted from first hop (rate-limit / audit) | **B-AUTH-1** | Medium |
 | SSRF denylist on webhook/CRM URLs | **B-LEGACY-1** | Medium |
 | OIDC scope enforcement opt-in for empty-list clients | **B-OIDC-4** | Medium |
@@ -354,9 +363,14 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 
 Recently **closed** (now counted as mitigations above, not open): failed-login
 audit + lockout in `REQUIRES_NEW` (#44); 400-not-500 input hardening (#43);
-identity-proofing V1 (#36) / V2a (#37); OAuth2 consent open-redirect (F2);
-constant-time client-secret compare (F4); JWT clock-skew tolerance (F5); secret
-hygiene boot validator (F1).
+identity-proofing V1 (#36) / V2a (#37); secret hygiene boot validator (F1);
+OAuth2 consent open-redirect (F2); OAuth2 scope enforcement (F3); constant-time
+client-secret compare (F4); JWT clock-skew tolerance (F5); **consent-form CSRF
+token (F7); TOTP anti-replay (F8); MFA challenge single-use (F9); `setAdminRole`
+tenant-scoping (F10); SAML inbound XXE-hardened parsing (F11); SAML AuthnRequest
+signature verification (F12)**. The genuine remaining Highs are now only the
+shared-HMAC items (`B-JWT-1`/`B-JWT-2`) and `/authorize` error-redirect
+conformance (`B-OIDC-2`).
 
 ---
 

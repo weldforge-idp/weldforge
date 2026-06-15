@@ -51,3 +51,7 @@ Feature: SAML IdP mode
     Given an SP "https://unsigned.acme.test/saml" that does not require signed AuthnRequests
     When an unsigned AuthnRequest from that SP is verified
     Then the SAML signature check passes
+
+  Scenario: Signed-AuthnRequest enforcement is configurable through the admin API
+    When an SP "https://api.acme.test/saml" is registered requiring signed AuthnRequests
+    Then the registered SP "https://api.acme.test/saml" requires signed AuthnRequests
