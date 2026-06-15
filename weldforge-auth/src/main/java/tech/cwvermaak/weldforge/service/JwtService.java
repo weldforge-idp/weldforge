@@ -161,6 +161,7 @@ public class JwtService {
         claims.put(CLAIM_TENANT_SLUG, tenantSlug == null ? "" : tenantSlug);
         claims.put(CLAIM_PURPOSE, PURPOSE_MFA_CHALLENGE);
         return Jwts.builder()
+                .id(java.util.UUID.randomUUID().toString())   // jti — enables single-use (B-MFA-2)
                 .subject(String.valueOf(userId))
                 .claims(claims)
                 .issuedAt(new Date())

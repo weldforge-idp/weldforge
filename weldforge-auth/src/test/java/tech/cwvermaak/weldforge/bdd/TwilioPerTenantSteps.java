@@ -212,7 +212,8 @@ public class TwilioPerTenantSteps {
         tenantTwilioService = new TenantTwilioService(tenantAccessor, tenantRepository,
                 twilioRepo, userRepo, auditService, twilioService);
         mfaService = new MfaService(factorRepo, backupRepo, userRepo, jwtService, totpService,
-                backupCodeService, webAuthnService, passwordEncoder, auditService, twilioService);
+                backupCodeService, webAuthnService, passwordEncoder, auditService, twilioService,
+                mock(tech.cwvermaak.weldforge.repository.ConsumedMfaChallengeRepository.class));
     }
 
     private Tenant tenant(String slug) {

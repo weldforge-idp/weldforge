@@ -59,6 +59,8 @@ public class MfaController {
         // Second factor satisfied — clear the failed-attempt counter so the
         // password leg's earlier reset is not undone by interim MFA misses.
         lockoutService.recordSuccess(user);
+        // Spend the challenge token so it can't be replayed (B-MFA-2).
+        mfaService.consumeChallenge(req.getChallengeToken());
         return ResponseEntity.ok(authService.completeMfaLogin(user, httpRequest, response));
     }
 

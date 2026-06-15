@@ -51,6 +51,7 @@ public class MfaService {
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
     private final TwilioService twilioService;
+    private final tech.cwvermaak.weldforge.repository.ConsumedMfaChallengeRepository consumedMfaChallengeRepository;
 
     private static final SecureRandom SMS_CODE_RNG = new SecureRandom();
     private static final long SMS_CODE_TTL_SECONDS = 300;
@@ -298,6 +299,13 @@ public class MfaService {
         if (!jwtService.isMfaChallenge(claims)) {
             throw new AccessDeniedException("Not an MFA challenge token");
         }
+        // Single-use guard (B-MFA-2): a challenge token already spent on a
+        // successful login cannot be replayed. Legacy tokens minted before the
+        // jti was added (during a deploy rollover) have no id — skip the check.
+        String jti = claims.getId();
+        if (jti != null && !jti.isBlank() && consumedMfaChallengeRepository.existsById(jti)) {
+            throw new AccessDeniedException("MFA challenge already used");
+        }
         Long userId;
         try {
             userId = Long.valueOf(claims.getSubject());
@@ -306,6 +314,35 @@ public class MfaService {
         }
         return userRepository.findById(userId)
                 .orElseThrow(() -> new AccessDeniedException("User no longer exists"));
+    }
+
+    /**
+     * Mark a challenge token as spent (B-MFA-2). Call this exactly once, after
+     * the second factor has been verified, so the same token cannot complete
+     * login again. No-op for tokens without a jti (legacy) or already recorded.
+     */
+    @Transactional
+    public void consumeChallenge(String challengeToken) {
+        if (challengeToken == null || challengeToken.isBlank()) return;
+        Claims claims;
+        try {
+            claims = jwtService.parse(challengeToken);
+        } catch (JwtException | IllegalArgumentException e) {
+            return;
+        }
+        String jti = claims.getId();
+        if (jti == null || jti.isBlank()) return;
+        if (consumedMfaChallengeRepository.existsById(jti)) return;
+        LocalDateTime expiresAt = claims.getExpiration() == null
+                ? LocalDateTime.now().plusMinutes(10)
+                : LocalDateTime.ofInstant(claims.getExpiration().toInstant(),
+                        java.time.ZoneId.systemDefault());
+        consumedMfaChallengeRepository.save(
+                tech.cwvermaak.weldforge.model.ConsumedMfaChallenge.builder()
+                        .jti(jti)
+                        .expiresAt(expiresAt)
+                        .consumedAt(LocalDateTime.now())
+                        .build());
     }
 
     public void recordChallengeFailure(User user, MfaFactorType type) {

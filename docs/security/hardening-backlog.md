@@ -34,6 +34,7 @@ single-use**, and (3) **governance documentation**.
 | F6 | **Doc accuracy** — fixed README's false "Spring Authorization Server" claim, qualified the "independent audit" wording, corrected migration count (V34→V41) and Java version (21→25). | `README.md` |
 | F7 | **Consent-flow CSRF (B-OIDC-1)** — the consent form now carries a signed, per-render `consent_csrf` token bound to the authenticated user + tenant; `decide()` requires a valid one whose subject matches the session principal. A cross-site auto-submit can't mint or read such a token, so consent CSRF is blocked despite global CSRF being disabled. | `service/JwtService.java`, `controller/OidcAuthorizationController.java` |
 | F8 | **TOTP anti-replay (B-MFA-1)** — TOTP verification now records the accepted time-step (`user_mfa_factors.last_totp_step`) and rejects any code whose step is `<=` the last accepted one, both at login and on enrollment activation. `TotpService.matchingStep` returns the matched step via a constant-time check over the ±1 window. | `V42__mfa_totp_anti_replay.sql`, `model/MfaFactor.java`, `service/mfa/TotpService.java`, `service/mfa/MfaService.java` |
+| F9 | **MFA challenge single-use (B-MFA-2)** — challenge tokens now carry a `jti`; `resolveChallenge` rejects a `jti` already recorded in `consumed_mfa_challenge`, and `consumeChallenge` records it on the first successful MFA completion. An hourly job prunes expired rows. | `V43__consumed_mfa_challenge.sql`, `model/ConsumedMfaChallenge.java`, `repository/ConsumedMfaChallengeRepository.java`, `service/JwtService.java`, `service/mfa/MfaService.java`, `service/mfa/ConsumedMfaChallengeCleanup.java`, `controller/MfaController.java` |
 
 ---
 
@@ -50,13 +51,16 @@ returns the matched ±1-window time-step via a constant-time compare; the step i
 in `user_mfa_factors.last_totp_step` and any code whose step is `<=` the last accepted one
 is rejected as a replay (RFC 6238). SMS and backup codes were already single-use.
 
-**B-MFA-2 · High · MFA challenge token is reusable for its full 5-minute window.**
-`service/JwtService.java` (`generateMfaChallengeToken`), `service/mfa/MfaService.java`
-(`resolveChallenge`). The `mfa_challenge` JWT carries no `jti` and isn't single-use or
-bound to the password-leg session/IP, so a leaked challenge token + a (replayable) TOTP
-is a standing 5-minute login primitive. Fix: track the `jti` in a short-TTL store,
-invalidate on first successful `completeMfaLogin`, and bind to the client IP/UA captured
-at password-verify time.
+**B-MFA-2 · High · MFA challenge token is reusable for its full 5-minute window. ✅ FIXED (F9).**
+Challenge tokens now carry a `jti` (`JwtService.generateMfaChallengeToken`).
+`resolveChallenge` rejects a token whose `jti` is recorded in the new
+`consumed_mfa_challenge` table, and `MfaService.consumeChallenge` records it once the
+second factor is verified (called from `MfaController.verify`), so the token is one-shot;
+a `ConsumedMfaChallengeCleanup` job prunes expired rows hourly. Combined with B-MFA-1,
+replaying a challenge token now fails on both the spent-jti and the spent-TOTP-step checks.
+*Residual:* the token is still not bound to the client IP/UA captured at password-verify
+time — deferred (IP/UA binding risks false rejects on mobile network changes; revisit if
+session-fixation hardening is prioritized).
 
 **B-AUTH-1 · Medium · Rate-limit / lockout key on a spoofable `X-Forwarded-For`.**
 `config/security/RateLimitingFilter.java`, `service/AuthService.java`. The first XFF token
