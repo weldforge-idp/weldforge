@@ -37,6 +37,7 @@ single-use**, and (3) **governance documentation**.
 | F9 | **MFA challenge single-use (B-MFA-2)** — challenge tokens now carry a `jti`; `resolveChallenge` rejects a `jti` already recorded in `consumed_mfa_challenge`, and `consumeChallenge` records it on the first successful MFA completion. An hourly job prunes expired rows. | `V43__consumed_mfa_challenge.sql`, `model/ConsumedMfaChallenge.java`, `repository/ConsumedMfaChallengeRepository.java`, `service/JwtService.java`, `service/mfa/MfaService.java`, `service/mfa/ConsumedMfaChallengeCleanup.java`, `controller/MfaController.java` |
 | F10 | **`setAdminRole` tenant-scoping (B-TEN-1)** — the target user is now resolved via `findByIdAndTenantId` through the caller's resolved tenant (matching every other user mutation), so a super-admin can only set admin roles within the tenant they've switched into (the X-WF-Tenant switch is audited). Covered by TDD unit tests + BDD `tenant_isolation.feature` scenarios. | `service/AdminService.java` |
 | F11 | **SAML inbound XML hardening (B-SAML-1 part b)** — replaced the IdP's `indexOf`/substring scanning of inbound AuthnRequest/LogoutRequest with an XXE-hardened, namespace-aware DOM parser (`SamlInboundMessageParser`, DOCTYPE forbidden, external entities disabled). Resists parser-differential, comment/CDATA and namespace-prefix tricks, and is the prerequisite for AuthnRequest signature verification. TDD unit tests + BDD `saml_idp.feature` (issuer parse + DOCTYPE/XXE rejection). | `service/saml/SamlInboundMessageParser.java`, `service/saml/SamlMessageException.java`, `controller/SamlIdpController.java` |
+| F12 | **SAML AuthnRequest signature verification (B-SAML-1 part a)** — per-SP `wantAuthnRequestSigned` flag; when set, inbound AuthnRequest/LogoutRequest signatures are verified against the SP's certificate by an XSW-resistant validator (single signature, enveloped over the root, single reference to the root ID, secure validation). Unsigned/invalid requests are rejected; SPs that don't opt in are unaffected. TDD unit tests (real signatures, incl. tamper/wrong-key/unsigned/no-ID) + BDD `saml_idp.feature` scenarios. | `V44__saml_sp_want_authn_request_signed.sql`, `model/SamlServiceProvider.java`, `service/saml/SamlSignatureValidator.java`, `service/saml/SamlIdpService.java`, `controller/SamlIdpController.java` |
 
 ---
 
@@ -154,19 +155,20 @@ HKDF.
 
 ### SAML IdP
 
-**B-SAML-1 · High · The IdP trusts attacker-controllable request fields. ⚠️ PARTIALLY FIXED.**
+**B-SAML-1 · High · The IdP trusts attacker-controllable request fields. ⚠️ MOSTLY FIXED.**
 `service/saml/SamlIdpService.java`, `controller/SamlIdpController.java`. Three reinforcing
 gaps:
-- **(a) AuthnRequest signatures are never verified** (metadata hardcodes
-  `WantAuthnRequestsSigned="false"`). **OPEN** — next sub-task. Verify the request
-  signature against the stored SP cert (now feasible on the parsed DOM from F11); make it
-  per-SP configurable and surface it correctly in metadata.
+- **(a) AuthnRequest signatures are never verified.** ✅ **FIXED (F12)** — per-SP
+  `wantAuthnRequestSigned` flag enables XSW-resistant signature verification against the
+  SP cert. *Minor residual:* the IdP-level metadata still advertises
+  `WantAuthnRequestsSigned="false"` (it's IdP-wide; enforcement is per-SP). Cosmetic —
+  consider surfacing a tenant default later.
 - **(b) inbound XML was parsed by `indexOf`/substring string-scanning, not a hardened DOM
   parser.** ✅ **FIXED (F11)** via `SamlInboundMessageParser` (XXE-hardened, namespace-aware).
 - **(c) no replay / `InResponseTo` correlation.** **OPEN** — track issued request IDs /
   treat assertions as single-use at the SP.
 
-Saving grace for the open parts: an authenticated browser session is still required and
+Saving grace for the open part: an authenticated browser session is still required and
 ACS/Audience/Recipient come from stored SP config, not the request.
 
 **B-SAML-2 · Medium · Legacy assertion-encryption crypto.**

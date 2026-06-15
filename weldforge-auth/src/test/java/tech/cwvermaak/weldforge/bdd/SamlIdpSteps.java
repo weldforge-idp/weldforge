@@ -322,4 +322,62 @@ public class SamlIdpSteps {
         assertThat(lastError).isInstanceOf(
                 tech.cwvermaak.weldforge.service.saml.SamlMessageException.class);
     }
+
+    // ---- AuthnRequest signature verification (B-SAML-1 part a) --------
+
+    private java.security.KeyPair spKeyPair;
+    private tech.cwvermaak.weldforge.model.SamlServiceProvider signingSp;
+
+    @io.cucumber.java.en.Given("an SP {string} that requires signed AuthnRequests")
+    public void spRequiresSigning(String entityId) throws Exception {
+        spKeyPair = tech.cwvermaak.weldforge.service.saml.SamlTestCrypto.generateKeyPair();
+        String certPem = tech.cwvermaak.weldforge.service.saml.SamlTestCrypto.selfSignedCertPem(spKeyPair);
+        signingSp = tech.cwvermaak.weldforge.model.SamlServiceProvider.builder()
+                .entityId(entityId).acsUrl("https://sp/acs").spCertificate(certPem)
+                .wantAuthnRequestSigned(true).enabled(true).build();
+    }
+
+    @io.cucumber.java.en.Given("an SP {string} that does not require signed AuthnRequests")
+    public void spNoSigning(String entityId) {
+        spKeyPair = null;
+        signingSp = tech.cwvermaak.weldforge.model.SamlServiceProvider.builder()
+                .entityId(entityId).acsUrl("https://sp/acs")
+                .wantAuthnRequestSigned(false).enabled(true).build();
+    }
+
+    @When("a validly-signed AuthnRequest from that SP is verified")
+    public void verifySignedRequest() {
+        lastError = null;
+        try {
+            String signed = tech.cwvermaak.weldforge.service.saml.SamlTestCrypto.sign(
+                    tech.cwvermaak.weldforge.service.saml.SamlTestCrypto.authnRequest(
+                            signingSp.getEntityId(), "_sig1"), spKeyPair);
+            samlIdpService.verifyAuthnRequestSignature(signingSp, signed);
+        } catch (Exception e) {
+            lastError = e;
+        }
+    }
+
+    @When("an unsigned AuthnRequest from that SP is verified")
+    public void verifyUnsignedRequest() {
+        lastError = null;
+        try {
+            String unsigned = tech.cwvermaak.weldforge.service.saml.SamlTestCrypto.authnRequest(
+                    signingSp.getEntityId(), "_uns1");
+            samlIdpService.verifyAuthnRequestSignature(signingSp, unsigned);
+        } catch (Exception e) {
+            lastError = e;
+        }
+    }
+
+    @Then("the SAML signature check passes")
+    public void signatureCheckPasses() {
+        assertThat(lastError).isNull();
+    }
+
+    @Then("the SAML signature check fails")
+    public void signatureCheckFails() {
+        assertThat(lastError).isInstanceOf(
+                tech.cwvermaak.weldforge.service.saml.SamlMessageException.class);
+    }
 }

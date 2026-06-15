@@ -155,6 +155,14 @@ public class SamlIdpController {
 
         SamlServiceProvider sp = samlIdpService.validateAuthnRequest(tenant, issuer);
 
+        // Verify the LogoutRequest signature when this SP requires signing.
+        try {
+            samlIdpService.verifyAuthnRequestSignature(sp, xml);
+        } catch (SamlMessageException e) {
+            return ResponseEntity.badRequest().body(
+                    java.util.Map.of("error", "LogoutRequest signature rejected: " + e.getMessage()));
+        }
+
         SamlSloService.Binding binding = "REDIRECT".equalsIgnoreCase(bindingParam)
                 ? SamlSloService.Binding.REDIRECT
                 : SamlSloService.Binding.POST;
@@ -180,10 +188,10 @@ public class SamlIdpController {
         // Decode the AuthnRequest to extract the issuer (SP entity ID)
         String issuer;
         String inResponseTo = null;
+        String xml;
         try {
             byte[] decoded = java.util.Base64.getDecoder().decode(samlRequest);
             // For redirect binding, the request may be deflated
-            String xml;
             try {
                 java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
                 java.util.zip.InflaterOutputStream inflater = new java.util.zip.InflaterOutputStream(baos);
@@ -207,6 +215,14 @@ public class SamlIdpController {
         }
 
         SamlServiceProvider sp = samlIdpService.validateAuthnRequest(tenant, issuer);
+
+        // Verify the request signature when this SP is configured to sign its
+        // AuthnRequests (B-SAML-1 part a). No-op for SPs that don't sign.
+        try {
+            samlIdpService.verifyAuthnRequestSignature(sp, xml);
+        } catch (SamlMessageException e) {
+            return ResponseEntity.status(400).body("AuthnRequest signature rejected: " + e.getMessage());
+        }
 
         User user = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)
                 .orElse(null);

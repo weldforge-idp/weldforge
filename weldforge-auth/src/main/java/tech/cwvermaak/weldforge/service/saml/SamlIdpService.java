@@ -265,6 +265,25 @@ public class SamlIdpService {
                         "Unregistered or disabled SP: " + issuer));
     }
 
+    /**
+     * Verify the XML signature on an inbound SAML request when the SP requires
+     * signed requests (B-SAML-1 part a). No-op for SPs that don't opt in. When
+     * required, a missing certificate is a configuration error and an
+     * unsigned / invalid signature throws {@link SamlMessageException}.
+     */
+    public void verifyAuthnRequestSignature(SamlServiceProvider sp, String requestXml) {
+        if (sp == null || !Boolean.TRUE.equals(sp.getWantAuthnRequestSigned())) {
+            return; // signing not required for this SP
+        }
+        String pem = sp.getSpCertificate();
+        if (pem == null || pem.isBlank()) {
+            throw new IllegalStateException(
+                    "SP " + sp.getEntityId() + " requires signed AuthnRequests but has no certificate on file");
+        }
+        java.security.PublicKey key = SamlSignatureValidator.publicKeyFromPem(pem);
+        SamlSignatureValidator.verify(requestXml, key);
+    }
+
     // ---- Helpers ----------------------------------------------------
 
     private List<String> collectGroupNames(Long tenantId, Long userId) {
