@@ -277,4 +277,49 @@ public class SamlIdpSteps {
         assertThat(lastError).isNotNull();
         assertThat(lastError).isInstanceOf(IllegalArgumentException.class);
     }
+
+    // ---- inbound XML hardening (B-SAML-1) ----------------------------
+
+    private tech.cwvermaak.weldforge.service.saml.SamlInboundMessageParser.ParsedMessage parsedMessage;
+
+    @When("a raw SAML AuthnRequest from {string} is parsed")
+    public void parseRawAuthnRequest(String issuer) {
+        String xml = "<samlp:AuthnRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" "
+                + "xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_req1\" Version=\"2.0\">"
+                + "<saml:Issuer>" + issuer + "</saml:Issuer></samlp:AuthnRequest>";
+        lastError = null;
+        parsedMessage = null;
+        try {
+            parsedMessage = tech.cwvermaak.weldforge.service.saml.SamlInboundMessageParser.parse(xml);
+        } catch (Exception e) {
+            lastError = e;
+        }
+    }
+
+    @Then("the parsed SAML issuer is {string}")
+    public void parsedIssuerIs(String expected) {
+        assertThat(parsedMessage).isNotNull();
+        assertThat(parsedMessage.issuer()).isEqualTo(expected);
+    }
+
+    @When("a SAML AuthnRequest containing a DOCTYPE is parsed")
+    public void parseDoctype() {
+        String xxe = "<?xml version=\"1.0\"?>"
+                + "<!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>"
+                + "<samlp:AuthnRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" "
+                + "xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_x\">"
+                + "<saml:Issuer>&xxe;</saml:Issuer></samlp:AuthnRequest>";
+        lastError = null;
+        try {
+            tech.cwvermaak.weldforge.service.saml.SamlInboundMessageParser.parse(xxe);
+        } catch (Exception e) {
+            lastError = e;
+        }
+    }
+
+    @Then("the SAML message is rejected as unsafe")
+    public void messageRejectedUnsafe() {
+        assertThat(lastError).isInstanceOf(
+                tech.cwvermaak.weldforge.service.saml.SamlMessageException.class);
+    }
 }

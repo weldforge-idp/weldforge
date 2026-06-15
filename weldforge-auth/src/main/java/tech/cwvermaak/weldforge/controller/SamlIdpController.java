@@ -1,7 +1,6 @@
 package tech.cwvermaak.weldforge.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -14,6 +13,8 @@ import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.saml.SamlIdpService;
+import tech.cwvermaak.weldforge.service.saml.SamlInboundMessageParser;
+import tech.cwvermaak.weldforge.service.saml.SamlMessageException;
 import tech.cwvermaak.weldforge.service.saml.SamlSloService;
 
 /**
@@ -139,8 +140,15 @@ public class SamlIdpController {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", "Invalid SAMLRequest: " + e.getMessage()));
         }
 
-        String issuer = extractXmlElement(xml, "Issuer");
-        String inResponseTo = extractXmlAttribute(xml, "LogoutRequest", "ID");
+        String issuer;
+        String inResponseTo;
+        try {
+            SamlInboundMessageParser.ParsedMessage parsed = SamlInboundMessageParser.parse(xml);
+            issuer = parsed.issuer();
+            inResponseTo = parsed.messageId();
+        } catch (SamlMessageException e) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "Invalid SAMLRequest: " + e.getMessage()));
+        }
         if (issuer == null) {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", "Missing Issuer in LogoutRequest"));
         }
@@ -187,11 +195,15 @@ public class SamlIdpController {
                 xml = new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
             }
 
-            // Simple XML parsing to extract Issuer and ID
-            issuer = extractXmlElement(xml, "Issuer");
-            inResponseTo = extractXmlAttribute(xml, "AuthnRequest", "ID");
+            // XXE-hardened, namespace-aware DOM parse (B-SAML-1).
+            SamlInboundMessageParser.ParsedMessage parsed = SamlInboundMessageParser.parse(xml);
+            issuer = parsed.issuer();
+            inResponseTo = parsed.messageId();
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Invalid SAMLRequest: " + e.getMessage());
+        }
+        if (issuer == null) {
+            return ResponseEntity.badRequest().body("Missing Issuer in AuthnRequest");
         }
 
         SamlServiceProvider sp = samlIdpService.validateAuthnRequest(tenant, issuer);
@@ -239,41 +251,6 @@ public class SamlIdpController {
             return scheme + "://" + host;
         }
         return scheme + "://" + host + ":" + port;
-    }
-
-    private static String extractXmlElement(String xml, String localName) {
-        // Simple extraction — look for <saml:Issuer> or <Issuer>
-        for (String prefix : List.of("saml:", "samlp:", "")) {
-            String open = "<" + prefix + localName;
-            int start = xml.indexOf(open);
-            if (start >= 0) {
-                int gtPos = xml.indexOf(">", start);
-                if (gtPos < 0) continue;
-                int end = xml.indexOf("</" + prefix + localName + ">", gtPos);
-                if (end >= 0) return xml.substring(gtPos + 1, end).trim();
-            }
-        }
-        return null;
-    }
-
-    private static String extractXmlAttribute(String xml, String element, String attr) {
-        for (String prefix : List.of("samlp:", "saml:", "")) {
-            String open = "<" + prefix + element;
-            int start = xml.indexOf(open);
-            if (start >= 0) {
-                int end = xml.indexOf(">", start);
-                if (end < 0) continue;
-                String tag = xml.substring(start, end);
-                String search = attr + "=\"";
-                int attrStart = tag.indexOf(search);
-                if (attrStart >= 0) {
-                    int valueStart = attrStart + search.length();
-                    int valueEnd = tag.indexOf("\"", valueStart);
-                    if (valueEnd > valueStart) return tag.substring(valueStart, valueEnd);
-                }
-            }
-        }
-        return null;
     }
 
     private static String escapeHtml(String s) {
