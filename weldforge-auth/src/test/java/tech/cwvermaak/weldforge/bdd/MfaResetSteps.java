@@ -63,7 +63,8 @@ public class MfaResetSteps {
         auditService = mock(AuditService.class);
         var twilioService = mock(tech.cwvermaak.weldforge.service.TwilioService.class);
         mfa = new MfaService(factorRepo, backupRepo, userRepo, jwtService, totpService,
-                backupCodeService, webAuthnService, passwordEncoder, auditService, twilioService);
+                backupCodeService, webAuthnService, passwordEncoder, auditService, twilioService,
+                mock(tech.cwvermaak.weldforge.repository.ConsumedMfaChallengeRepository.class));
 
         // Capture every audit write into world.auditLog for later assertions.
         doAnswer(inv -> {
