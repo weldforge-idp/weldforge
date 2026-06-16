@@ -138,7 +138,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 
 | STRIDE | Threat | Control / status |
 |--------|--------|------------------|
-| **I/E** | SSRF via admin-configured webhook/CRM URL (cloud metadata, RFC-1918) | RBAC gate (TENANT_ADMIN+) only; **open:** no egress denylist — `JdkWebhookHttpClient` does `URI.create(url)` unchecked (`B-LEGACY-1`) |
+| **I/E** | SSRF via admin-configured webhook/CRM URL (cloud metadata, RFC-1918) | RBAC gate (TENANT_ADMIN+) + central `EgressGuard` (http/https only; blocks loopback/link-local/metadata/RFC1918/ULA/CGNAT) at webhook+CRM send and at subscription create (`B-LEGACY-1`, F14); residual: DNS-rebinding TOCTOU |
 | **D** | Slow/failing receiver exhausts threads | Resilience4j circuit breaker + retry/dead-letter queue (`WebhookRetryScheduler`) |
 | **R** | Tampered webhook payload | HMAC signature header (`WebhookSigner`) so receivers detect tampering |
 | **I** | SMS toll-fraud via unthrottled send | **Open:** `mfa/sms/send` not in the rate-limit map (`B-AUTH-3`) |
@@ -333,12 +333,15 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   service, using WeldForge as an SSRF pivot inside the VPC.
 - **Mitigation.** Creating a webhook/CRM target requires TENANT_ADMIN+
   (RBAC-gated, per `VALIDATION_REPORT_2026-04-17.md`); delivery runs inside a
-  circuit breaker with bounded timeouts.
-- **Residual risk.** **Open (`B-LEGACY-1`, Medium).** `JdkWebhookHttpClient`
-  does `URI.create(url)` with **no** egress allow/deny list, no
-  internal-range/metadata-IP block, no scheme restriction, and no
-  re-validation across redirects. RBAC is the only barrier. Fix: a central
-  egress guard before any outbound HTTP.
+  circuit breaker with bounded timeouts. A central `EgressGuard` (F14,
+  `B-LEGACY-1`) now validates the URL before any outbound request — http/https
+  only, host must resolve, and no resolved address may be loopback, any-local,
+  link-local (incl. `169.254.169.254`), RFC-1918, IPv6 ULA, CGNAT or multicast.
+  Enforced at webhook + CRM send (before the circuit breaker) and fail-fast at
+  webhook subscription create/update.
+- **Residual risk.** Low. The guard resolves DNS, then the HTTP client resolves
+  again at request time — a DNS-rebinding (TOCTOU) window remains; pinning the
+  validated IP into the request would close it.
 
 ---
 
@@ -352,7 +355,6 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 | Shared-HMAC: no `aud`/`iss` validation; no key-ring | **B-JWT-1**, **B-JWT-2** | High |
 | SAML: no `InResponseTo`/replay correlation (sig verify + XXE parse now done) | **B-SAML-1**(c) | Medium |
 | `X-Forwarded-For` trusted from first hop (rate-limit / audit) | **B-AUTH-1** | Medium |
-| SSRF denylist on webhook/CRM URLs | **B-LEGACY-1** | Medium |
 | OIDC scope enforcement opt-in for empty-list clients | **B-OIDC-4** | Medium |
 | SAML KeyInfo/metadata/issuer mismatch; legacy CBC+OAEP-SHA1 | **B-SAML-3**, **B-SAML-2** | Medium |
 | SCIM bulk mis-advertised + error leakage | **B-TEN-3** | Medium |
@@ -369,7 +371,7 @@ client-secret compare (F4); JWT clock-skew tolerance (F5); **consent-form CSRF
 token (F7); TOTP anti-replay (F8); MFA challenge single-use (F9); `setAdminRole`
 tenant-scoping (F10); SAML inbound XXE-hardened parsing (F11); SAML AuthnRequest
 signature verification (F12); `/authorize` spec-conformant error redirects
-(F13)**. The genuine remaining High is now the **shared-HMAC** segmentation
+(F13); SSRF egress guard on webhook/CRM URLs (F14)**. The genuine remaining High is now the **shared-HMAC** segmentation
 (`B-JWT-1` no `aud`/`iss` validation, `B-JWT-2` no key-ring) — the highest-value
 next item.
 

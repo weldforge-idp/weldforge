@@ -39,6 +39,7 @@ single-use**, and (3) **governance documentation**.
 | F11 | **SAML inbound XML hardening (B-SAML-1 part b)** — replaced the IdP's `indexOf`/substring scanning of inbound AuthnRequest/LogoutRequest with an XXE-hardened, namespace-aware DOM parser (`SamlInboundMessageParser`, DOCTYPE forbidden, external entities disabled). Resists parser-differential, comment/CDATA and namespace-prefix tricks, and is the prerequisite for AuthnRequest signature verification. TDD unit tests + BDD `saml_idp.feature` (issuer parse + DOCTYPE/XXE rejection). | `service/saml/SamlInboundMessageParser.java`, `service/saml/SamlMessageException.java`, `controller/SamlIdpController.java` |
 | F12 | **SAML AuthnRequest signature verification (B-SAML-1 part a)** — per-SP `wantAuthnRequestSigned` flag; when set, inbound AuthnRequest/LogoutRequest signatures are verified against the SP's certificate by an XSW-resistant validator (single signature, enveloped over the root, single reference to the root ID, secure validation). Unsigned/invalid requests are rejected; SPs that don't opt in are unaffected. TDD unit tests (real signatures, incl. tamper/wrong-key/unsigned/no-ID) + BDD `saml_idp.feature` scenarios. | `V44__saml_sp_want_authn_request_signed.sql`, `model/SamlServiceProvider.java`, `service/saml/SamlSignatureValidator.java`, `service/saml/SamlIdpService.java`, `controller/SamlIdpController.java` |
 | F13 | **`/authorize` spec-conformant error redirects (B-OIDC-2)** — once `client_id`+`redirect_uri` are validated, protocol errors (e.g. `unsupported_response_type`) now redirect to the registered `redirect_uri` with `error`+`state` (RFC 6749 §4.1.2.1) instead of a JSON 400. Pre-validation errors (unknown client, unregistered redirect_uri) stay non-redirecting 400s, so the deny/error path can't become an open redirect. `OidcAuthorizationException` carries an optional redirect target; unit-tested handler. | `service/oidc/OidcAuthorizationException.java`, `controller/OidcAuthorizationController.java` |
+| F14 | **SSRF egress guard on outbound URLs (B-LEGACY-1)** — central `EgressGuard` (http/https only; blocks loopback/any-local/link-local incl. metadata, RFC1918, IPv6 ULA, CGNAT, multicast) wired into webhook + CRM send paths (before the circuit breaker) and webhook subscription create/update. Unit-tested (literal-IP, hermetic) + service-level create-guard test. | `service/security/EgressGuard.java`, `service/security/EgressNotAllowedException.java`, `service/webhook/JdkWebhookHttpClient.java`, `service/webhook/WebhookSubscriptionService.java`, `service/crm/HttpCrmClient.java` |
 
 ---
 
@@ -232,9 +233,16 @@ rate-limiting the anonymous tenant-metadata disclosure. Also rename the unscoped
 
 ### Previously-reported findings not yet remediated (from SECURITY_AUDIT / VALIDATION_REPORT)
 
-**B-LEGACY-1 · Medium · SSRF on webhook + CRM URLs.** No RFC1918 / link-local /
-`169.254.169.254` denylist; only RBAC gates it. Add an egress allow/deny check in
-`service/webhook/` and `service/crm/`.
+**B-LEGACY-1 · Medium · SSRF on webhook + CRM URLs. ✅ FIXED (F14).** A central
+`EgressGuard` (`service/security/EgressGuard.java`) validates outbound URLs:
+http/https only, host must resolve, and no resolved address may be loopback,
+any-local, link-local (incl. `169.254.169.254` metadata), site-local (RFC 1918),
+IPv6 ULA (fc00::/7), CGNAT (100.64/10) or multicast. Wired into
+`JdkWebhookHttpClient` and `HttpCrmClient` (before the circuit breaker) and into
+`WebhookSubscriptionService` create/update (fail-fast at config time).
+*Residual (Low):* validation resolves DNS, then the HTTP client resolves again —
+a DNS-rebinding (TOCTOU) window remains; pin the validated IP into the request to
+close it.
 
 **B-LEGACY-2 · Medium · Stored-XSS input hardening on the `name` field.**
 `RegisterRequestDto` has no validation; `service/AuthService.java` stores `getName()`
