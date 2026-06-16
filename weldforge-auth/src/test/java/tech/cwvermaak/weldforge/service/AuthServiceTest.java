@@ -8,6 +8,7 @@ import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -65,5 +66,30 @@ class AuthServiceTest {
         auth.maybeUpgradePassword(u, "s3cret");
 
         verify(userRepo, never()).save(any());
+    }
+
+    // ── B-LEGACY-2: display-name input validation ─────────────────────
+
+    @Test
+    @DisplayName("validateDisplayName rejects markup and control characters")
+    void displayName_rejectsMarkupAndControl() {
+        assertThatThrownBy(() -> AuthService.validateDisplayName("Bob <script>alert(1)</script>"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AuthService.validateDisplayName("a > b"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AuthService.validateDisplayName("bad" + ((char) 7) + "bell"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> AuthService.validateDisplayName("x".repeat(300)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("validateDisplayName accepts normal names (unicode, apostrophes, hyphens) and null")
+    void displayName_acceptsNormal() {
+        org.assertj.core.api.Assertions.assertThatCode(() -> {
+            AuthService.validateDisplayName("José O'Brien-Smith");
+            AuthService.validateDisplayName("张伟");
+            AuthService.validateDisplayName(null);
+        }).doesNotThrowAnyException();
     }
 }

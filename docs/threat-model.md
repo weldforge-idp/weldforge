@@ -166,7 +166,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | STRIDE | Threat | Control / status |
 |--------|--------|------------------|
 | **S** | Forged SCIM bearer | `ScimAuthenticationFilter` authenticates against `app_clients`, tenant-scoped |
-| **I** | Capability/error leakage | **Open:** ServiceProviderConfig advertises `bulk` falsely + leaks sub-op exceptions (`B-TEN-3`) |
+| **I** | Capability/error leakage | ServiceProviderConfig advertises bulk truthfully and bulk sub-op errors are sanitized (`B-TEN-3`/F21) |
 | **E** | SCIM deactivation race / privilege | Deactivated users fail login with generic error; SCIM writes tenant-scoped |
 
 ### TB8 — Tenant admin ⇄ platform super-admin
@@ -365,9 +365,7 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 | SAML: no `InResponseTo`/replay correlation (sig verify + XXE parse now done) | **B-SAML-1**(c) | Medium |
 | `X-Forwarded-For` trusted from first hop (rate-limit / audit) | **B-AUTH-1** | Medium |
 | OIDC scope enforcement unconditional (needs client scope backfill) | **B-OIDC-4** (partial) | Medium |
-| SAML KeyInfo/metadata/issuer mismatch; legacy CBC+OAEP-SHA1 | **B-SAML-3**, **B-SAML-2** | Medium |
-| SCIM bulk mis-advertised + error leakage | **B-TEN-3** | Medium |
-| Stored-XSS hardening on `name` (SAML/email sinks) | **B-LEGACY-2** | Medium |
+| SAML KeyInfo/metadata/issuer mismatch (`B-SAML-3`); legacy CBC+OAEP-SHA1 encryption (`B-SAML-2`, outward-facing — per-SP opt-in) | **B-SAML-3**, **B-SAML-2** | Medium |
 | Tamper-evident audit log (HMAC chain) | **B-TEN-5** | Low |
 | Actuator / Swagger gated only by ingress/app-key, not role | **L1/L2** / **B-LEGACY-4** | Low |
 

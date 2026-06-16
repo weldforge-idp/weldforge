@@ -22,6 +22,10 @@ import java.util.Map;
 @RequestMapping(value = "/scim/v2/{slug}", produces = "application/scim+json")
 public class ScimDiscoveryController {
 
+    /** Mirrors the cap enforced by {@code ScimBulkController}. */
+    @org.springframework.beans.factory.annotation.Value("${app.scim.bulk.max-operations:100}")
+    private int bulkMaxOperations;
+
     @GetMapping("/ServiceProviderConfig")
     public ResponseEntity<Map<String, Object>> serviceProviderConfig(@PathVariable String slug,
                                                                      HttpServletRequest request) {
@@ -29,7 +33,12 @@ public class ScimDiscoveryController {
         doc.put("schemas", List.of("urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"));
         doc.put("documentationUri", "https://datatracker.ietf.org/doc/html/rfc7644");
         doc.put("patch",     Map.of("supported", true));
-        doc.put("bulk",      Map.of("supported", false, "maxOperations", 0, "maxPayloadSize", 0));
+        // B-TEN-3: /Bulk is implemented and capped — advertise it truthfully so
+        // provisioners honour the real maxOperations instead of being told bulk
+        // is unsupported while the endpoint is live.
+        doc.put("bulk",      Map.of("supported", true,
+                                    "maxOperations", bulkMaxOperations,
+                                    "maxPayloadSize", 1048576));
         doc.put("filter",    Map.of("supported", true,  "maxResults", 1000));
         doc.put("changePassword", Map.of("supported", false));
         doc.put("sort",      Map.of("supported", false));
