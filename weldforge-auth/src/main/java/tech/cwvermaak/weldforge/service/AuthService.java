@@ -96,6 +96,19 @@ public class AuthService {
     }
 
     @Transactional
+    /**
+     * B-AUTH-2: re-hash the password at the current encoder strength when the
+     * stored hash is weaker (e.g. a lower BCrypt cost from an older import).
+     * Runs only on a verified login, so the plaintext is already in hand.
+     * Package-private for testing.
+     */
+    void maybeUpgradePassword(User user, String rawPassword) {
+        if (user.getPassword() != null && passwordEncoder.upgradeEncoding(user.getPassword())) {
+            user.setPassword(passwordEncoder.encode(rawPassword));
+            userRepository.save(user);
+        }
+    }
+
     public AuthResponseDto login(LoginRequestDto request, HttpServletRequest httpRequest,
                                  HttpServletResponse response) {
         Tenant tenant = currentTenant();
@@ -144,6 +157,10 @@ public class AuthService {
             failedLoginRecorder.badPassword(tenant, user, request.getIdentifier());
             throw new BadCredentialsException("Invalid credentials");
         }
+
+        // B-AUTH-2: transparently migrate a legacy / weaker password hash to the
+        // current encoder strength now that we have the plaintext in hand.
+        maybeUpgradePassword(user, request.getPassword());
 
         lockoutService.recordSuccess(user);
 
