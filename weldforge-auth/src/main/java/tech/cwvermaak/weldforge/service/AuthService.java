@@ -68,6 +68,10 @@ public class AuthService {
             throw new EntityNotFoundException("Registration is not available for this tenant");
         }
 
+        // B-LEGACY-2: reject markup/control chars in the display name (used as
+        // username + surfaced in SAML attributes / emails).
+        validateDisplayName(request.getName());
+
         // Pre-check password policy before we allocate a user row.
         passwordPolicyService.validate(request.getPassword());
 
@@ -106,6 +110,29 @@ public class AuthService {
         if (user.getPassword() != null && passwordEncoder.upgradeEncoding(user.getPassword())) {
             user.setPassword(passwordEncoder.encode(rawPassword));
             userRepository.save(user);
+        }
+    }
+
+    private static final int MAX_DISPLAY_NAME = 255;
+
+    /**
+     * B-LEGACY-2: reject display names containing markup or control characters
+     * before they're stored — they flow into non-escaping sinks (SAML assertion
+     * attributes, email templates). Package-private for testing.
+     */
+    static void validateDisplayName(String name) {
+        if (name == null) return;
+        if (name.length() > MAX_DISPLAY_NAME) {
+            throw new IllegalArgumentException("name is too long (max " + MAX_DISPLAY_NAME + ")");
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '<' || c == '>') {
+                throw new IllegalArgumentException("name must not contain '<' or '>'");
+            }
+            if (Character.isISOControl(c)) {
+                throw new IllegalArgumentException("name must not contain control characters");
+            }
         }
     }
 
@@ -356,6 +383,7 @@ public class AuthService {
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
         if (newName != null && !newName.isBlank() && !newName.equals(user.getName())) {
+            validateDisplayName(newName);
             user.setName(newName.trim());
         }
         if (newEmail != null && !newEmail.isBlank()

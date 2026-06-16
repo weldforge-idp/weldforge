@@ -46,6 +46,8 @@ single-use**, and (3) **governance documentation**.
 | F18 | **userinfo/introspection token-type + audience (B-OIDC-3)** — userinfo requires `token_type=access` (rejects ID tokens); introspection returns inactive when the token isn't the caller's own (`client_id`/`aud` match). Real-token unit tests. | `controller/OidcUserinfoController.java`, `service/oidc/OidcIntrospectionService.java`, `controller/OidcIntrospectRevokeController.java` |
 | F19 | **redirect_uri validation at registration (B-OIDC-4, partial)** — `OidcClientService.create` rejects non-absolute / fragment-bearing / http-non-loopback redirect URIs. Unit-tested. | `service/oidc/OidcClientService.java` |
 | F20 | **client_credentials honest `expires_in` (B-OIDC-5)** — token endpoint returns the resolved per-tenant TTL instead of a hardcoded 3600. | `service/oidc/OidcTokenService.java`, `controller/OidcAuthorizationController.java` |
+| F21 | **SCIM bulk advertised truthfully + error sanitized (B-TEN-3)** — `ServiceProviderConfig` reports `bulk.supported=true` with the real `maxOperations`; bulk sub-op failures return a generic detail (no raw exception text). | `controller/ScimDiscoveryController.java`, `controller/ScimBulkController.java` |
+| F22 | **Display-name input validation (B-LEGACY-2)** — `AuthService.validateDisplayName` rejects `<`/`>`/control chars (and over-length) at registration + profile update, closing the input side of stored XSS into SAML/email sinks. Unit-tested. | `service/AuthService.java` |
 
 ---
 
@@ -195,10 +197,13 @@ gaps:
 Saving grace for the open part: an authenticated browser session is still required and
 ACS/Audience/Recipient come from stored SP config, not the request.
 
-**B-SAML-2 · Medium · Legacy assertion-encryption crypto.**
-`service/saml/SamlAssertionEncrypter.java` uses AES-CBC + RSA-OAEP-MGF1-SHA1. Prefer
-AES-256-GCM + RSA-OAEP-SHA256; keep CBC only as explicit per-SP legacy opt-in. Add an
-algorithm allowlist.
+**B-SAML-2 · Medium · Legacy assertion-encryption crypto. ⚠️ OUTWARD-FACING — deferred.**
+`service/saml/SamlAssertionEncrypter.java` uses AES-CBC + RSA-OAEP-MGF1-SHA1. Target is
+AES-256-GCM + RSA-OAEP-SHA256. **However** this changes the encrypted-assertion wire format
+the downstream SP must decrypt, so flipping it unilaterally could break a tenant's SP login
+(same class of risk as `B-JWT-2`). Do it as a **per-SP opt-in** (new `encryptionAlgorithm`
+field, default = current CBC for existing SPs, GCM for new) with an algorithm allowlist —
+coordinated with the SP, not a silent switch.
 
 **B-SAML-3 · Medium · Signature `KeyInfo` / metadata cert / issuer mismatch.**
 `signXml` emits a bare `<KeyValue>` while metadata advertises an `<X509Certificate>` that
@@ -224,10 +229,11 @@ DENIED, with reason `unknown_tenant` / `no_membership`) on both refusal branches
 cross-tenant probing leaves a trail. Filter unit-tested (success → access; both refusals →
 denied).
 
-**B-TEN-3 · Medium · SCIM ServiceProviderConfig advertises `bulk: supported=false` while
-`/Bulk` is live** and leaks raw exception messages. `controller/ScimDiscoveryController.java`,
-`controller/ScimBulkController.java`. Advertise bulk truthfully with real
-`maxOperations`/`maxPayloadSize` (or disable the controller) and sanitize sub-op errors.
+**B-TEN-3 · Medium · SCIM bulk mis-advertised + error leakage. ✅ FIXED (F21).**
+`ServiceProviderConfig` now advertises `bulk: supported=true` with the real
+`maxOperations` (from `app.scim.bulk.max-operations`, the same cap `ScimBulkController`
+enforces) and a `maxPayloadSize`; bulk sub-operation failures return a generic
+`internalError` detail instead of the raw exception message (logged server-side).
 
 **B-TEN-4 · Medium · Membership-write SUPER_ADMIN guard (forward-looking).** When the
 deferred phase-4 membership-management API ships, reject per-tenant `SUPER_ADMIN` at write
@@ -258,10 +264,11 @@ IPv6 ULA (fc00::/7), CGNAT (100.64/10) or multicast. Wired into
 a DNS-rebinding (TOCTOU) window remains; pin the validated IP into the request to
 close it.
 
-**B-LEGACY-2 · Medium · Stored-XSS input hardening on the `name` field.**
-`RegisterRequestDto` has no validation; `service/AuthService.java` stores `getName()`
-verbatim (Angular output-escaping mitigates, but SAML attributes and email templates are
-non-escaping sinks). Add input validation.
+**B-LEGACY-2 · Medium · Stored-XSS input hardening on the `name` field. ✅ FIXED (F22).**
+`AuthService.validateDisplayName` rejects display names containing `<`/`>` or control
+characters (and over-length) at registration and on profile update — before they reach the
+non-escaping SAML-attribute / email-template sinks. Unit-tested. (Angular output-escaping
+already mitigated the browser path; this closes the input side.)
 
 **B-LEGACY-3 · Low · `V2__seed_app_clients.sql` still contains plaintext API keys.** The
 rows are revoked by `V30`, but the audit asked to redact the migration body; the secret

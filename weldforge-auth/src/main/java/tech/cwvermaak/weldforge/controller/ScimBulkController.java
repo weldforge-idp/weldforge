@@ -106,9 +106,11 @@ public class ScimBulkController {
                         "Unsupported path: " + path + ". Supported: /Users, /Groups");
             }
         } catch (Exception e) {
+            // B-TEN-3: log the detail, but don't leak internal exception text to
+            // the SCIM client — return a generic message.
             log.warn("Bulk operation failed: method={} path={} error={}",
                     op.getMethod(), op.getPath(), e.getMessage());
-            return errorResponse(op, "500", "internalError", e.getMessage());
+            return errorResponse(op, "500", "internalError", "Internal error processing this operation");
         }
     }
 
