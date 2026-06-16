@@ -1,0 +1,29 @@
+# ============================================================
+# Project-specific overrides for GCP project `weldforge-499409`
+# (region africa-south1). Layered on top of values.yaml + values-prod.yaml.
+#
+# Non-secret config only. Secrets (DB password, JWT, crypto) are injected at
+# deploy time via `--set-string ...=$(gcloud secrets versions access ...)`.
+#
+# Host: sso.weldforge.org (apex weldforge.org marketing site stays on Xneelo).
+# DNS A-record to create at Xneelo/KonsoleH: sso.weldforge.org -> 34.117.149.97
+# ============================================================
+
+api:
+  image:
+    repository: africa-south1-docker.pkg.dev/weldforge-499409/images/weldforge-auth
+    tag: "r1"
+  cloudsql:
+    connectionName: weldforge-499409:africa-south1:weldforge-db
+  serviceAccount:
+    gcpServiceAccount: sso-api@weldforge-499409.iam.gserviceaccount.com
+
+frontend:
+  image:
+    repository: africa-south1-docker.pkg.dev/weldforge-499409/images/weldforge-admin-portal
+    tag: "r1"
+  ingress:
+    staticIpName: weldforge-ingress-ip
+    managedCert:
+      domains:
+        - sso.weldforge.org
