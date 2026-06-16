@@ -31,6 +31,16 @@ public class JwtService {
     @Value("${app.jwt.secret}")
     private String secret;
 
+    /**
+     * Platform audience stamped on access tokens and required by
+     * {@link tech.cwvermaak.weldforge.config.JwtAuthenticationFilter} (B-JWT-1).
+     * Scopes WeldForge's API to tokens explicitly minted for it — the shared
+     * HMAC key is also used by external consumers, so an unscoped token of a
+     * different intended audience must not authenticate here.
+     */
+    @Value("${app.jwt.audience:weldforge}")
+    private String audience;
+
     @Value("${app.jwt.access-token-expiration-ms}")
     private long accessExpirationMs;
 
@@ -117,6 +127,10 @@ public class JwtService {
                 .claims(claims)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + ttl));
+        // Platform audience (B-JWT-1) — required by JwtAuthenticationFilter.
+        if (audience != null && !audience.isBlank()) {
+            b.audience().add(audience).and();
+        }
         // OIDC: iss must match the discovery document. Setting it after the
         // claims map ensures the registered claim takes precedence over any
         // tenant-supplied custom claim of the same name.
@@ -225,6 +239,20 @@ public class JwtService {
     public boolean isTokenValid(String token) {
         try { parse(token); return true; }
         catch (JwtException | IllegalArgumentException e) { return false; }
+    }
+
+    /** The platform audience expected on access tokens. */
+    public String getAudience() { return audience; }
+
+    /**
+     * True when the token carries the configured platform audience (B-JWT-1).
+     * If no audience is configured (e.g. a bare unit-test instance), the check
+     * is a no-op pass so callers stay backward-compatible.
+     */
+    public boolean hasValidAudience(Claims claims) {
+        if (audience == null || audience.isBlank()) return true;
+        java.util.Set<String> auds = claims.getAudience();
+        return auds != null && auds.contains(audience);
     }
 
     public long getExpirationTime() { return accessExpirationMs / 1000; }

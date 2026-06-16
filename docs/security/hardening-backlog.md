@@ -40,6 +40,7 @@ single-use**, and (3) **governance documentation**.
 | F12 | **SAML AuthnRequest signature verification (B-SAML-1 part a)** — per-SP `wantAuthnRequestSigned` flag; when set, inbound AuthnRequest/LogoutRequest signatures are verified against the SP's certificate by an XSW-resistant validator (single signature, enveloped over the root, single reference to the root ID, secure validation). Unsigned/invalid requests are rejected; SPs that don't opt in are unaffected. TDD unit tests (real signatures, incl. tamper/wrong-key/unsigned/no-ID) + BDD `saml_idp.feature` scenarios. | `V44__saml_sp_want_authn_request_signed.sql`, `model/SamlServiceProvider.java`, `service/saml/SamlSignatureValidator.java`, `service/saml/SamlIdpService.java`, `controller/SamlIdpController.java` |
 | F13 | **`/authorize` spec-conformant error redirects (B-OIDC-2)** — once `client_id`+`redirect_uri` are validated, protocol errors (e.g. `unsupported_response_type`) now redirect to the registered `redirect_uri` with `error`+`state` (RFC 6749 §4.1.2.1) instead of a JSON 400. Pre-validation errors (unknown client, unregistered redirect_uri) stay non-redirecting 400s, so the deny/error path can't become an open redirect. `OidcAuthorizationException` carries an optional redirect target; unit-tested handler. | `service/oidc/OidcAuthorizationException.java`, `controller/OidcAuthorizationController.java` |
 | F14 | **SSRF egress guard on outbound URLs (B-LEGACY-1)** — central `EgressGuard` (http/https only; blocks loopback/any-local/link-local incl. metadata, RFC1918, IPv6 ULA, CGNAT, multicast) wired into webhook + CRM send paths (before the circuit breaker) and webhook subscription create/update. Unit-tested (literal-IP, hermetic) + service-level create-guard test. | `service/security/EgressGuard.java`, `service/security/EgressNotAllowedException.java`, `service/webhook/JdkWebhookHttpClient.java`, `service/webhook/WebhookSubscriptionService.java`, `service/crm/HttpCrmClient.java` |
+| F15 | **Platform audience on HMAC access tokens (B-JWT-1, WeldForge side)** — access tokens now carry `app.jwt.audience` (default `weldforge`) and `JwtAuthenticationFilter` requires it, scoping WeldForge's API to tokens minted for it. Transparent to external consumers (extra claim ignored); 5-min TTL self-heals rollover. Per-consumer audiences + `iss` validation remain open follow-ups. | `service/JwtService.java`, `config/JwtAuthenticationFilter.java`, `application.yml` |
 
 ---
 
@@ -139,11 +140,16 @@ diverge from the per-tenant TTL; use the resolved TTL. Also prefer `Instant`/UTC
 
 ### JWT / crypto / key management
 
-**B-JWT-1 · High · No issuer/audience validation on inbound HMAC tokens.**
-`service/JwtService.java` (`parse`) verifies only signature+expiry. With the shared
-platform key, a token minted for one consumer is structurally valid against another. Fix:
-stamp and `requireAudience` on platform tokens; validate `iss`. (Requires coordinating an
-`aud` convention with the external consumers — see key-rotation runbook.)
+**B-JWT-1 · High · No audience validation on inbound HMAC tokens. ✅ FIXED (F15, WeldForge side).**
+Access tokens now carry a platform `aud` (`app.jwt.audience`, default `weldforge`) and
+`JwtAuthenticationFilter` requires it — so WeldForge's API only accepts tokens explicitly
+minted for it (mfa_challenge / consent_csrf carry no `aud` and are already purpose-gated).
+Adding the claim is **transparent to the external consumers** (they ignore it); a 5-min
+TTL self-heals the rollover. *Open follow-ups:* (a) **per-consumer audiences** — true
+cross-consumer replay segmentation needs each consumer to validate its own `aud`, which is
+a coordinated change in the consumer repos (Safe Space / Krusty / Commons), not in-repo;
+(b) `iss` validation is still not enforced on inbound HMAC tokens (per-tenant `iss` is only
+set on the OIDC mint path).
 
 **B-JWT-2 · High · No key-ring for the shared HMAC.** Rotation is an all-or-nothing
 cutover across WeldForge + 3 consumers. Fix: accept N verification keys (newest signs) so
