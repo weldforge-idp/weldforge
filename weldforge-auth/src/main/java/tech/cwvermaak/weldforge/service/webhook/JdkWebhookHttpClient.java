@@ -37,6 +37,14 @@ public class JdkWebhookHttpClient implements WebhookHttpClient {
 
     @Override
     public Result post(String url, String body, String signatureHeader) {
+        // SSRF egress guard (B-LEGACY-1) — run before the circuit breaker so a
+        // blocked/misconfigured URL never trips the CB for healthy receivers.
+        try {
+            tech.cwvermaak.weldforge.service.security.EgressGuard.validate(url);
+        } catch (tech.cwvermaak.weldforge.service.security.EgressNotAllowedException e) {
+            log.warn("Webhook delivery blocked by egress guard: {} ({})", url, e.getMessage());
+            return new Result(0, "blocked: " + e.getMessage());
+        }
         try {
             return circuitBreaker.executeSupplier(() -> doPost(url, body, signatureHeader));
         } catch (CallNotPermittedException cbOpen) {
