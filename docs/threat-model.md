@@ -141,7 +141,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | **I/E** | SSRF via admin-configured webhook/CRM URL (cloud metadata, RFC-1918) | RBAC gate (TENANT_ADMIN+) + central `EgressGuard` (http/https only; blocks loopback/link-local/metadata/RFC1918/ULA/CGNAT) at webhook+CRM send and at subscription create (`B-LEGACY-1`, F14); residual: DNS-rebinding TOCTOU |
 | **D** | Slow/failing receiver exhausts threads | Resilience4j circuit breaker + retry/dead-letter queue (`WebhookRetryScheduler`) |
 | **R** | Tampered webhook payload | HMAC signature header (`WebhookSigner`) so receivers detect tampering |
-| **I** | SMS toll-fraud via unthrottled send | **Open:** `mfa/sms/send` not in the rate-limit map (`B-AUTH-3`) |
+| **I** | SMS toll-fraud via unthrottled send | `mfa/sms/send` (+ recovery endpoints) now share a per-IP RECOVERY rate-limit bucket (`B-AUTH-3`/F23) |
 
 ### TB5 — Relying party ⇄ issuer (OIDC/SAML SPs)
 
@@ -226,9 +226,9 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   use per-tenant RS256 with `kid` selection from JWKS. Non-access purposes
   (`mfa_challenge`) are rejected for API auth by the `purpose` claim check.
 - **Residual risk.** Low for confusion itself. Inbound HMAC access tokens are
-  now audience-scoped to the platform (`B-JWT-1`/F15); open: `iss` is still not
-  validated on the HMAC path, and RP-initiated logout parses `id_token_hint`
-  against only the active key, breaking after rotation (`B-JWT-3`).
+  now audience-scoped to the platform (`B-JWT-1`/F15); RP-initiated logout
+  resolves `id_token_hint` by `kid` so it survives rotation (`B-JWT-3`/F24).
+  Open: `iss` is still not validated on the HMAC path.
 
 ### S4 — Shared-HMAC blast radius across consumers
 - **Threat.** The one `app.jwt.secret` signs WeldForge sessions and is mirrored

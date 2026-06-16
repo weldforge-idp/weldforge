@@ -48,6 +48,8 @@ single-use**, and (3) **governance documentation**.
 | F20 | **client_credentials honest `expires_in` (B-OIDC-5)** — token endpoint returns the resolved per-tenant TTL instead of a hardcoded 3600. | `service/oidc/OidcTokenService.java`, `controller/OidcAuthorizationController.java` |
 | F21 | **SCIM bulk advertised truthfully + error sanitized (B-TEN-3)** — `ServiceProviderConfig` reports `bulk.supported=true` with the real `maxOperations`; bulk sub-op failures return a generic detail (no raw exception text). | `controller/ScimDiscoveryController.java`, `controller/ScimBulkController.java` |
 | F22 | **Display-name input validation (B-LEGACY-2)** — `AuthService.validateDisplayName` rejects `<`/`>`/control chars (and over-length) at registration + profile update, closing the input side of stored XSS into SAML/email sinks. Unit-tested. | `service/AuthService.java` |
+| F23 | **Rate-limit recovery + SMS-send (B-AUTH-3)** — `forgot-password`/`reset-password`/`resend-verification`/`mfa/sms/send` share a per-IP `RECOVERY` bucket. Filter routing unit-tested. | `config/security/RateLimitingFilter.java`, `service/security/RateLimitingService.java` |
+| F24 | **Logout id_token_hint by kid (B-JWT-3)** — `OidcLogoutController.parseTenantJwt` resolves the key by the token's `kid` (tenant-scoped), so logout survives a key-rotation window. | `controller/OidcLogoutController.java` |
 
 ---
 
@@ -94,10 +96,10 @@ bucket4j-Redis store the code already anticipates.
 the plaintext at the current strength and saves. Unit-tested with a real cost-4→cost-12
 upgrade.
 
-**B-AUTH-3 · Low · Recovery/SMS endpoints unthrottled.**
-`config/security/RateLimitingFilter.java` covers only login/register/mfa-verify. Add
-`forgot-password`, `reset-password`, `resend-verification`, and the authenticated
-`mfa/sms/send` route (SMS toll-fraud) to the route map.
+**B-AUTH-3 · Low · Recovery/SMS endpoints unthrottled. ✅ FIXED (F23).**
+`forgot-password`, `reset-password`, `resend-verification` and `mfa/sms/send` now share a
+dedicated per-IP `RECOVERY` rate-limit bucket (register cadence), closing the email-abuse /
+SendGrid-quota / SMS-toll-fraud vectors. Filter routing unit-tested.
 
 **B-AUTH-4 · Low · WebAuthn prod config + user-verification.**
 `config/mfa/WebAuthnConfig.java` defaults RP-ID to `localhost` and uses
@@ -165,9 +167,9 @@ keys can roll with overlap; longer term, migrate consumers to JWKS/RS256 to reti
 shared symmetric secret. See [runbooks/key-rotation.md](../runbooks/key-rotation.md).
 
 **B-JWT-3 · Medium · RP-initiated logout parses `id_token_hint` against only the active
-key.** `controller/OidcLogoutController.java` (`parseTenantJwt`). Logout silently fails for
-a token signed by a recently-rotated key. Fix: use the kid-based key locator (as
-introspection does).
+key. ✅ FIXED (F24).** `parseTenantJwt` now resolves the verification key by the token's
+`kid` (tenant-scoped), so an `id_token_hint` signed by a recently-rotated key still parses
+and logout doesn't silently fail during a rotation window.
 
 **B-JWT-4 · Low · Key lifecycle.** RSA-2048 is the floor (consider ES256 / RSA-3072 for
 new tenants); JWKS retains rotated keys forever — prune keys whose newest possibly-signed
