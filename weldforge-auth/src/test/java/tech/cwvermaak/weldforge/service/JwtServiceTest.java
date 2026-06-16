@@ -25,6 +25,7 @@ class JwtServiceTest {
                 "test-secret-that-is-long-enough-for-hs256-signing-0123456789abcdef");
         ReflectionTestUtils.setField(jwt, "accessExpirationMs", 60_000L);
         ReflectionTestUtils.setField(jwt, "refreshExpirationMs", 600_000L);
+        ReflectionTestUtils.setField(jwt, "audience", "weldforge");
     }
 
     @Test
@@ -80,6 +81,38 @@ class JwtServiceTest {
         assertThat(jwt.isConsentCsrf(access)).isFalse();
         assertThat(jwt.isConsentCsrf(mfa)).isFalse();
         assertThat(jwt.isMfaChallenge(consent)).isFalse();
+    }
+
+    @Test
+    @DisplayName("access tokens carry the platform audience and pass the audience check (B-JWT-1)")
+    void accessToken_carriesPlatformAudience() {
+        Claims claims = jwt.parse(jwt.generateAccessToken("alice@acme.test", 1L, "acme", false));
+        assertThat(claims.getAudience()).contains("weldforge");
+        assertThat(jwt.hasValidAudience(claims)).isTrue();
+    }
+
+    @Test
+    @DisplayName("a token minted without the platform audience fails the audience check")
+    void tokenWithoutAudience_failsAudienceCheck() {
+        // A JwtService with no configured audience mints an audience-less token
+        // (e.g. a pre-deploy token, or another same-key minter).
+        JwtService noAud = new JwtService();
+        ReflectionTestUtils.setField(noAud, "secret",
+                "test-secret-that-is-long-enough-for-hs256-signing-0123456789abcdef");
+        ReflectionTestUtils.setField(noAud, "accessExpirationMs", 60_000L);
+        ReflectionTestUtils.setField(noAud, "refreshExpirationMs", 600_000L);
+
+        Claims claims = jwt.parse(noAud.generateAccessToken("alice@acme.test", 1L, "acme", false));
+        assertThat(claims.getAudience()).isNull();
+        // The audience-enforcing service rejects it.
+        assertThat(jwt.hasValidAudience(claims)).isFalse();
+    }
+
+    @Test
+    @DisplayName("mfa_challenge tokens carry no audience (only access tokens are platform-scoped)")
+    void mfaChallenge_hasNoAudience() {
+        Claims claims = jwt.parse(jwt.generateMfaChallengeToken(1L, 1L, "acme"));
+        assertThat(claims.getAudience()).isNull();
     }
 
     @Test

@@ -155,6 +155,10 @@ app:
     # (Safe Space / Krusty / Commons) — rotating it requires a coordinated
     # roll. See docs/runbooks/key-rotation.md.
     secret: ${JWT_SECRET:dev-only-insecure-jwt-secret-do-not-use-in-production-change-me-now-0123456789}
+    # Platform audience stamped on access tokens and required by
+    # JwtAuthenticationFilter (B-JWT-1). Scopes WeldForge's API to tokens minted
+    # for it; adding the claim is transparent to external token consumers.
+    audience: ${JWT_AUDIENCE:weldforge}
     access-token-expiration-ms: ${JWT_EXPIRATION_MS:300000} # 5 minutes
     refresh-token-expiration-ms: ${REFRESH_TOKEN_EXPIRATION_MS:604800000} # 7 days
   crypto:

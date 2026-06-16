@@ -157,7 +157,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 
 | STRIDE | Threat | Control / status |
 |--------|--------|------------------|
-| **S** | Token minted for consumer A replayed against consumer B | Same key verifies all three; **open:** no `aud`/`iss` validation on inbound HMAC tokens (`B-JWT-1`) |
+| **S** | Token minted for consumer A replayed against consumer B | Same key verifies all three; WeldForge now requires its own platform `aud` on inbound tokens (`B-JWT-1`/F15); **open:** per-consumer audiences (needs consumer-side checks) + `iss` validation |
 | **E** | Key compromise at any one consumer | **Blast radius = all consumers + WeldForge sessions**; **open:** no HMAC key-ring, rotation is an all-or-nothing cutover (`B-JWT-2`, key-rotation runbook) |
 
 ### TB7 — SCIM client ⇄ app
@@ -224,10 +224,10 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   algorithm doesn't match the key type, and rejects `none`. OIDC/SAML tokens
   use per-tenant RS256 with `kid` selection from JWKS. Non-access purposes
   (`mfa_challenge`) are rejected for API auth by the `purpose` claim check.
-- **Residual risk.** Low for confusion itself. Open: inbound HMAC tokens carry
-  no `aud`/`iss` validation (`B-JWT-1`); RP-initiated logout parses
-  `id_token_hint` against only the active key, breaking after rotation
-  (`B-JWT-3`).
+- **Residual risk.** Low for confusion itself. Inbound HMAC access tokens are
+  now audience-scoped to the platform (`B-JWT-1`/F15); open: `iss` is still not
+  validated on the HMAC path, and RP-initiated logout parses `id_token_hint`
+  against only the active key, breaking after rotation (`B-JWT-3`).
 
 ### S4 — Shared-HMAC blast radius across consumers
 - **Threat.** The one `app.jwt.secret` signs WeldForge sessions and is mirrored
@@ -238,9 +238,16 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   injected at deploy, never committed; `SecretHygieneValidator` refuses to boot
   on a known dev/placeholder default when `APP_REQUIRE_SECURE_SECRETS=true`
   (set on all cluster deploys).
-- **Residual risk.** **High by design.** No `aud`/`iss` segmentation between
-  consumers (`B-JWT-1`) and no key-ring, so rotation is an all-or-nothing
-  cutover across four systems (`B-JWT-2`). Strategic fix: migrate consumers to
+- **Mitigation added (2026-06).** WeldForge now stamps a platform `aud`
+  (`app.jwt.audience`) on access tokens and requires it in
+  `JwtAuthenticationFilter` (F15) — so WeldForge's own API only accepts tokens
+  minted for it, not an arbitrary same-key token. Transparent to the consumers.
+- **Residual risk.** **Medium-High.** A *single shared* audience does not
+  segment consumer A from B — true cross-consumer replay protection needs
+  **per-consumer audiences validated on each consumer** (a coordinated change in
+  the consumer repos), and there is still **no key-ring**, so secret rotation is
+  an all-or-nothing cutover across four systems (`B-JWT-2`). `iss` is also not
+  yet validated on inbound HMAC tokens. Strategic fix: migrate consumers to
   per-tenant RS256/JWKS and retire the shared symmetric secret. See
   [runbooks/key-rotation.md](runbooks/key-rotation.md).
 
@@ -352,7 +359,7 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 
 | Area | Item(s) | Severity |
 |------|---------|----------|
-| Shared-HMAC: no `aud`/`iss` validation; no key-ring | **B-JWT-1**, **B-JWT-2** | High |
+| Shared-HMAC: per-consumer audiences + key-ring (WeldForge-side `aud` now enforced, F15) | **B-JWT-1** (consumer side), **B-JWT-2** | High |
 | SAML: no `InResponseTo`/replay correlation (sig verify + XXE parse now done) | **B-SAML-1**(c) | Medium |
 | `X-Forwarded-For` trusted from first hop (rate-limit / audit) | **B-AUTH-1** | Medium |
 | OIDC scope enforcement opt-in for empty-list clients | **B-OIDC-4** | Medium |
@@ -371,9 +378,11 @@ client-secret compare (F4); JWT clock-skew tolerance (F5); **consent-form CSRF
 token (F7); TOTP anti-replay (F8); MFA challenge single-use (F9); `setAdminRole`
 tenant-scoping (F10); SAML inbound XXE-hardened parsing (F11); SAML AuthnRequest
 signature verification (F12); `/authorize` spec-conformant error redirects
-(F13); SSRF egress guard on webhook/CRM URLs (F14)**. The genuine remaining High is now the **shared-HMAC** segmentation
-(`B-JWT-1` no `aud`/`iss` validation, `B-JWT-2` no key-ring) — the highest-value
-next item.
+(F13); SSRF egress guard on webhook/CRM URLs (F14); platform-audience scoping of
+HMAC access tokens (F15)**. The remaining **shared-HMAC** work
+(`B-JWT-2` key-ring + per-consumer audiences validated consumer-side) is the only
+open High, and it is **outward-facing** — it requires coordinated changes in the
+external consumer repos (Safe Space / Krusty / Commons), not just this repo.
 
 ---
 
