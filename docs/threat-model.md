@@ -173,7 +173,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | STRIDE | Threat | Control / status |
 |--------|--------|------------------|
 | **E** | Tenant admin self-promotes to verified / super-admin | `updateTenant` cannot set `verifiedAt`; per-tenant `SUPER_ADMIN` downgraded to `TENANT_ADMIN` at read time (`cross-tenant-admin-spec.md` §5) |
-| **R** | Cross-tenant action without trace | Successful switch emits `admin.cross_tenant.access`; `setAdminRole` is now tenant-scoped through the audited switch (`B-TEN-1`, F10); **open:** denied switches still unaudited (`B-TEN-2`) |
+| **R** | Cross-tenant action without trace | Successful switch emits `admin.cross_tenant.access` and a refused one emits `admin.cross_tenant.denied` (`B-TEN-2`, F16); `setAdminRole` is tenant-scoped through the audited switch (`B-TEN-1`, F10) |
 
 ---
 
@@ -316,8 +316,9 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   user, inactive user, locked account, and bad password all return an identical
   generic error (`AuthService.login`). BCrypt cost 12.
 - **Residual risk.** IP buckets key on a spoofable first `X-Forwarded-For` hop
-  and are in-memory (don't span GKE replicas) (`B-AUTH-1`). No bcrypt
-  upgrade-on-login (`B-AUTH-2`). Per-user lockout is the backstop against the
+  and are in-memory (don't span GKE replicas) (`B-AUTH-1`). Weaker legacy
+  password hashes are now upgraded to the current BCrypt cost on successful
+  login (`B-AUTH-2`, F17). Per-user lockout is the backstop against the
   XFF-spoof bypass.
 
 ### S9 — Open redirect
@@ -366,7 +367,6 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 | SAML KeyInfo/metadata/issuer mismatch; legacy CBC+OAEP-SHA1 | **B-SAML-3**, **B-SAML-2** | Medium |
 | SCIM bulk mis-advertised + error leakage | **B-TEN-3** | Medium |
 | Stored-XSS hardening on `name` (SAML/email sinks) | **B-LEGACY-2** | Medium |
-| Failed cross-tenant switches unaudited | **B-TEN-2** | Medium |
 | Tamper-evident audit log (HMAC chain) | **B-TEN-5** | Low |
 | Actuator / Swagger gated only by ingress/app-key, not role | **L1/L2** / **B-LEGACY-4** | Low |
 

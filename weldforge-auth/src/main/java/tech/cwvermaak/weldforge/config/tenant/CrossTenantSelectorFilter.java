@@ -73,10 +73,14 @@ public class CrossTenantSelectorFilter extends OncePerRequestFilter {
             AdminRole role = tenantAccessor.switchToTenant(targetSlug);
             audit(homeSlug, targetSlug, role);
         } catch (EntityNotFoundException e) {
+            // B-TEN-2: record refused switches so cross-tenant probing /
+            // lateral-movement reconnaissance leaves an audit trail.
+            auditDenied(homeSlug, targetSlug, "unknown_tenant");
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
             response.getWriter().write("Unknown X-WF-Tenant: " + targetSlug);
             return;
         } catch (AccessDeniedException e) {
+            auditDenied(homeSlug, targetSlug, "no_membership");
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write(e.getMessage());
             return;
@@ -101,5 +105,24 @@ public class CrossTenantSelectorFilter extends OncePerRequestFilter {
                         "actor", actor)));
         log.info("cross_tenant_admin home={} target={} role={} actor={}",
                 homeSlug, targetSlug, role, actor);
+    }
+
+    private void auditDenied(String homeSlug, String targetSlug, String reason) {
+        Long userId = TenantContext.getActorUserId();
+        Long svcId = TenantContext.getActorServiceAccountId();
+        String actor = userId != null ? "user:" + userId
+                : svcId != null ? "service_account:" + svcId : "unknown";
+        auditService.log(AuditEvent.builder()
+                .eventType(AuditEventTypes.ADMIN_CROSS_TENANT_DENIED)
+                .outcome(AuditEvent.Outcome.DENIED)
+                .targetType(AuditEventTypes.TARGET_TENANT)
+                .targetId(targetSlug)
+                .metadata(AuditService.meta(
+                        "home_tenant", homeSlug == null ? "unknown" : homeSlug,
+                        "target_tenant", targetSlug,
+                        "reason", reason,
+                        "actor", actor)));
+        log.warn("cross_tenant_admin_denied home={} target={} reason={} actor={}",
+                homeSlug, targetSlug, reason, actor);
     }
 }

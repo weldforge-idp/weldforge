@@ -41,6 +41,8 @@ single-use**, and (3) **governance documentation**.
 | F13 | **`/authorize` spec-conformant error redirects (B-OIDC-2)** — once `client_id`+`redirect_uri` are validated, protocol errors (e.g. `unsupported_response_type`) now redirect to the registered `redirect_uri` with `error`+`state` (RFC 6749 §4.1.2.1) instead of a JSON 400. Pre-validation errors (unknown client, unregistered redirect_uri) stay non-redirecting 400s, so the deny/error path can't become an open redirect. `OidcAuthorizationException` carries an optional redirect target; unit-tested handler. | `service/oidc/OidcAuthorizationException.java`, `controller/OidcAuthorizationController.java` |
 | F14 | **SSRF egress guard on outbound URLs (B-LEGACY-1)** — central `EgressGuard` (http/https only; blocks loopback/any-local/link-local incl. metadata, RFC1918, IPv6 ULA, CGNAT, multicast) wired into webhook + CRM send paths (before the circuit breaker) and webhook subscription create/update. Unit-tested (literal-IP, hermetic) + service-level create-guard test. | `service/security/EgressGuard.java`, `service/security/EgressNotAllowedException.java`, `service/webhook/JdkWebhookHttpClient.java`, `service/webhook/WebhookSubscriptionService.java`, `service/crm/HttpCrmClient.java` |
 | F15 | **Platform audience on HMAC access tokens (B-JWT-1, WeldForge side)** — access tokens now carry `app.jwt.audience` (default `weldforge`) and `JwtAuthenticationFilter` requires it, scoping WeldForge's API to tokens minted for it. Transparent to external consumers (extra claim ignored); 5-min TTL self-heals rollover. Per-consumer audiences + `iss` validation remain open follow-ups. | `service/JwtService.java`, `config/JwtAuthenticationFilter.java`, `application.yml` |
+| F16 | **Audit failed cross-tenant switches (B-TEN-2)** — `CrossTenantSelectorFilter` emits `admin.cross_tenant.denied` (outcome DENIED, reason `unknown_tenant`/`no_membership`) on both refusal branches; previously only successes were audited. Filter unit-tested. | `config/tenant/CrossTenantSelectorFilter.java`, `service/audit/AuditEventTypes.java` |
+| F17 | **Bcrypt upgrade-on-login (B-AUTH-2)** — a verified login re-hashes a weaker stored password (lower BCrypt cost) at the current strength via `AuthService.maybeUpgradePassword`. Unit-tested (cost-4 → cost-12). | `service/AuthService.java` |
 
 ---
 
@@ -81,9 +83,11 @@ across GKE replicas. Fix: configure `server.forward-headers-strategy` / a truste
 hop and derive client IP only from the ingress-set value; move buckets to the
 bucket4j-Redis store the code already anticipates.
 
-**B-AUTH-2 · Medium · No bcrypt upgrade-on-login.** `service/AuthService.java` calls
-`matches` only; legacy lower-cost hashes never migrate to cost 12. Fix: on successful
-`matches`, `if (encoder.upgradeEncoding(hash)) re-encode and save`.
+**B-AUTH-2 · Medium · No bcrypt upgrade-on-login. ✅ FIXED (F17).**
+`AuthService.maybeUpgradePassword` runs on a verified login: when
+`passwordEncoder.upgradeEncoding(hash)` is true (stored cost < configured 12) it re-encodes
+the plaintext at the current strength and saves. Unit-tested with a real cost-4→cost-12
+upgrade.
 
 **B-AUTH-3 · Low · Recovery/SMS endpoints unthrottled.**
 `config/security/RateLimitingFilter.java` covers only login/register/mfa-verify. Add
@@ -212,9 +216,11 @@ returns `not found` with no grant and no audit. Verified by `AdminServiceTest` (
 cross-tenant-hidden, non-super-admin-denied, null-role) and `tenant_isolation.feature`
 (positive + negative scenarios).
 
-**B-TEN-2 · Medium · Failed cross-tenant switches aren't audited.**
-`config/tenant/CrossTenantSelectorFilter.java`. Only successful switches are logged. Emit
-an `admin.cross_tenant.denied` event on the not-found / access-denied branches.
+**B-TEN-2 · Medium · Failed cross-tenant switches aren't audited. ✅ FIXED (F16).**
+`CrossTenantSelectorFilter` now emits an `admin.cross_tenant.denied` audit event (outcome
+DENIED, with reason `unknown_tenant` / `no_membership`) on both refusal branches, so
+cross-tenant probing leaves a trail. Filter unit-tested (success → access; both refusals →
+denied).
 
 **B-TEN-3 · Medium · SCIM ServiceProviderConfig advertises `bulk: supported=false` while
 `/Bulk` is live** and leaks raw exception messages. `controller/ScimDiscoveryController.java`,

@@ -38,6 +38,8 @@ public final class AuditEventTypes {
 
     /** Cross-tenant admin access via the X-WF-Tenant selector (cross-tenant-admin-spec.md). */
     public static final String ADMIN_CROSS_TENANT_ACCESS = "admin.cross_tenant.access";
+    /** A cross-tenant switch that was refused (unknown tenant, or no membership reach). */
+    public static final String ADMIN_CROSS_TENANT_DENIED = "admin.cross_tenant.denied";
 
     // V31: payment &amp; billing
     public static final String BILLING_ORDER_CREATED   = "billing.order.created";

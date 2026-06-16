@@ -169,12 +169,11 @@ and emits an `admin.role.assigned` audit event carrying the target tenant slug.
 - The April 2026 security audit's tenant-isolation findings remain satisfied: every
   tenant-scoped query still filters by the *resolved* `tenantId` (including
   `setAdminRole`, hardened in 2026-06 — see §6.4).
-- **Open — failed cross-tenant switch auditing.** `CrossTenantSelectorFilter`
-  currently audits only *successful* `X-WF-Tenant` switches. A denied switch (403, no
-  membership for the target) or an unknown-tenant probe (404) returns without an audit
-  event, so cross-tenant access *attempts* are invisible. A FAILURE-outcome audit event
-  should be added on both early-return branches (tracked as `B-TEN-2` in
-  `security/hardening-backlog.md`).
+- **Failed cross-tenant switch auditing (shipped).** `CrossTenantSelectorFilter` audits
+  both outcomes: a successful switch emits `admin.cross_tenant.access` (SUCCESS), and a
+  refused one emits `admin.cross_tenant.denied` (DENIED, with reason `unknown_tenant` for a
+  404 probe or `no_membership` for a 403). Cross-tenant access *attempts* are therefore
+  visible to a SOC (`B-TEN-2`, fixed).
 
 ## 8. Migration & backward compatibility
 
