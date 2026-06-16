@@ -277,9 +277,9 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   authenticated user + tenant, which `decide()` requires and validates before
   acting (`JwtService.generateConsentCsrfToken` + `verifyConsentCsrf`, F7) — an
   attacker can neither mint the token nor read it cross-origin.
-- **Residual risk.** Low. Consent CSRF is closed (`B-OIDC-1`). Separately,
-  `/authorize` still returns errors as JSON rather than spec redirects
-  (`B-OIDC-2`) — a conformance gap, not a CSRF hole.
+- **Residual risk.** Low. Consent CSRF is closed (`B-OIDC-1`); `/authorize`
+  protocol errors now redirect to `redirect_uri` with `error`+`state` per
+  RFC 6749 §4.1.2.1 (`B-OIDC-2`, F13).
 
 ### S7 — MFA bypass / replay
 - **Threat.** Replay a captured TOTP within its window, or reuse a leaked MFA
@@ -322,8 +322,9 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   per-tenant `returnToCallerEnabled` flag, re-checked at completion. OIDC
   `redirect_uri` is validated against the client's registered list, including
   the consent deny path (F2).
-- **Residual risk.** Low. Watch new redirecting endpoints; `B-OIDC-2` (errors
-  returned as JSON instead of spec redirects) is a conformance gap rather than
+- **Residual risk.** Low. Watch new redirecting endpoints; `/authorize` error
+  responses are now spec-conformant redirects to the registered `redirect_uri`
+  (`B-OIDC-2`, F13), which keeps the deny/error path from becoming
   an open-redirect.
 
 ### S10 — SSRF via webhooks
@@ -353,7 +354,6 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 | `X-Forwarded-For` trusted from first hop (rate-limit / audit) | **B-AUTH-1** | Medium |
 | SSRF denylist on webhook/CRM URLs | **B-LEGACY-1** | Medium |
 | OIDC scope enforcement opt-in for empty-list clients | **B-OIDC-4** | Medium |
-| `/authorize` error responses not spec-compliant redirects | **B-OIDC-2** | High (conformance) |
 | SAML KeyInfo/metadata/issuer mismatch; legacy CBC+OAEP-SHA1 | **B-SAML-3**, **B-SAML-2** | Medium |
 | SCIM bulk mis-advertised + error leakage | **B-TEN-3** | Medium |
 | Stored-XSS hardening on `name` (SAML/email sinks) | **B-LEGACY-2** | Medium |
@@ -368,9 +368,10 @@ OAuth2 consent open-redirect (F2); OAuth2 scope enforcement (F3); constant-time
 client-secret compare (F4); JWT clock-skew tolerance (F5); **consent-form CSRF
 token (F7); TOTP anti-replay (F8); MFA challenge single-use (F9); `setAdminRole`
 tenant-scoping (F10); SAML inbound XXE-hardened parsing (F11); SAML AuthnRequest
-signature verification (F12)**. The genuine remaining Highs are now only the
-shared-HMAC items (`B-JWT-1`/`B-JWT-2`) and `/authorize` error-redirect
-conformance (`B-OIDC-2`).
+signature verification (F12); `/authorize` spec-conformant error redirects
+(F13)**. The genuine remaining High is now the **shared-HMAC** segmentation
+(`B-JWT-1` no `aud`/`iss` validation, `B-JWT-2` no key-ring) — the highest-value
+next item.
 
 ---
 
