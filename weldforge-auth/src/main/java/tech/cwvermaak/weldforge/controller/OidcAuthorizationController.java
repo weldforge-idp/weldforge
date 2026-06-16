@@ -225,11 +225,11 @@ public class OidcAuthorizationController {
                 List<String> scopes = scope == null
                         ? client.getScopeList()
                         : Arrays.stream(scope.split("\\s+")).filter(s -> !s.isBlank()).toList();
-                String accessToken = tokenService.issueForClientCredentials(tenant, client, scopes, issuer);
+                IssuedTokens issued = tokenService.issueForClientCredentials(tenant, client, scopes, issuer);
                 yield ResponseEntity.ok(Map.of(
-                        "access_token", accessToken,
+                        "access_token", issued.accessToken(),
                         "token_type",   "Bearer",
-                        "expires_in",   3600,
+                        "expires_in",   issued.expiresIn(),
                         "scope",        String.join(" ", scopes)
                 ));
             }

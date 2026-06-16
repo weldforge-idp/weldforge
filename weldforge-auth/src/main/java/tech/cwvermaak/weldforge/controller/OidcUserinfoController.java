@@ -68,6 +68,13 @@ public class OidcUserinfoController {
             return ResponseEntity.status(401).build();
         }
 
+        // B-OIDC-3: userinfo must be called with an ACCESS token (OIDC Core
+        // §5.3.1). ID tokens are tenant-signed too but carry no token_type, so
+        // reject anything that isn't explicitly an access token.
+        if (!"access".equals(String.valueOf(claims.get("token_type")))) {
+            return ResponseEntity.status(401).build();
+        }
+
         Long userId;
         try {
             userId = Long.valueOf(claims.getSubject());

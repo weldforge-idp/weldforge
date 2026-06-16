@@ -150,7 +150,8 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | **S** | Forged token accepted by an RP | Per-tenant RS256; RPs validate against tenant JWKS; `iss` matches discovery |
 | **T** | SAML assertion forgery / XML Signature Wrapping | Assertion signed (XML-DSig, enveloped, exclusive C14N, SHA-256), encrypt-after-sign; inbound XML now XXE-hardened DOM-parsed (F11) and AuthnRequest signatures verified per-SP via an XSW-resistant validator (`wantAuthnRequestSigned`, F12); **open:** no `InResponseTo`/replay correlation (`B-SAML-1`(c)) |
 | **I** | Over-release of user attributes to an SP | Per-SP attribute release policy (`_release` allowlist, SAM-08) |
-| **E** | Over-broad OIDC scope | Scope restricted to client's registered list **when non-empty**; **open:** empty-list clients unconstrained (`B-OIDC-4`) |
+| **E** | Over-broad OIDC scope | Scope restricted to client's registered list **when non-empty**; redirect_uri validated at registration (`B-OIDC-4`/F19); **open:** unconditional scope for empty-list clients (needs backfill) |
+| **I** | userinfo accepts an ID token / cross-client introspection | userinfo requires `token_type=access`; introspection scoped to the calling client (`B-OIDC-3`/F18) |
 | **T** | Open redirect via `redirect_uri` / consent deny path | `redirect_uri` checked against the client's registered list at authorize and at `decide` (F2); reset `returnTo` is same-origin validated |
 
 ### TB6 — External consumer ⇄ shared HMAC (Tech Metropolis trio)
@@ -363,7 +364,7 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 | Shared-HMAC: per-consumer audiences + key-ring (WeldForge-side `aud` now enforced, F15) | **B-JWT-1** (consumer side), **B-JWT-2** | High |
 | SAML: no `InResponseTo`/replay correlation (sig verify + XXE parse now done) | **B-SAML-1**(c) | Medium |
 | `X-Forwarded-For` trusted from first hop (rate-limit / audit) | **B-AUTH-1** | Medium |
-| OIDC scope enforcement opt-in for empty-list clients | **B-OIDC-4** | Medium |
+| OIDC scope enforcement unconditional (needs client scope backfill) | **B-OIDC-4** (partial) | Medium |
 | SAML KeyInfo/metadata/issuer mismatch; legacy CBC+OAEP-SHA1 | **B-SAML-3**, **B-SAML-2** | Medium |
 | SCIM bulk mis-advertised + error leakage | **B-TEN-3** | Medium |
 | Stored-XSS hardening on `name` (SAML/email sinks) | **B-LEGACY-2** | Medium |

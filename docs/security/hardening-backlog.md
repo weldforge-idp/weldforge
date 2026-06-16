@@ -43,6 +43,9 @@ single-use**, and (3) **governance documentation**.
 | F15 | **Platform audience on HMAC access tokens (B-JWT-1, WeldForge side)** — access tokens now carry `app.jwt.audience` (default `weldforge`) and `JwtAuthenticationFilter` requires it, scoping WeldForge's API to tokens minted for it. Transparent to external consumers (extra claim ignored); 5-min TTL self-heals rollover. Per-consumer audiences + `iss` validation remain open follow-ups. | `service/JwtService.java`, `config/JwtAuthenticationFilter.java`, `application.yml` |
 | F16 | **Audit failed cross-tenant switches (B-TEN-2)** — `CrossTenantSelectorFilter` emits `admin.cross_tenant.denied` (outcome DENIED, reason `unknown_tenant`/`no_membership`) on both refusal branches; previously only successes were audited. Filter unit-tested. | `config/tenant/CrossTenantSelectorFilter.java`, `service/audit/AuditEventTypes.java` |
 | F17 | **Bcrypt upgrade-on-login (B-AUTH-2)** — a verified login re-hashes a weaker stored password (lower BCrypt cost) at the current strength via `AuthService.maybeUpgradePassword`. Unit-tested (cost-4 → cost-12). | `service/AuthService.java` |
+| F18 | **userinfo/introspection token-type + audience (B-OIDC-3)** — userinfo requires `token_type=access` (rejects ID tokens); introspection returns inactive when the token isn't the caller's own (`client_id`/`aud` match). Real-token unit tests. | `controller/OidcUserinfoController.java`, `service/oidc/OidcIntrospectionService.java`, `controller/OidcIntrospectRevokeController.java` |
+| F19 | **redirect_uri validation at registration (B-OIDC-4, partial)** — `OidcClientService.create` rejects non-absolute / fragment-bearing / http-non-loopback redirect URIs. Unit-tested. | `service/oidc/OidcClientService.java` |
+| F20 | **client_credentials honest `expires_in` (B-OIDC-5)** — token endpoint returns the resolved per-tenant TTL instead of a hardcoded 3600. | `service/oidc/OidcTokenService.java`, `controller/OidcAuthorizationController.java` |
 
 ---
 
@@ -123,24 +126,23 @@ errors (unknown client, unregistered redirect_uri) remain non-redirecting 400s. 
 (Low):* `invalid_scope` is still surfaced at consent/code-issue time rather than redirected
 at `/authorize` (scope is validated in the service) — see `B-OIDC-4`.
 
-**B-OIDC-3 · Medium · userinfo/introspection don't check `token_type`/audience.**
-`controller/OidcUserinfoController.java`, `service/oidc/OidcIntrospectionService.java`.
-userinfo accepts any tenant-signed token (an ID token works there); introspection doesn't
-restrict `active=true` to the calling client's audience. Fix: require an access token at
-userinfo; scope introspection to the authenticated client's `aud`/`client_id`.
+**B-OIDC-3 · Medium · userinfo/introspection don't check `token_type`/audience. ✅ FIXED (F18).**
+userinfo now requires `token_type=access` (rejects ID tokens, OIDC Core §5.3.1); introspection
+returns `active=false` when the token's `client_id`/`aud` doesn't match the authenticated
+caller, so a client can't read another client's token contents (RFC 7662).
 
-**B-OIDC-4 · Medium · Scope enforcement is currently opt-in (clients with an empty scope
-list are unconstrained).** Follow-up to F3: backfill registered scopes for all existing
-clients, then make enforcement unconditional. Also validate `redirect_uri` at registration
-(absolute, no fragment, https-or-loopback for public clients) in
-`service/oidc/OidcClientService.java`, and require S256 PKCE for *all* clients per
-RFC 9700. Add `at_hash` to ID tokens and reconcile the token-endpoint client-auth methods
-with the discovery document (registration defaults to `client_secret_basic` but the token
-endpoint only reads `client_secret_post`).
+**B-OIDC-4 · Medium · redirect_uri validation at registration. ✅ FIXED (F19, partial).**
+`OidcClientService.create` now rejects redirect URIs that aren't absolute, carry a fragment,
+or use plain `http` to a non-loopback host (RFC 9700 / RFC 8252; https + native custom
+schemes allowed). *Still open:* making scope enforcement unconditional (needs backfilling
+registered scopes for existing clients first), requiring S256 PKCE for *all* clients,
+adding `at_hash` to ID tokens, and reconciling the token-endpoint client-auth methods with
+the discovery document.
 
-**B-OIDC-5 · Low · `client_credentials` returns a hardcoded `expires_in: 3600`** that can
-diverge from the per-tenant TTL; use the resolved TTL. Also prefer `Instant`/UTC over
-`LocalDateTime`/`ZoneId.systemDefault()` for code expiry.
+**B-OIDC-5 · Low · `client_credentials` hardcoded `expires_in: 3600`. ✅ FIXED (F20).**
+`issueForClientCredentials` returns the resolved per-tenant TTL and the token endpoint
+reports it. *Still open (minor):* prefer `Instant`/UTC over `LocalDateTime`/
+`ZoneId.systemDefault()` for authorization-code expiry.
 
 ### JWT / crypto / key management
 
