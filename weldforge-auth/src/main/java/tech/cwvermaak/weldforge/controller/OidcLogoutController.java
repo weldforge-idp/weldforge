@@ -194,11 +194,19 @@ public class OidcLogoutController {
     }
 
     private Claims parseTenantJwt(Tenant tenant, String jwt) throws JwtException {
-        // Parse the tenant's ID token using the active signing key's public half.
-        var activeKey = signingKeyService.getOrCreateActive(tenant);
-        var publicKey = signingKeyService.loadPublicKey(activeKey);
+        // B-JWT-3: resolve the verification key by the token's kid so an
+        // id_token_hint signed by a recently-rotated (now inactive) key still
+        // parses — logout must not silently fail during a key-rotation window.
+        // The kid must belong to this tenant.
         return io.jsonwebtoken.Jwts.parser()
-                .verifyWith(publicKey)
+                .keyLocator(jws -> {
+                    tech.cwvermaak.weldforge.model.TenantSigningKey row =
+                            signingKeyService.requireByKid(jws.get("kid").toString());
+                    if (!row.getTenant().getId().equals(tenant.getId())) {
+                        throw new JwtException("kid belongs to a different tenant");
+                    }
+                    return signingKeyService.loadPublicKey(row);
+                })
                 .clockSkewSeconds(60)
                 .build()
                 .parseSignedClaims(jwt)

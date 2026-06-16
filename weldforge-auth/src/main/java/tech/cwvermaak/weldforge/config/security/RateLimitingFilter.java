@@ -30,9 +30,15 @@ import java.util.Map;
 public class RateLimitingFilter extends OncePerRequestFilter {
 
     private static final Map<String, Bucket4jEndpoint> ROUTES = Map.of(
-            "/api/auth/login",      Bucket4jEndpoint.LOGIN,
-            "/api/auth/register",   Bucket4jEndpoint.REGISTER,
-            "/api/auth/mfa/verify", Bucket4jEndpoint.MFA_VERIFY
+            "/api/auth/login",                Bucket4jEndpoint.LOGIN,
+            "/api/auth/register",             Bucket4jEndpoint.REGISTER,
+            "/api/auth/mfa/verify",           Bucket4jEndpoint.MFA_VERIFY,
+            // B-AUTH-3: throttle account-recovery + SMS-send (email-abuse /
+            // SendGrid-quota exhaustion / SMS toll-fraud).
+            "/api/auth/forgot-password",      Bucket4jEndpoint.RECOVERY,
+            "/api/auth/reset-password",       Bucket4jEndpoint.RECOVERY,
+            "/api/auth/resend-verification",  Bucket4jEndpoint.RECOVERY,
+            "/api/auth/mfa/sms/send",         Bucket4jEndpoint.RECOVERY
     );
 
     private final RateLimitingService rateLimitingService;

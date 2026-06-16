@@ -24,13 +24,17 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class RateLimitingService {
 
-    public enum Bucket4jEndpoint { LOGIN, REGISTER, MFA_VERIFY }
+    public enum Bucket4jEndpoint { LOGIN, REGISTER, MFA_VERIFY, RECOVERY }
 
     private final RateLimitProperties properties;
 
     private final ConcurrentMap<String, Bucket> loginBuckets    = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Bucket> registerBuckets = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Bucket> mfaBuckets      = new ConcurrentHashMap<>();
+    // B-AUTH-3: dedicated bucket for account-recovery + SMS-send endpoints
+    // (password reset, email re-verification, SMS OTP send), keyed per IP. Uses
+    // the register cadence (low-frequency, sensitive) without a separate config.
+    private final ConcurrentMap<String, Bucket> recoveryBuckets = new ConcurrentHashMap<>();
 
     /**
      * Try to consume one token from the caller's bucket.
@@ -54,7 +58,18 @@ public class RateLimitingService {
             case LOGIN      -> key -> loginBuckets.computeIfAbsent(key, k -> newLoginBucket());
             case REGISTER   -> key -> registerBuckets.computeIfAbsent(key, k -> newRegisterBucket());
             case MFA_VERIFY -> key -> mfaBuckets.computeIfAbsent(key, k -> newMfaBucket());
+            case RECOVERY   -> key -> recoveryBuckets.computeIfAbsent(key, k -> newRecoveryBucket());
         };
+    }
+
+    private Bucket newRecoveryBucket() {
+        return Bucket.builder()
+                .addLimit(Bandwidth.builder()
+                        .capacity(properties.getRegisterCapacity())
+                        .refillIntervally(properties.getRegisterCapacity(),
+                                Duration.ofMinutes(properties.getRegisterRefillMinutes()))
+                        .build())
+                .build();
     }
 
     private Bucket newLoginBucket() {
