@@ -152,14 +152,14 @@ public class OidcIssuerSteps {
     public void introspectAccessToken(String slug) {
         Tenant t = "acme".equals(slug) ? acme : globex;
         lastIntrospection = introspectionService.introspect(
-                lastIssued.accessToken(), t, "https://weldforge.test/t/" + t.getSlug());
+                lastIssued.accessToken(), t, "https://weldforge.test/t/" + t.getSlug(), null);
     }
 
     @When("the token {string} is introspected at tenant {string}")
     public void introspectArbitraryToken(String token, String slug) {
         Tenant t = "acme".equals(slug) ? acme : globex;
         lastIntrospection = introspectionService.introspect(
-                token, t, "https://weldforge.test/t/" + t.getSlug());
+                token, t, "https://weldforge.test/t/" + t.getSlug(), null);
     }
 
     @When("the access token is revoked by client {string}")

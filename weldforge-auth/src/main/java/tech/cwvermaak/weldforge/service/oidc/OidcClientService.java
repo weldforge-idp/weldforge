@@ -49,6 +49,7 @@ public class OidcClientService {
         require(dto.getRedirectUris(), "redirectUris");
         require(dto.getScopes(),       "scopes");
         require(dto.getGrantTypes(),   "grantTypes");
+        validateRedirectUris(dto.getRedirectUris());
         validateWebOrigins(dto.getWebOrigins());
 
         String clientId = dto.getClientId() != null && !dto.getClientId().isBlank()
@@ -186,6 +187,36 @@ public class OidcClientService {
                 throw new IllegalArgumentException(
                         "Web origin must use https (plain http is allowed only for "
                         + "localhost / 127.0.0.1): " + o);
+            }
+        }
+    }
+
+    /**
+     * Validate registered redirect URIs (B-OIDC-4 / RFC 9700 §2.1, RFC 8252).
+     * Each must be absolute and carry no fragment; plain {@code http} is allowed
+     * only for loopback hosts. {@code https} and custom app schemes (native
+     * deep links) are permitted.
+     */
+    private static void validateRedirectUris(List<String> uris) {
+        if (uris == null) return;
+        for (String raw : uris) {
+            if (raw == null || raw.isBlank()) continue;
+            String u = raw.trim();
+            URI uri;
+            try {
+                uri = URI.create(u);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid redirect_uri: " + u);
+            }
+            if (!uri.isAbsolute() || uri.getScheme() == null) {
+                throw new IllegalArgumentException("redirect_uri must be absolute: " + u);
+            }
+            if (uri.getFragment() != null) {
+                throw new IllegalArgumentException("redirect_uri must not contain a fragment: " + u);
+            }
+            if ("http".equalsIgnoreCase(uri.getScheme()) && !isLoopbackHost(uri.getHost())) {
+                throw new IllegalArgumentException(
+                        "redirect_uri must use https (plain http is allowed only for loopback): " + u);
             }
         }
     }

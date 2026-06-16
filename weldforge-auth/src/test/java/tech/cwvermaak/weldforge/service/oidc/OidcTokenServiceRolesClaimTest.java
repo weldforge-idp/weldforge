@@ -161,7 +161,7 @@ class OidcTokenServiceRolesClaimTest {
         void no_roles_for_client_credentials() {
             String token = service.issueForClientCredentials(
                 tenant, client, List.of("api.read"),
-                "https://sso.weldforge.org/t/wellspring");
+                "https://sso.weldforge.org/t/wellspring").accessToken();
 
             Map<String, Object> claims = parseClaims(token);
             assertThat(claims).doesNotContainKey("roles");

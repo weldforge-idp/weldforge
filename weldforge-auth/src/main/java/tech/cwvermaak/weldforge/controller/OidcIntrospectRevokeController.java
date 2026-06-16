@@ -56,7 +56,8 @@ public class OidcIntrospectRevokeController {
         }
 
         String issuer = OidcDiscoveryControllerHelper.tenantIssuer(request, tenant.getSlug());
-        return ResponseEntity.ok(introspectionService.introspect(token, tenant, issuer));
+        // B-OIDC-3: scope the result to the authenticated caller's own tokens.
+        return ResponseEntity.ok(introspectionService.introspect(token, tenant, issuer, clientId));
     }
 
     @PostMapping(value = "/t/{slug}/oauth2/revoke",

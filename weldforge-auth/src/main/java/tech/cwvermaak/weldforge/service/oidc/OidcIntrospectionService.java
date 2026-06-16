@@ -41,7 +41,8 @@ public class OidcIntrospectionService {
     private final TenantSigningKeyService signingKeyService;
     private final RevokedOidcTokenRepository revocationRepository;
 
-    public Map<String, Object> introspect(String token, Tenant tenant, String tenantIssuer) {
+    public Map<String, Object> introspect(String token, Tenant tenant, String tenantIssuer,
+                                          String callerClientId) {
         if (token == null || token.isBlank()) return INACTIVE;
 
         // The introspection contract returns active=false for any
@@ -82,6 +83,14 @@ public class OidcIntrospectionService {
             return INACTIVE;
         }
 
+        // B-OIDC-3: a client may only introspect its own tokens. If the token's
+        // client_id/aud doesn't match the authenticated caller, report inactive
+        // rather than leaking another client's token contents (RFC 7662).
+        if (callerClientId != null && !callerClientId.isBlank()
+                && !belongsToClient(claims, callerClientId)) {
+            return INACTIVE;
+        }
+
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("active",    true);
         response.put("sub",       claims.getSubject());
@@ -100,6 +109,14 @@ public class OidcIntrospectionService {
         Object email = claims.get("email");
         if (email != null) response.put("email", email);
         return response;
+    }
+
+    /** True when the token's {@code client_id} or {@code aud} matches the caller. */
+    private static boolean belongsToClient(Claims claims, String callerClientId) {
+        Object cid = claims.get("client_id");
+        if (cid != null && callerClientId.equals(cid.toString())) return true;
+        java.util.Set<String> aud = claims.getAudience();
+        return aud != null && aud.contains(callerClientId);
     }
 
     /** Hashes are produced with the same scheme as the revocation service. */
