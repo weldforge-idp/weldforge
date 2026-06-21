@@ -47,7 +47,8 @@ class TenantServiceVerifyTest {
 
     private final TenantService service = new TenantService(
             accessor, tenantRepository, socialRepo, userRepository,
-            refreshTokenRepository, slugHoldbackRepository, auditService, publicHost);
+            refreshTokenRepository, slugHoldbackRepository, auditService, publicHost,
+            new TenantSlugValidator(publicHost, slugHoldbackRepository));
 
     @Test
     @DisplayName("verifyTenant flips verifiedAt and emits tenant.verified audit event")

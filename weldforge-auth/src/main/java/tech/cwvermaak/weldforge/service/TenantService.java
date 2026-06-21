@@ -26,7 +26,6 @@ import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * Tenant management with strict isolation:
@@ -48,8 +47,8 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class TenantService {
 
-    private static final Pattern SLUG_FORMAT =
-            Pattern.compile("^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$");
+    // Slug format / reserved-label / holdback validation lives in the shared
+    // TenantSlugValidator (B-PROV-1) so the funnel enforces the same rules.
 
     private final TenantAccessor tenantAccessor;
     private final TenantRepository tenantRepository;
@@ -59,6 +58,7 @@ public class TenantService {
     private final TenantSlugHoldbackRepository slugHoldbackRepository;
     private final AuditService auditService;
     private final PublicHostProperties publicHost;
+    private final TenantSlugValidator slugValidator;
 
     // ---- Tenant CRUD --------------------------------------------------
 
@@ -414,42 +414,8 @@ public class TenantService {
     }
 
     private String requireSlug(String slug) {
-        if (slug == null) throw new IllegalArgumentException("slug is required");
-        String normalised = slug.trim().toLowerCase();
-        if (!SLUG_FORMAT.matcher(normalised).matches()) {
-            throw new IllegalArgumentException(
-                "slug must be lowercase alphanumeric + dashes, 2-64 chars, not starting/ending with '-'");
-        }
-        // Reserved labels (www, api, admin, oauth, login, …) cannot be tenant
-        // slugs — TenantResolverFilter refuses to resolve them, so a tenant
-        // created with one of these names would be permanently unreachable
-        // via its subdomain. Reject at creation rather than letting the
-        // split-brain state happen. See docs/auth-url-spec.md and
-        // PublicHostProperties#reservedLabels for the full list.
-        if (publicHost.getReservedLabels() != null
-                && publicHost.getReservedLabels().contains(normalised)) {
-            throw new IllegalArgumentException(
-                "slug '" + normalised + "' is reserved — pick a different one");
-        }
-        // Slug holdback: a recently-deleted tenant's slug cannot be reclaimed
-        // for {wf.public.slug-holdback-days} days. Defends against an
-        // identity-confusion attack where a stolen pre-deletion session
-        // would silently authenticate against a freshly-recreated tenant
-        // on the same {slug}.{base-domain} subdomain — even after the
-        // delete-time token_version bump, since a future tenant's users
-        // would issue fresh JWTs but the SUBDOMAIN URL itself is the same.
-        int holdbackDays = publicHost.getSlugHoldbackDays();
-        if (holdbackDays > 0) {
-            slugHoldbackRepository.findFirstBySlugOrderByReleasedAtDesc(normalised)
-                    .ifPresent(h -> {
-                        LocalDateTime expiresAt = h.getReleasedAt().plusDays(holdbackDays);
-                        if (expiresAt.isAfter(LocalDateTime.now())) {
-                            throw new IllegalArgumentException(
-                                "slug '" + normalised + "' was recently released and "
-                              + "is on holdback until " + expiresAt + " — pick a different one");
-                        }
-                    });
-        }
-        return normalised;
+        // B-PROV-1: delegate to the shared validator so the admin path and the
+        // self-service payment funnel enforce identical rules.
+        return slugValidator.validate(slug);
     }
 }

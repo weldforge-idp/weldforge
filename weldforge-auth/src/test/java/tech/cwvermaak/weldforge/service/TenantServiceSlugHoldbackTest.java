@@ -138,6 +138,7 @@ class TenantServiceSlugHoldbackTest {
         publicHost.setScheme("https");
         publicHost.setSlugHoldbackDays(holdbackDays);
         return new TenantService(accessor, tenantRepository, socialRepo, userRepository,
-                refreshTokenRepository, slugHoldbackRepository, auditService, publicHost);
+                refreshTokenRepository, slugHoldbackRepository, auditService, publicHost,
+                new TenantSlugValidator(publicHost, slugHoldbackRepository));
     }
 }

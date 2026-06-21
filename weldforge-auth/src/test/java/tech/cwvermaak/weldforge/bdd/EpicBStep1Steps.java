@@ -106,7 +106,10 @@ public class EpicBStep1Steps {
         tenantService = new TenantService(tenantAccessor, tenantRepository,
                 socialRepo, userRepository, refreshTokenRepository,
                 mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class),
-                auditService, publicHostProperties());
+                auditService, publicHostProperties(),
+                new tech.cwvermaak.weldforge.service.TenantSlugValidator(
+                        publicHostProperties(),
+                        mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class)));
 
         jwtService = new JwtService();
         ReflectionTestUtils.setField(jwtService, "secret", jwtSecret);

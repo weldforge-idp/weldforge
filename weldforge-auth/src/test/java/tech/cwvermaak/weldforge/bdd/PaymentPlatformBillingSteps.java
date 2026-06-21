@@ -193,9 +193,12 @@ public class PaymentPlatformBillingSteps {
         // Build real services.
         FeeCalculator feeCalculator = new FeeCalculator();
         PaymentRoutingService routing = new PaymentRoutingService(gatewayRepo, feeCalculator);
-        orderService = new OrderService(orderRepo, txRepo, routing, List.of(fakeGateway));
+        tech.cwvermaak.weldforge.service.TenantSlugValidator slugValidator =
+                mock(tech.cwvermaak.weldforge.service.TenantSlugValidator.class);
+        when(slugValidator.validate(anyString())).thenAnswer(inv -> inv.getArgument(0));
+        orderService = new OrderService(orderRepo, txRepo, routing, slugValidator, List.of(fakeGateway));
         provisioningService = new TenantProvisioningService(
-                tenantRepo, saRepo, subRepo, orderRepo, orderService, auditService);
+                tenantRepo, saRepo, subRepo, orderRepo, orderService, auditService, slugValidator);
         webhookService = new WebhookService(gatewayRepo, orderService, provisioningService, List.of(fakeGateway));
     }
 

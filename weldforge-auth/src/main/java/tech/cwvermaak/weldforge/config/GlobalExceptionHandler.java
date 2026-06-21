@@ -74,6 +74,17 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.BAD_REQUEST, "malformed_request", ex.getMessage(), request);
     }
 
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadable(
+            org.springframework.http.converter.HttpMessageNotReadableException ex, HttpServletRequest request) {
+        // B-API-1: a malformed/unparseable body (e.g. invalid JSON) is a client
+        // error, not a server fault — return 400, not the catch-all 500. Generic
+        // message: never echo parser internals or the raw payload back.
+        log.debug("Unreadable request body on {} {}: {}", request.getMethod(),
+                request.getRequestURI(), ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, "bad_request", "Malformed or unreadable request body", request);
+    }
+
     @ExceptionHandler(PasswordPolicyViolation.class)
     public ResponseEntity<Map<String, Object>> handlePasswordPolicy(PasswordPolicyViolation ex,
                                                                      HttpServletRequest request) {
