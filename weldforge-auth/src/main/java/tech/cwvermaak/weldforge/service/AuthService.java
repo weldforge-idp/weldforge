@@ -528,11 +528,10 @@ public class AuthService {
 
     private static String clientIp(HttpServletRequest request) {
         if (request == null) return null;
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma == -1 ? forwarded : forwarded.substring(0, comma)).trim();
-        }
+        // B-AUTH-1: trust only the RemoteIpValve-resolved address
+        // (server.forward-headers-strategy=native), never the spoofable raw
+        // X-Forwarded-For leftmost token — this IP is stored on refresh-token
+        // records, so a spoofed value would poison the session audit trail.
         return request.getRemoteAddr();
     }
 
