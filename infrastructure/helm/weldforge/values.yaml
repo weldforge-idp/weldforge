@@ -89,6 +89,19 @@ frontend:
       name: sso-frontend-cert
       domains:
         - sso.weldforge.org
+    # Per-tenant leaf certs for <tenant>.sso.weldforge.org. GCP ManagedCertificate
+    # can't issue wildcards, so each tenant auth subdomain gets its own leaf cert,
+    # attached to the sso-frontend ingress alongside the apex cert above. These
+    # were previously created out-of-band; captured here so a re-apply reproduces
+    # them instead of dropping them from the ingress. (The wildcard-via-Certificate-
+    # Manager approach noted above remains the intended long-term replacement.)
+    tenantCerts:
+      - name: sso-cert-buddy-suite
+        domain: buddy-suite.sso.weldforge.org
+      - name: sso-cert-cwvermaak-tech
+        domain: cwvermaak-tech.sso.weldforge.org
+      - name: sso-cert-leap
+        domain: leap.sso.weldforge.org
 
 # --- PostgreSQL ---
 # Disabled — replaced by Cloud SQL via the Auth Proxy sidecar.
