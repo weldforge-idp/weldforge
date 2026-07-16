@@ -8,6 +8,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of, tap } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { AuthShellComponent } from './auth-shell.component';
+import { forwardOidcParams, readOidcReturnTo, safeOidcReturnUrl } from '../../core/oidc-continuation';
 
 @Component({
   selector: 'app-register',
@@ -88,9 +89,16 @@ export class RegisterComponent {
 
   forwardQueryParams: Record<string, string> = {};
 
-  constructor(private auth: AuthService, private router: Router, route: ActivatedRoute) {
+  constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute) {
     // Tenant is identified by the page host ({slug}.sso.weldforge.org).
     // No tenant query param to forward to /login. See docs/auth-url-spec.md.
+    //
+    // The OIDC continuation, however, MUST be forwarded. A user who lands here from a calling
+    // application's sign-in (Intelli-Accounting, say) arrives with ?oidcReturnTo=<authorize URL>.
+    // This was previously left as {} and never populated, so both "Back to sign in" and the
+    // post-registration redirect dropped it — the user was registered successfully and then
+    // stranded in the portal's tenant list, and the calling app never saw them again.
+    this.forwardQueryParams = forwardOidcParams(this.route.snapshot.queryParams);
   }
 
   submit(): void {
@@ -100,9 +108,14 @@ export class RegisterComponent {
       tap(res => {
         this.loading.set(false);
         if (res?.token) {
-          this.router.navigate(['/tenants']);
+          // Registered AND authenticated — resume the OIDC flow so the calling application
+          // completes its own sign-up. For Intelli-Accounting that is spec §9: WeldForge owns
+          // step 1 (login details), and steps 2-3 (company details, chart of accounts) happen
+          // back in the app once the callback lands.
+          this.goToApp();
         } else {
-          // Successful response without token (eg. needs MFA enrollment / email verification)
+          // Successful response without token (eg. needs MFA enrollment / email verification).
+          // Send them to sign-in still carrying the continuation, so the flow survives.
           this.router.navigate(['/login'], { queryParams: this.forwardQueryParams });
         }
       }),
@@ -116,5 +129,23 @@ export class RegisterComponent {
         return of(null);
       })
     ).subscribe();
+  }
+
+  /**
+   * Hand the freshly-authenticated browser back to the calling application, or fall back to
+   * the portal when this was a standalone registration.
+   *
+   * <p>The continuation is attacker-supplied (it is a query parameter), so it is validated
+   * against our own base domain before we redirect — see {@link safeOidcReturnUrl}. An
+   * unvalidated redirect here would be an open redirect on an identity provider, which is
+   * exactly the page a victim has just been taught to trust.
+   */
+  private goToApp(): void {
+    const target = safeOidcReturnUrl(readOidcReturnTo(this.route.snapshot.queryParams));
+    if (target) {
+      window.location.href = target;
+      return;
+    }
+    this.router.navigate(['/tenants']);
   }
 }
