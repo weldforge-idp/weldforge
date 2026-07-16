@@ -95,6 +95,14 @@ frontend:
     # were previously created out-of-band; captured here so a re-apply reproduces
     # them instead of dropping them from the ingress. (The wildcard-via-Certificate-
     # Manager approach noted above remains the intended long-term replacement.)
+    #
+    # ⚠ Adding a tenant WITHOUT adding it here breaks login for that tenant, and the
+    #   failure is confusing: the GCLB has no cert for <tenant>.sso.weldforge.org, so it
+    #   serves the apex sso.weldforge.org cert instead. The browser reports
+    #   ERR_CERT_COMMON_NAME_INVALID, HSTS refuses to let the user click through, and the
+    #   tenant's OIDC login is simply dead — while every other tenant works fine and the
+    #   discovery document (which is entirely path-based on the apex) looks perfect.
+    #   This has now happened twice: `leap` on 2026-07-14, `intellisuite` on 2026-07-16.
     tenantCerts:
       - name: sso-cert-buddy-suite
         domain: buddy-suite.sso.weldforge.org
@@ -102,6 +110,11 @@ frontend:
         domain: cwvermaak-tech.sso.weldforge.org
       - name: sso-cert-leap
         domain: leap.sso.weldforge.org
+      # Added 2026-07-16 — Intelli-Accounting's WeldForge tenant. Its absence made
+      # intellisuite.sso.weldforge.org serve the apex cert, which broke sign-in for
+      # Intelli-Accounting entirely (every route is behind the auth gate).
+      - name: sso-cert-intellisuite
+        domain: intellisuite.sso.weldforge.org
 
 # --- PostgreSQL ---
 # Disabled — replaced by Cloud SQL via the Auth Proxy sidecar.
