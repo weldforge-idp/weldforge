@@ -474,7 +474,7 @@ public class AuthService {
     private void writeRefreshCookie(HttpServletResponse response, String rawToken, Long tenantRefreshTtlMs) {
         Cookie cookie = new Cookie(REFRESH_COOKIE, rawToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(publicHost.isSecureCookies());
         cookie.setPath("/api/auth");
         // Scope to the public base-domain so the cookie set on
         // {slug}.sso.weldforge.org is also sent when /api/auth/refresh runs
@@ -497,7 +497,7 @@ public class AuthService {
                 tech.cwvermaak.weldforge.config.JwtAuthenticationFilter.SESSION_COOKIE,
                 accessToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(publicHost.isSecureCookies());
         // SameSite=Lax so the cookie is sent on top-level redirects (the
         // OIDC /authorize flow lands here from a relying party). Strict
         // would block legitimate cross-site browser navigation.
