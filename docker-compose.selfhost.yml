@@ -1,0 +1,83 @@
+# ============================================================
+# Self-contained WeldForge stack for SELF-HOSTING.
+# Backend API + Postgres + Angular admin portal, all built from source.
+# See docs/self-hosting.md for the full guide.
+#
+# Quick start:
+#   cp .env.selfhost.example .env
+#   # generate secrets:
+#   #   JWT_SECRET=$(openssl rand -base64 64)
+#   #   APP_CRYPTO_SECRET=$(openssl rand -base64 32)
+#   #   DB_PASSWORD=$(openssl rand -base64 24)
+#   # put those + WF_BOOTSTRAP_ADMIN_EMAIL into .env, then:
+#   docker compose -f docker-compose.selfhost.yml up -d --build
+#
+# Admin portal:  http://localhost:8080
+# Backend API:   http://localhost:8076
+# ============================================================
+name: weldforge
+
+services:
+  db:
+    image: postgres:18.1-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-weldforge}
+      POSTGRES_USER: ${DB_USERNAME:-weldforge}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - wf_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-weldforge} -d ${DB_NAME:-weldforge}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [wf]
+
+  app:
+    build: ./weldforge-auth
+    restart: unless-stopped
+    ports:
+      - "8076:8076"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME:-weldforge}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-weldforge}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      # Required — generate fresh, never commit. See docs/self-hosting.md.
+      JWT_SECRET: "${JWT_SECRET:?generate with openssl rand -base64 64}"
+      APP_CRYPTO_SECRET: "${APP_CRYPTO_SECRET:?generate with openssl rand -base64 32}"
+      # Secure-by-default for self-host: refuse to boot on placeholder secrets.
+      APP_REQUIRE_SECURE_SECRETS: ${APP_REQUIRE_SECURE_SECRETS:-true}
+      # Public host — drives tenant resolution + outbound URLs. For a single-host
+      # eval, localhost works via the apex/default-tenant fallback; per-tenant
+      # subdomain login needs real DNS+TLS (see docs/self-hosting.md).
+      APP_PUBLIC_BASE_DOMAIN: ${WF_BASE_DOMAIN:-localhost}
+      APP_PUBLIC_SCHEME: ${WF_SCHEME:-http}
+      # First super-admin bootstrap: set to an email you'll register, then restart.
+      APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL: ${WF_BOOTSTRAP_ADMIN_EMAIL:-}
+      # WebAuthn/passkeys: defaults are localhost-only; override for a real host.
+      APP_MFA_WEBAUTHN_RP_ID: ${WF_WEBAUTHN_RP_ID:-localhost}
+      APP_MFA_WEBAUTHN_ORIGINS: ${WF_WEBAUTHN_ORIGINS:-http://localhost:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [wf]
+
+  admin-portal:
+    build: ./weldforge-admin-portal
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/selfhost/nginx-default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks: [wf]
+
+volumes:
+  wf_pgdata:
+
+networks:
+  wf:
+    driver: bridge

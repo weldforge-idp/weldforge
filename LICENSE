@@ -1,0 +1,63 @@
+Business Source License 1.1
+
+-----------------------------------------------------------------------------
+PARAMETERS
+-----------------------------------------------------------------------------
+
+Licensor:            CW Vermaak (WeldForge)            [confirm legal entity]
+
+Licensed Work:       WeldForge — multi-tenant SSO / IAM platform.
+                     The Licensed Work is (c) 2026 CW Vermaak.
+
+Additional Use       You may make production use of the Licensed Work,
+Grant:               without a paid subscription, provided your use does
+                     not exceed the WeldForge "Community" limits:
+                       - at most ONE (1) tenant, and
+                       - at most TWENTY-FIVE (25) users in that tenant.
+                     Any non-production use (development, testing,
+                     evaluation, internal demos) is always permitted at any
+                     scale. Use beyond the Community limits, or any of the
+                     paid-tier features, requires a commercial subscription
+                     or a valid WeldForge license key.
+                                                        [confirm thresholds]
+
+Change Date:         2029-06-21  (four years from first publication)
+                                                        [confirm date]
+
+Change License:      Apache License, Version 2.0
+
+-----------------------------------------------------------------------------
+TERMS
+-----------------------------------------------------------------------------
+
+The Licensed Work is provided under the Business Source License 1.1 (the
+"License"). The full, canonical text of the Business Source License 1.1 is
+published by MariaDB Corporation Ab at:
+
+    https://mariadb.com/bsl11/
+
+and is incorporated here by reference. The Parameters above are the
+license parameters as defined by that text. Terms capitalised above (Licensor,
+Licensed Work, Additional Use Grant, Change Date, Change License) have the
+meanings given to them in the License.
+
+In summary (non-binding — the canonical text governs):
+  - You may copy, modify, create derivative works of, redistribute, and make
+    NON-PRODUCTION use of the Licensed Work.
+  - You may make PRODUCTION use only within the Additional Use Grant above,
+    unless you hold a separate commercial license from the Licensor.
+  - On the Change Date, the Licensed Work becomes available under the Change
+    License (Apache 2.0) and these restrictions fall away for that version.
+
+Commercial licensing, pricing, and license keys: https://www.weldforge.org
+Contact: christiaan.vermaak@outlook.com
+
+-----------------------------------------------------------------------------
+NOTE FOR MAINTAINERS
+-----------------------------------------------------------------------------
+For maximum legal robustness, vendor the FULL verbatim BSL 1.1 body from
+https://mariadb.com/bsl11/ into this file beneath the Parameters block (the
+canonical adoption form). This file currently incorporates it by reference,
+which is common but slightly weaker than vendoring the full text. Have the
+Parameters (Licensor entity, thresholds, Change Date) reviewed by legal
+before relying on them.
