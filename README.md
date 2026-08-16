@@ -52,9 +52,19 @@ cd weldforge/weldforge-auth
 docker compose up -d postgres
 ./mvnw spring-boot:run
 # ──
-# Admin portal seeded at http://localhost:8076 with bootstrap credentials
-# logged to stdout. Swagger UI at http://localhost:8076/swagger-ui/index.html
-# (requires x-app-authorization header — see the tutorials page).
+# The API is now on http://localhost:8076. Nothing seeds a user, so there are
+# no credentials to log in with yet — create the first one, then promote it:
+#
+#   curl -X POST http://localhost:8076/api/auth/register \
+#     -H "X-Tenant-Slug: default" -H "Content-Type: application/json" \
+#     -d '{"name":"You","email":"you@example.com","password":"CorrectHorse-9!"}'
+#
+#   APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL=you@example.com ./mvnw spring-boot:run
+#
+# That promotes the account to SUPER_ADMIN on start-up; sign in again
+# afterwards, because the promotion invalidates earlier tokens. Swagger UI is
+# at http://localhost:8076/swagger-ui/index.html and needs an
+# x-app-authorization key — see the tutorials page.
 ```
 
 Full walkthrough: [weldforge.org/tutorials](https://www.weldforge.org/tutorials.html)
@@ -120,7 +130,7 @@ Runs as one jar + one database. Scales horizontally behind a load balancer
 | Payments | Stripe (first gateway; abstraction supports Paddle / PayFast / Yoco / Peach) |
 | Admin portal | Angular 21, TypeScript, served by nginx |
 | Container | Docker / Kubernetes manifests under `infrastructure/` |
-| Test | JUnit 5 + Cucumber (134 BDD scenarios, 819 steps) |
+| Test | JUnit 5 + Cucumber (153 BDD scenarios, 684 steps) |
 | Observability | Prometheus, Resilience4j, Spring Actuator |
 
 ## Deployment options
