@@ -1,6 +1,6 @@
 # ============================================================
 # Self-contained WeldForge stack for SELF-HOSTING.
-# Backend API + Postgres + Angular admin portal, all built from source.
+# Backend API + Postgres + Angular admin portal, from published images.
 # See docs/self-hosting.md for the full guide.
 #
 # Quick start:
@@ -10,7 +10,10 @@
 #   #   APP_CRYPTO_SECRET=$(openssl rand -base64 32)
 #   #   DB_PASSWORD=$(openssl rand -base64 24)
 #   # put those + WF_BOOTSTRAP_ADMIN_EMAIL into .env, then:
-#   docker compose -f docker-compose.selfhost.yml up -d --build
+#   docker compose -f docker-compose.selfhost.yml up -d
+#
+# That pulls prebuilt images — no JDK or Node needed. To build from source
+# instead (contributors), add --build. Pin a release with WF_VERSION=v1.2.3.
 #
 # Admin portal:  http://localhost:8080
 # Backend API:   http://localhost:8076
@@ -36,6 +39,11 @@ services:
     networks: [wf]
 
   app:
+    # Published multi-arch image (linux/amd64 + linux/arm64). `build:` is kept
+    # alongside it deliberately: `docker compose up -d` pulls the image, while
+    # `docker compose up -d --build` builds from source and tags it locally.
+    # Self-hosters need no JDK; contributors keep the source workflow.
+    image: ghcr.io/weldforge-idp/weldforge-auth:${WF_VERSION:-latest}
     build: ./weldforge-auth
     restart: unless-stopped
     ports:
@@ -65,6 +73,7 @@ services:
     networks: [wf]
 
   admin-portal:
+    image: ghcr.io/weldforge-idp/weldforge-admin-portal:${WF_VERSION:-latest}
     build: ./weldforge-admin-portal
     restart: unless-stopped
     ports:

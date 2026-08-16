@@ -18,6 +18,27 @@ See [weldforge.org](https://www.weldforge.org).
 - A Postgres 14+ database (the compose bundles one).
 - For a real deployment: a domain + TLS (a reverse proxy or your ingress).
 
+You do **not** need a JDK or Node toolchain. The compose stack pulls prebuilt
+images from GitHub Container Registry:
+
+| Image | Architectures |
+|---|---|
+| `ghcr.io/weldforge-idp/weldforge-auth` | linux/amd64, linux/arm64 |
+| `ghcr.io/weldforge-idp/weldforge-admin-portal` | linux/amd64, linux/arm64 |
+
+arm64 is built natively rather than emulated, so a Raspberry Pi, an Ampere VPS
+or Apple Silicon pulls the same tag as everyone else.
+
+**Pin a version in production.** `latest` moves only on tagged releases (never
+on a `main` build), but pinning is still the right habit:
+
+```bash
+echo 'WF_VERSION=v1.2.3' >> .env
+```
+
+Contributors who want to build from source instead of pulling can add `--build`
+to any `up` command — `build:` is retained in the compose file for exactly that.
+
 ## Quick start (Docker Compose — full stack)
 
 This brings up the **API + Postgres + admin portal** from source.
@@ -36,8 +57,8 @@ cp .env.selfhost.example .env
 #      openssl rand -base64 24   # -> DB_PASSWORD
 #    Also set WF_BOOTSTRAP_ADMIN_EMAIL to the email you'll register as admin.
 
-# 3. Launch
-docker compose -f docker-compose.selfhost.yml up -d --build
+# 3. Launch (pulls prebuilt images; add --build to compile from source instead)
+docker compose -f docker-compose.selfhost.yml up -d
 ```
 
 - **Admin portal:** http://localhost:8080

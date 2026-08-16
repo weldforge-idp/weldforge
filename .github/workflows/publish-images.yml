@@ -1,0 +1,156 @@
+name: publish-images
+
+# Publishes weldforge-auth and weldforge-admin-portal to GitHub Container
+# Registry so self-hosters can `docker compose up` without a Java/Node
+# toolchain. Before this, docker-compose.selfhost.yml built from source, which
+# meant every self-hoster needed JDK 25 + Node 20 and a ~10 minute first run.
+#
+# WHY NATIVE RUNNERS RATHER THAN QEMU
+# Both Dockerfiles compile inside the image (Maven for the API, `ng build` for
+# the portal). Cross-building arm64 under QEMU emulation makes that punishing —
+# tens of minutes, and flaky. Since this repository is public, GitHub's arm64
+# runners are free, so each architecture is built natively and the results are
+# stitched together into one multi-arch manifest. Self-hosters on a Pi, an
+# Ampere VPS or Apple Silicon pull the same tag as everyone else.
+#
+# AUTHENTICATION
+# Uses the built-in GITHUB_TOKEN with packages:write. No PAT, no repo secret.
+#
+# FIRST RUN: the GHCR package is created private. Make each public once, at
+#   https://github.com/orgs/weldforge-idp/packages
+#   -> weldforge-auth / weldforge-admin-portal -> Package settings -> Change visibility
+# Otherwise `docker pull` fails for everyone but you, which rather defeats the
+# purpose. This cannot be set from the workflow — GitHub has no API for it at
+# package-creation time.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'weldforge-auth/**'
+      - 'weldforge-admin-portal/**'
+      - '.github/workflows/publish-images.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    name: build ${{ matrix.image }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      # image x arch is a genuine cross product (4 jobs). `arch` must be a real
+      # matrix dimension for the `include` entries to bind to it — an include
+      # that introduces only new keys does NOT create combinations, it merges
+      # into existing ones, which with two such entries expands unpredictably.
+      matrix:
+        image: [weldforge-auth, weldforge-admin-portal]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pushed by digest only; the merge job below attaches the human tags to
+      # the manifest list. Tagging here instead would leave the last
+      # architecture to finish overwriting the tag with a single-arch image.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.image }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.image }}-${{ matrix.arch }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/${{ matrix.image }}-${{ matrix.arch }}.txt
+          retention-days: 1
+
+  merge:
+    name: merge manifest (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    needs: [build]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [weldforge-auth, weldforge-admin-portal]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-${{ matrix.image }}-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # latest only moves on a tagged release, so `latest` never points at an
+      # untested main build. Self-hosters following `latest` get releases;
+      # anyone wanting the bleeding edge asks for `main` explicitly.
+      - name: Compute tags
+        uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=sha,format=short
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Create and push manifest list
+        run: |
+          cd /tmp/digests
+          DIGESTS=""
+          for f in *.txt; do
+            d=$(cat "$f")
+            DIGESTS="$DIGESTS ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}@${d}"
+          done
+          echo "merging:$DIGESTS"
+          TAGS=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< '${{ steps.meta.outputs.json }}')
+          # shellcheck disable=SC2086
+          docker buildx imagetools create $TAGS $DIGESTS
+
+      - name: Inspect published image
+        run: |
+          docker buildx imagetools inspect \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.meta.outputs.version }}
