@@ -175,7 +175,9 @@ public class EpicDRbacSteps {
         tenantService = new TenantService(tenantAccessor, tenantRepository, socialRepo, userRepository,
                 mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
                 mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class),
-                auditService, publicHost);
+                auditService, publicHost,
+                new tech.cwvermaak.weldforge.service.TenantSlugValidator(
+                        publicHost, mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class)));
         adminService = new AdminService(tenantAccessor, roleRepository, userRepository,
                 envRepo, appClientRepo, mfaService, auditService,
                 mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),

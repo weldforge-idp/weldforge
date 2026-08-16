@@ -49,11 +49,16 @@ customers (or many environments of a single customer) with strict isolation.
 ```bash
 git clone https://github.com/weldforge-idp/weldforge
 cd weldforge/weldforge-auth
-docker compose up -d postgres
+docker compose up -d db        # Postgres — the compose service is named "db"
 ./mvnw spring-boot:run
 # ──
-# The API is now on http://localhost:8076. Nothing seeds a user, so there are
-# no credentials to log in with yet — create the first one, then promote it:
+# Backend API on http://localhost:8076 (Spring Boot). This is the API ONLY;
+# the Angular admin portal is a separate app (weldforge-admin-portal).
+# For a full self-contained stack (API + Postgres + admin portal) and a
+# production self-hosting guide, see docs/self-hosting.md.
+#
+# Nothing seeds a user, so there are no credentials to log in with yet —
+# create the first one, then promote it:
 #
 #   curl -X POST http://localhost:8076/api/auth/register \
 #     -H "X-Tenant-Slug: default" -H "Content-Type: application/json" \
@@ -62,8 +67,9 @@ docker compose up -d postgres
 #   APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL=you@example.com ./mvnw spring-boot:run
 #
 # That promotes the account to SUPER_ADMIN on start-up; sign in again
-# afterwards, because the promotion invalidates earlier tokens. Swagger UI is
-# at http://localhost:8076/swagger-ui/index.html and needs an
+# afterwards, because the promotion invalidates earlier tokens. See also
+# docs/runbooks/production-bootstrap.md §7. Swagger UI is at
+# http://localhost:8076/swagger-ui/index.html and needs an
 # x-app-authorization key — see the tutorials page.
 ```
 
@@ -139,7 +145,7 @@ Six supported topologies, [documented in full here](https://www.weldforge.org/de
 
 | Model | Who runs it | Starting price |
 |---|---|---|
-| Self-host OSS (Developer tier) | You | **Free, unlimited** |
+| Self-host (Community) | You | **Free** up to 1 tenant / 25 users |
 | Self-host + support | You | $249/mo |
 | Cloud shared | WeldForge | $29/mo (free under 500 MAU) |
 | Cloud dedicated | WeldForge | From $4 999/mo |
@@ -217,12 +223,15 @@ for the BDD conventions — new features ship with Gherkin scenarios.
 
 ## License
 
-Source-available under a commercial licence. Free for self-host evaluation,
-development and non-commercial production use. Paid licensing required for
-commercial production use above the free tier thresholds — see
-[pricing.html](https://www.weldforge.org/pricing.html).
+WeldForge is **source-available** under the **Business Source License 1.1** —
+see the [`LICENSE`](./LICENSE) file in this repository. Non-production use
+(development, testing, evaluation) is free at any scale; production use is free
+up to the **Community** limits (**1 tenant, 25 users**). Production use beyond
+that, or any paid-tier feature (SAML, SCIM, advanced MFA, multi-tenant, …),
+requires a commercial subscription or a valid WeldForge license key. On the
+Change Date the code becomes available under Apache 2.0.
 
-The full LICENSE document ships separately to paying customers.
+Pricing & commercial licensing: [weldforge.org](https://www.weldforge.org).
 
 ## Contact
 
