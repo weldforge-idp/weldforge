@@ -7,7 +7,11 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: "gce"
     {{- if .Values.frontend.ingress.managedCert.enabled }}
-    networking.gke.io/managed-certificates: {{ .Values.frontend.ingress.managedCert.name | quote }}
+    {{- $certNames := list .Values.frontend.ingress.managedCert.name }}
+    {{- range .Values.frontend.ingress.tenantCerts }}
+    {{- $certNames = append $certNames .name }}
+    {{- end }}
+    networking.gke.io/managed-certificates: {{ join "," $certNames | quote }}
     {{- end }}
     {{- if .Values.frontend.ingress.staticIpName }}
     kubernetes.io/ingress.global-static-ip-name: {{ .Values.frontend.ingress.staticIpName | quote }}
@@ -32,4 +36,18 @@ spec:
     {{- range .Values.frontend.ingress.managedCert.domains }}
     - {{ . }}
     {{- end }}
+{{- end }}
+
+{{- if and .Values.frontend.ingress.enabled .Values.frontend.ingress.managedCert.enabled }}
+{{- range .Values.frontend.ingress.tenantCerts }}
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.global.namespace }}
+spec:
+  domains:
+    - {{ .domain }}
+{{- end }}
 {{- end }}
