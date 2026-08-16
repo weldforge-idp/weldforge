@@ -52,6 +52,16 @@ weldforge-admin-portal/.env
 .wf-token
 *.token
 
+# SOPS + age. Files under infrastructure/secrets/ named *.enc.yaml / *.enc.env
+# are ENCRYPTED and SHOULD be committed — that is the whole point. What must
+# never be committed is anything decrypted from them, or an age private key.
+*.dec.yaml
+*.dec.env
+*.dec.json
+age-key.txt
+keys.txt
+*.agekey
+
 # Test output
 test-output/
 
