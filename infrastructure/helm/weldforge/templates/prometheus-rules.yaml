@@ -46,4 +46,36 @@ spec:
             severity: warning
           annotations:
             summary: "HTTP 5xx error rate above 5%"
+
+        # Email delivery (sso.mail.send counter). A delivery failure is logged
+        # but the triggering security op (password reset / email verification /
+        # tenant identity-proofing) still returns success to the caller — so this
+        # counter is the ONLY signal that account recovery is silently broken.
+        - alert: MailDeliveryFailures
+          expr: sum(increase(sso_mail_send_total{outcome="failure"}[1h])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "WeldForge email delivery is failing"
+            description: >
+              At least one outbound email (password reset / verification /
+              identity-proofing) failed to send in the last hour. The triggering
+              security operation still returned success, so users see no error —
+              account recovery may be silently broken. Check SMTP / SendGrid
+              (key, quota, deliverability) and docs/email-deliverability.md.
+
+        - alert: MailDeliveryAllFailing
+          expr: |
+            (sum(increase(sso_mail_send_total{outcome="failure"}[30m])) > 0)
+            unless (sum(increase(sso_mail_send_total{outcome="success"}[30m])) > 0)
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "All WeldForge email sends are failing"
+            description: >
+              Every outbound email in the last 30m failed with no successes —
+              SMTP is almost certainly down. Account recovery and email
+              verification are broken for every tenant. Page on-call.
 {{- end }}
