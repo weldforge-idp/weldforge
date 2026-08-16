@@ -122,7 +122,20 @@ Failures, all of which an integration should handle distinctly:
 - Per-tenant SCIM 2.0 base: `https://sso.weldforge.org/scim/v2/{tenant-slug}`
 - Per-tenant PKI CA bundle: `https://sso.weldforge.org/t/{slug}/pki/ca.pem`
 - Per-tenant CRL: `https://sso.weldforge.org/t/{slug}/pki/crl.pem`
-- Per-tenant OCSP responder: `https://sso.weldforge.org/t/{slug}/pki/ocsp`
+- Per-tenant OCSP responder (POST): `https://sso.weldforge.org/t/{slug}/pki/ocsp`
+
+Two credentials that are easy to mix up:
+
+- **SCIM** does not accept `x-app-authorization`, and does not accept a
+  `wf_svc_*` service-account token. It authenticates an **app-client key**
+  (`wf_live_*`, from `POST /api/admin/app-clients`) sent as
+  `Authorization: Bearer`. The tenant slug in the URL must equal that key's
+  own tenant, otherwise the response is `401 tenant_mismatch`. The slug is
+  not optional: `/scim/v2/Users` without it is a 404.
+- **PKI** URLs answer only after that tenant has a CA
+  (`POST /api/admin/pki/ca`). Before that they return
+  `404 {"error":"not_found","message":"Tenant has no CA"}` — an
+  unprovisioned tenant, not a wrong URL.
 
 ## Docs
 

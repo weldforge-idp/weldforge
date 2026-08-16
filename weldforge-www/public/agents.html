@@ -423,13 +423,24 @@ export TOKEN=wf_svc_...</code></pre>
 
         <h3>A.3 — Become a SCIM client so WeldForge provisions into your app</h3>
         <p>No registration endpoint — you consume the standard SCIM 2.0 resource URLs:</p>
+        <p>
+            <strong>SCIM uses a different credential from the rest of this
+            page.</strong> It authenticates an <em>app-client key</em>
+            (<code>wf_live_…</code>, from
+            <code>POST /api/admin/app-clients</code>) sent as
+            <code>Authorization: Bearer</code> — not the
+            <code>wf_svc_…</code> service-account token, which returns 401
+            here. The tenant slug in the URL must match the key's own tenant,
+            or the response is <code>401 tenant_mismatch</code>; and the slug
+            is required — <code>/scim/v2/Users</code> without it is a 404.
+        </p>
         <pre><code># List users (paged, RFC 7644).
 curl $HOST/scim/v2/$TENANT/Users \
-    -H "Authorization: Bearer $TOKEN"
+    -H "Authorization: Bearer $SCIM_KEY"
 
 # Create a group.
 curl -X POST $HOST/scim/v2/$TENANT/Groups \
-    -H "Authorization: Bearer $TOKEN" \
+    -H "Authorization: Bearer $SCIM_KEY" \
     -H "Content-Type: application/scim+json" \
     -d '{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],
          "displayName":"engineering"}'</code></pre>
