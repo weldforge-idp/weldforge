@@ -6,6 +6,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tech.cwvermaak.weldforge.model.AuditEvent;
+import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.RefreshToken;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
@@ -41,18 +42,76 @@ import java.util.UUID;
 public class RefreshTokenService {
 
     public static final String AUDIT_REFRESH_REUSE = "auth.refresh.reuse_detected";
+    public static final String AUDIT_REFRESH_CLIENT_MISMATCH = "auth.refresh.client_mismatch";
     public static final String AUDIT_REFRESH_ROTATE = "auth.refresh.rotate";
 
     private static final SecureRandom RNG = new SecureRandom();
 
     private final RefreshTokenRepository repository;
+    private final RefreshTokenFamilyRevoker familyRevoker;
     private final RefreshTokenProperties properties;
     private final AuditService auditService;
 
     /** Mint a brand new token family for a just-completed login. */
     @Transactional
     public Issued issueNew(User user, String ipAddress, String userAgent) {
-        return persist(user, UUID.randomUUID(), ipAddress, userAgent);
+        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent);
+    }
+
+    /**
+     * Mint a token family for an OIDC code exchange, bound to the client that
+     * performed it. Only that client may later spend the token.
+     */
+    @Transactional
+    public Issued issueNewForClient(User user, OidcClient client,
+                                    String ipAddress, String userAgent) {
+        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent);
+    }
+
+    /**
+     * Rotate an OIDC refresh token on behalf of {@code client}.
+     *
+     * Adds the client check RFC 6749 §6 requires on top of the reuse detection
+     * in {@link #rotate}: a token issued to one relying party must not be
+     * spendable by another, or a client that legitimately holds a token for
+     * its own users could mint access tokens in a different client's name.
+     *
+     * A mismatch is treated exactly like reuse — the family dies. A caller
+     * presenting someone else's refresh token is either an attacker or a
+     * badly-broken client, and in both cases the token should stop working.
+     */
+    @Transactional
+    public Issued rotateForClient(String rawToken, OidcClient client,
+                                  String ipAddress, String userAgent) {
+        if (client == null) {
+            throw new BadCredentialsException("Missing client");
+        }
+        String hash = hash(rawToken == null ? "" : rawToken);
+        RefreshToken row = repository.findByTokenHash(hash)
+                .orElseThrow(() -> new BadCredentialsException("Unknown refresh token"));
+
+        Long boundTo = row.getClient() == null ? null : row.getClient().getId();
+        if (boundTo == null || !boundTo.equals(client.getId())) {
+            // Committed independently — the throw below would otherwise roll it back.
+            int revoked = familyRevoker.revoke(row.getFamilyId(), "client_mismatch");
+            log.warn("Refresh token presented by the wrong client: user_id={} family_id={} "
+                            + "issued_to={} presented_by={} revoked={}",
+                    row.getUser().getId(), row.getFamilyId(), boundTo, client.getId(), revoked);
+            auditService.log(AuditEvent.builder()
+                    .eventType(AUDIT_REFRESH_CLIENT_MISMATCH)
+                    .outcome(AuditEvent.Outcome.DENIED)
+                    .tenant(row.getUser().getTenant())
+                    .actorUser(row.getUser())
+                    .actorEmail(row.getUser().getEmail())
+                    .targetType("refresh_token_family")
+                    .targetId(row.getFamilyId().toString())
+                    .metadata(AuditService.meta(
+                            "issued_to_client_id", String.valueOf(boundTo),
+                            "presented_by_client_id", String.valueOf(client.getId()),
+                            "revoked_count", revoked)));
+            throw new BadCredentialsException("Refresh token was not issued to this client");
+        }
+        return rotate(rawToken, ipAddress, userAgent);
     }
 
     /**
@@ -76,7 +135,11 @@ public class RefreshTokenService {
         // Reuse detection — a token that's already been used or explicitly
         // revoked is a strong signal of compromise. Nuke the family.
         if (row.getUsedAt() != null || row.getRevokedAt() != null) {
-            int revoked = repository.revokeFamily(row.getFamilyId(), now, "reuse_detected");
+            // Committed independently: this method throws to reject the
+            // refresh, and that rollback would otherwise undo the revocation,
+            // leaving the stolen family alive with an audit event claiming
+            // otherwise.
+            int revoked = familyRevoker.revoke(row.getFamilyId(), "reuse_detected");
             log.warn("Refresh token reuse detected: user_id={} family_id={} revoked={}",
                     row.getUser().getId(), row.getFamilyId(), revoked);
             auditService.log(AuditEvent.builder()
@@ -100,7 +163,8 @@ public class RefreshTokenService {
         // Mark current token used, then mint the successor in the same family.
         row.setUsedAt(now);
 
-        Issued successor = persist(row.getUser(), row.getFamilyId(), ipAddress, userAgent);
+        Issued successor = persist(row.getUser(), row.getFamilyId(), row.getClient(),
+                ipAddress, userAgent);
         row.setReplacedBy(successor.row.getId());
 
         auditService.recordUserAction(AUDIT_REFRESH_ROTATE, row.getUser(),
@@ -122,7 +186,8 @@ public class RefreshTokenService {
 
     // ---- helpers -----------------------------------------------------
 
-    private Issued persist(User user, UUID familyId, String ipAddress, String userAgent) {
+    private Issued persist(User user, UUID familyId, OidcClient client,
+                           String ipAddress, String userAgent) {
         String raw = randomToken();
         // PRD SSO-03: per-tenant refresh TTL overrides the application default.
         LocalDateTime expiresAt;
@@ -135,6 +200,7 @@ public class RefreshTokenService {
         RefreshToken row = RefreshToken.builder()
                 .user(user)
                 .tenant(user.getTenant())
+                .client(client)
                 .familyId(familyId)
                 .tokenHash(hash(raw))
                 .issuedAt(LocalDateTime.now())

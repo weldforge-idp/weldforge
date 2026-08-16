@@ -1,6 +1,8 @@
 package tech.cwvermaak.weldforge.controller;
 
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.security.authentication.BadCredentialsException;
+import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -55,6 +57,7 @@ public class OidcAuthorizationController {
     private final OidcTokenService tokenService;
     private final PublicHostProperties publicHost;
     private final tech.cwvermaak.weldforge.service.JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
     @GetMapping("/t/{slug}/oauth2/authorize")
     public ResponseEntity<?> authorize(@PathVariable String slug,
@@ -194,8 +197,9 @@ public class OidcAuthorizationController {
     }
 
     /**
-     * Token endpoint — handles {@code authorization_code} (PKCE) and
-     * {@code client_credentials}. Form-encoded per the spec.
+     * Token endpoint — handles {@code authorization_code} (PKCE),
+     * {@code refresh_token} and {@code client_credentials}. Form-encoded per
+     * the spec.
      */
     @PostMapping(value = "/t/{slug}/oauth2/token", consumes = "application/x-www-form-urlencoded")
     public ResponseEntity<Map<String, Object>> token(@PathVariable String slug,
@@ -205,6 +209,7 @@ public class OidcAuthorizationController {
                                                      @RequestParam(value = "client_id", required = false) String clientId,
                                                      @RequestParam(value = "client_secret", required = false) String clientSecret,
                                                      @RequestParam(value = "code_verifier", required = false) String codeVerifier,
+                                                     @RequestParam(value = "refresh_token", required = false) String refreshToken,
                                                      @RequestParam(value = "scope", required = false) String scope,
                                                      HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
@@ -218,7 +223,45 @@ public class OidcAuthorizationController {
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
                         tenant, result.client(), result.user(),
                         result.scopes(), result.nonce(), issuer);
-                yield ResponseEntity.ok(buildResponse(tokens, result.scopes()));
+                Map<String, Object> body = buildResponse(tokens, result.scopes());
+                // Only clients registered for the grant get one. Handing a
+                // refresh token to a client that never asked for it widens
+                // the blast radius of a leak for no benefit.
+                if (result.client().getGrantTypeList().contains("refresh_token")) {
+                    body.put("refresh_token", refreshTokenService.issueNewForClient(
+                            result.user(), result.client(),
+                            clientIp(request), userAgent(request)).rawToken());
+                }
+                yield ResponseEntity.ok(body);
+            }
+            case "refresh_token" -> {
+                OidcClient client = authorizationService.verifyClientForRefresh(
+                        tenant, clientId, clientSecret);
+                RefreshTokenService.Issued rotated;
+                try {
+                    rotated = refreshTokenService.rotateForClient(
+                            refreshToken, client, clientIp(request), userAgent(request));
+                } catch (BadCredentialsException e) {
+                    // Every rejection reads the same to the caller. Reuse,
+                    // expiry, an unknown token and the wrong client are all
+                    // invalid_grant: distinguishing them would tell an
+                    // attacker which of those they hit.
+                    throw new OidcAuthorizationException("invalid_grant", "Refresh token rejected");
+                }
+
+                User user = rotated.row().getUser();
+                // The token outlives any single access token, so re-check the
+                // account each time rather than trusting the state it had when
+                // the family was minted.
+                if (!user.isActive()) {
+                    throw new OidcAuthorizationException("invalid_grant", "Account is not active");
+                }
+
+                IssuedTokens tokens = tokenService.issueForCodeExchange(
+                        tenant, client, user, client.getScopeList(), null, issuer);
+                Map<String, Object> body = buildResponse(tokens, client.getScopeList());
+                body.put("refresh_token", rotated.rawToken());
+                yield ResponseEntity.ok(body);
             }
             case "client_credentials" -> {
                 OidcClient client = authorizationService.verifyClientCredentials(tenant, clientId, clientSecret);
@@ -280,6 +323,21 @@ public class OidcAuthorizationController {
         } catch (io.jsonwebtoken.JwtException | IllegalArgumentException e) {
             throw new OidcAuthorizationException("access_denied", "Invalid or expired consent token");
         }
+    }
+
+    // Same rules as AuthService: the RemoteIpValve-resolved address only
+    // (server.forward-headers-strategy=native), never a raw X-Forwarded-For,
+    // because these values are stored on refresh-token records and a spoofed
+    // one would poison the session audit trail.
+    private static String clientIp(HttpServletRequest request) {
+        return request == null ? null : request.getRemoteAddr();
+    }
+
+    private static String userAgent(HttpServletRequest request) {
+        if (request == null) return null;
+        String ua = request.getHeader("User-Agent");
+        if (ua == null) return null;
+        return ua.length() > 512 ? ua.substring(0, 512) : ua;
     }
 
     private static Map<String, Object> buildResponse(IssuedTokens tokens, List<String> scopes) {

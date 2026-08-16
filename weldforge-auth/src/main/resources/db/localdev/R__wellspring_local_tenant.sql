@@ -6,9 +6,13 @@
 -- therefore never provisions a Wellspring tenant; the real one will be
 -- registered through the admin API against the live instance instead.
 --
--- Versioned V900 rather than V46 so it always sorts after the real schema
--- and never collides with, or forces out-of-order handling for, the next
--- genuine migration.
+-- Repeatable (R__) rather than versioned, because seed data has no place in
+-- the schema's version sequence. A versioned file here has to sort after every
+-- real migration to avoid collisions, but once applied it becomes the highest
+-- version in the database and Flyway then refuses every genuine migration
+-- numbered below it — silently, on a local database only. Repeatable
+-- migrations run after all versioned ones and re-run when their checksum
+-- changes, which is exactly right for an idempotent seed.
 --
 -- It seeds a user as well as a tenant, because the users table ships empty
 -- and nothing in the codebase can mint the first admin for a new tenant: the

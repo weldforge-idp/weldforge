@@ -250,6 +250,31 @@ public class OidcAuthorizationService {
         return client;
     }
 
+    // ---- Token endpoint: refresh -------------------------------------
+
+    /**
+     * Verify the client presenting a refresh token.
+     *
+     * Confidential clients must authenticate exactly as they do for a code
+     * exchange — a refresh token is a bearer credential, and letting it be
+     * spent without the secret would make the secret pointless. Public
+     * clients have no secret to present, so possession of the refresh token
+     * is all there is; the binding check in RefreshTokenService, rotation and
+     * reuse detection are what limit the damage there.
+     */
+    public OidcClient verifyClientForRefresh(Tenant tenant, String clientId, String clientSecret) {
+        OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
+                .orElseThrow(() -> reject("invalid_client", "Unknown client"));
+        if (!client.getGrantTypeList().contains("refresh_token")) {
+            throw reject("unauthorized_client", "Client is not allowed to use refresh_token");
+        }
+        if (!client.isPublicClient()
+                && (clientSecret == null || !constantTimeEquals(clientSecret, client.getClientSecret()))) {
+            throw reject("invalid_client", "Client secret mismatch");
+        }
+        return client;
+    }
+
     // ---- Helpers -----------------------------------------------------
 
     /**
