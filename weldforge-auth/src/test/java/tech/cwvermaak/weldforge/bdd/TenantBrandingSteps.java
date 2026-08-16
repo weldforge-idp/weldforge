@@ -114,7 +114,9 @@ public class TenantBrandingSteps {
                                     userRepository,
                                     mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
                                     mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class),
-                                    auditService, publicHost);
+                                    auditService, publicHost,
+                                    new tech.cwvermaak.weldforge.service.TenantSlugValidator(
+                                            publicHost, mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class)));
     }
 
     private void ensureAuthWired() {

@@ -11,6 +11,7 @@ import tech.cwvermaak.weldforge.model.dto.payment.CreateOrderResponse;
 import tech.cwvermaak.weldforge.model.payment.*;
 import tech.cwvermaak.weldforge.repository.BillingTransactionRepository;
 import tech.cwvermaak.weldforge.repository.PendingOrderRepository;
+import tech.cwvermaak.weldforge.service.TenantSlugValidator;
 import tech.cwvermaak.weldforge.service.payment.gateway.GatewayCredentials;
 import tech.cwvermaak.weldforge.service.payment.gateway.PaymentGatewayStrategy;
 
@@ -40,6 +41,7 @@ public class OrderService {
     private final PendingOrderRepository pendingOrderRepository;
     private final BillingTransactionRepository billingTransactionRepository;
     private final PaymentRoutingService routingService;
+    private final TenantSlugValidator slugValidator;
     private final Map<GatewayProvider, PaymentGatewayStrategy> strategies;
 
     @Value("${app.payment.slug-reservation-minutes:10}")
@@ -58,10 +60,12 @@ public class OrderService {
     public OrderService(PendingOrderRepository pendingOrderRepository,
                         BillingTransactionRepository billingTransactionRepository,
                         PaymentRoutingService routingService,
+                        TenantSlugValidator slugValidator,
                         List<PaymentGatewayStrategy> strategyBeans) {
         this.pendingOrderRepository = pendingOrderRepository;
         this.billingTransactionRepository = billingTransactionRepository;
         this.routingService = routingService;
+        this.slugValidator = slugValidator;
         this.strategies = new EnumMap<>(GatewayProvider.class);
         for (PaymentGatewayStrategy s : strategyBeans) {
             this.strategies.put(s.provider(), s);
@@ -72,6 +76,10 @@ public class OrderService {
 
     @Transactional
     public CreateOrderResponse createOrder(CreateOrderRequest req) {
+        // B-PROV-1: validate + normalise the requested slug with the SAME rules
+        // the admin path uses (reserved labels, holdback, format) — fail fast
+        // (400) before reserving the slug or starting a checkout.
+        String slug = slugValidator.validate(req.getTenantSlug());
         long amountCents = TierPricing.amountCents(req.getTier(), req.getBillingCycle(), req.getCurrency());
 
         List<PaymentRoutingService.Quote> quotes = routingService.rankPlatform(
@@ -93,7 +101,7 @@ public class OrderService {
                 .organisation(req.getOrganisation())
                 .contactName(req.getContactName())
                 .contactEmail(req.getContactEmail())
-                .requestedTenantSlug(req.getTenantSlug())
+                .requestedTenantSlug(slug)
                 .region(req.getRegion())
                 .billingCycle(req.getBillingCycle() == null ? "MONTHLY" : req.getBillingCycle())
                 .currency(req.getCurrency().toUpperCase())
@@ -123,7 +131,7 @@ public class OrderService {
                 cancelUrl  + "?token=" + token,
                 Map.of("orderToken", token,
                        "tier",       req.getTier(),
-                       "tenantSlug", req.getTenantSlug()));
+                       "tenantSlug", slug));
 
         PaymentGatewayStrategy.CheckoutResult result = strategy.createCheckout(creds, checkoutReq);
 

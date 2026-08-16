@@ -18,6 +18,7 @@ import tech.cwvermaak.weldforge.repository.SubscriptionRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.model.AuditEvent;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
+import tech.cwvermaak.weldforge.service.TenantSlugValidator;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 import tech.cwvermaak.weldforge.service.security.ApiKeyHasher;
 
@@ -55,6 +56,7 @@ public class TenantProvisioningService {
     private final PendingOrderRepository pendingOrderRepository;
     private final OrderService orderService;
     private final AuditService auditService;
+    private final TenantSlugValidator slugValidator;
 
     private static final SecureRandom RNG = new SecureRandom();
 
@@ -108,12 +110,16 @@ public class TenantProvisioningService {
     // ---- Subroutines -----------------------------------------------
 
     private Tenant createTenant(PendingOrder order) {
-        if (tenantRepository.existsBySlug(order.getRequestedTenantSlug())) {
+        // B-PROV-1: re-validate at provision time — closes the TOCTOU between
+        // order placement and provisioning (e.g. the slug entered the holdback
+        // window, or reserved-label config changed, after the order was placed).
+        String slug = slugValidator.validate(order.getRequestedTenantSlug());
+        if (tenantRepository.existsBySlug(slug)) {
             throw new ProvisioningException(
-                    "Slug '" + order.getRequestedTenantSlug() + "' was taken between payment and provisioning.");
+                    "Slug '" + slug + "' was taken between payment and provisioning.");
         }
         Tenant tenant = new Tenant();
-        tenant.setSlug(order.getRequestedTenantSlug());
+        tenant.setSlug(slug);
         tenant.setName(order.getOrganisation());
         tenant.setDisplayName(order.getOrganisation());
         tenant.setEnabled(true);
