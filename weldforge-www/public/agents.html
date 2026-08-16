@@ -49,6 +49,7 @@
         <div class="cta-row">
             <a class="btn primary" href="#integrate">Integrate an application</a>
             <a class="btn ghost" href="#onboarding">Onboard a new tenant</a>
+            <a class="btn ghost" href="#signup">New user sign-up</a>
             <a class="btn ghost" href="#auth-urls">End-user auth URLs</a>
         </div>
     </div>
@@ -166,12 +167,77 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
         <h3>End-user authentication (separate)</h3>
         <p>For end-user identities (not agent identities):</p>
         <ul class="checklist">
-            <li><code>POST /api/auth/register</code> — create a user</li>
+            <li><code>POST /api/auth/register</code> — create a user (see <a href="#signup">New user sign-up</a>)</li>
             <li><code>POST /api/auth/login</code> — password + MFA, returns an access JWT</li>
             <li><code>POST /api/auth/refresh</code> — refresh via <code>refresh_token</code> cookie</li>
             <li><code>POST /t/{slug}/oauth2/token</code> — OAuth 2.0 token endpoint (authorization_code, client_credentials, refresh_token)</li>
             <li><code>GET /saml2/authenticate/{tenant-provider}</code> — initiate SAML SP login</li>
         </ul>
+    </div>
+</section>
+
+<section id="signup">
+    <div class="container">
+        <h2>New user sign-up</h2>
+        <p class="lead">
+            The contract for <code>POST /api/auth/register</code> in full,
+            because two details here are the most common way an integration
+            goes wrong quietly.
+        </p>
+
+        <h3>Send no API key</h3>
+        <p>
+            <code>/api/auth/**</code> is exempt from
+            <code>x-app-authorization</code>, along with <code>/t/**</code>,
+            <code>/saml2/**</code>, <code>/scim/v2/**</code> and
+            <code>/login</code>. A browser reaches these before the user has
+            any credentials, so a <code>wf_live_…</code> key would have to live
+            in the JS bundle — which is a leaked key, not a protected one.
+            Keys belong on a server, calling <code>/api/admin/**</code>.
+        </p>
+
+        <h3>Send the tenant</h3>
+        <p>
+            <code>X-Tenant-Slug</code> selects the tenant the account is
+            created in. Omit it on the apex host and the request resolves to
+            the <code>default</code> tenant: the call returns 200 and the user
+            exists — in the wrong tenant. A tenant subdomain will set this
+            implicitly once subdomains ship; until then, send the header.
+        </p>
+
+        <pre><code>curl -sS -X POST https://sso.weldforge.org/api/auth/register     -H "X-Tenant-Slug: acme"     -H "Content-Type: application/json"     -d '{"name":"Alice Example","email":"alice@example.com","password":"CorrectHorse-Battery-9"}'</code></pre>
+
+        <p>
+            Success is 200 with an access <code>token</code> and
+            <code>expiresIn</code>. The account is usable immediately unless
+            the tenant requires email verification.
+        </p>
+
+        <h3>Failures worth handling separately</h3>
+        <table class="pricing">
+            <thead>
+                <tr><th>Status</th><th><code>error</code></th><th>What it means</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>400</td><td><code>password_policy</code></td><td><code>message</code> lists every unmet rule. Default: at least 10 characters, upper, lower, digit, symbol. A tenant may set a stricter policy — show the message rather than your own copy of the rules.</td></tr>
+                <tr><td>400</td><td><code>bad_request</code></td><td>Email already in use <em>in this tenant</em>. The same address can exist in another tenant. Offer sign-in, not a retry.</td></tr>
+                <tr><td>404</td><td><code>not_found</code></td><td>The tenant has <code>registrationEnabled: false</code>. Self-service sign-up is switched off — this is not a wrong URL.</td></tr>
+                <tr><td>409</td><td><code>seat_limit_exceeded</code></td><td>The tenant is at its <code>maxUsers</code> cap. The body carries <code>limit</code> and <code>current</code>. Seats count active users, so deactivating one frees a seat.</td></tr>
+                <tr><td>429</td><td><code>too_many_requests</code></td><td>Registration is rate-limited per caller; <code>retryAfterSeconds</code> says for how long. Do not retry in a loop.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Staying signed in</h3>
+        <p>
+            Access tokens are short-lived (five minutes by default). A
+            confidential client registered for the <code>refresh_token</code>
+            grant receives a refresh token from the code exchange and spends it
+            at <code>POST /t/{slug}/oauth2/token</code>. Refresh tokens are
+            single-use: each exchange returns a new one, and presenting a spent
+            token revokes the entire family, on the assumption that a replay
+            means the token was stolen. They are also bound to the client they
+            were issued to. Store one server-side, never in the browser.
+        </p>
     </div>
 </section>
 
@@ -241,13 +307,19 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
         <h3>Cookie scoping (be aware)</h3>
         <p>
             Session cookies (<code>wf_session</code>,
-            <code>refresh_token</code>) are written without a
-            <code>Domain</code> attribute, so the browser confines them to
-            the exact host that set them. On the apex host today all tenants
-            share that host; once per-tenant subdomains ship, a session on
-            <code>acme.sso.weldforge.org</code> will not authenticate
-            against <code>contoso.sso.weldforge.org</code>, so plan for a
-            re-sign-in per host if your agent proxies a user between tenants.
+            <code>refresh_token</code>) carry a <code>Domain</code> of the
+            configured base domain — <code>sso.weldforge.org</code> — so they
+            are sent to the apex <em>and</em> to every host beneath it. That is
+            deliberate: it is what lets a session established on a tenant
+            sign-in page survive the hop to the apex OIDC authorize endpoint.
+            It also means the cookie is presented to other tenant subdomains,
+            which is safe because the JWT carries its own
+            <code>tenant_id</code> and every request re-checks it against the
+            resolved tenant — a session for one tenant does not authenticate
+            you against another, but do not rely on the cookie being absent.
+            (A single-label base domain such as <code>localhost</code> gets no
+            <code>Domain</code> attribute, because browsers reject it; there
+            the cookie is host-only.)
         </p>
 
         <p>

@@ -100,8 +100,20 @@ export TOKEN=wf_live_...</code></pre>
         <pre><code>curl $HOST/t/$TENANT/.well-known/openid-configuration | jq</code></pre>
 
         <h3>2. Register a user from your front-end</h3>
+        <p>
+            <strong>No <code>x-app-authorization</code> here.</strong> The
+            <code>/api/auth/**</code> endpoints are exempt from the API key
+            precisely because a browser calls them before the user has any
+            credentials — a <code>wf_live_…</code> key placed in a JS bundle is
+            a leaked key. Send keys from a server, to <code>/api/admin/**</code>.
+        </p>
+        <p>
+            <code>X-Tenant-Slug</code> decides which tenant the account lands
+            in. Omit it and the request resolves to the <code>default</code>
+            tenant: you get a 200 and a user in the wrong place.
+        </p>
         <pre><code>curl -X POST $HOST/api/auth/register \
-    -H "x-app-authorization: $TOKEN" \
+    -H "X-Tenant-Slug: $TENANT" \
     -H "Content-Type: application/json" \
     -d '{
       "email":    "alice@example.com",
@@ -109,9 +121,18 @@ export TOKEN=wf_live_...</code></pre>
       "password": "CorrectHorse-Battery-Staple-9"
     }'</code></pre>
 
+        <p>Handle these distinctly rather than treating every non-200 as "sign-up failed":</p>
+        <ul>
+            <li><code>400 password_policy</code> — <code>message</code> lists every unmet rule (default: ≥10 characters, upper, lower, digit, symbol). Show it to the user.</li>
+            <li><code>400 bad_request</code> — the email is already used <em>in this tenant</em>. Offer sign-in, not a retry.</li>
+            <li><code>404 not_found</code> — the tenant has self-service registration switched off. Not a broken URL.</li>
+            <li><code>409 seat_limit_exceeded</code> — the tenant is at its seat cap; the body carries <code>limit</code> and <code>current</code>. Deactivating a user frees a seat.</li>
+            <li><code>429 too_many_requests</code> — rate-limited; <code>retryAfterSeconds</code> says how long.</li>
+        </ul>
+
         <h3>3. Log in — password only</h3>
         <pre><code>curl -X POST $HOST/api/auth/login \
-    -H "x-app-authorization: $TOKEN" \
+    -H "X-Tenant-Slug: $TENANT" \
     -H "Content-Type: application/json" \
     -d '{
       "identifier": "alice@example.com",
