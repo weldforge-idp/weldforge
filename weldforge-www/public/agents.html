@@ -144,10 +144,7 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
     <div class="container">
         <h2>Authentication scheme</h2>
         <p class="lead">
-            Every <code>/api/**</code> call requires the header
-            <code>x-app-authorization</code>. Two token shapes live on the
-            same header:
-        </p>
+            Calls to <code>/api/admin/**</code> carry the header <code>x-app-authorization</code>. The public protocol surface above and all of <code>/api/auth/**</code> are exempt — see <a href="#signup">New user sign-up</a> for why sending a key from a browser is the wrong instinct. Two token shapes live on the same header:</p>
 
         <div class="card-grid">
             <div class="card">
@@ -559,12 +556,25 @@ curl $HOST/t/newco/.well-known/openid-configuration | jq
 curl $HOST/t/newco/saml2/idp/metadata</code></pre>
 
         <h3>B.3 — First-time install — where does the SUPER_ADMIN token come from?</h3>
-        <p>The codebase ships with a Flyway migration that seeds an initial admin identity. On a fresh deploy:</p>
+        <p>
+            <strong>Nothing seeds an admin account.</strong> No migration
+            creates a user, so a fresh install has an empty
+            <code>users</code> table and no credentials to log in with. The
+            first admin is made by registering a normal user and promoting
+            them:
+        </p>
         <ol style="padding-left: 1.25rem; color: var(--ink-dim);">
-            <li style="margin-bottom: .5rem;">Run the stack (see the repository's <code>README.md</code> for the Docker Compose and Kubernetes manifests).</li>
-            <li style="margin-bottom: .5rem;">Log in to the admin portal with the seeded super-admin credentials; change the password immediately.</li>
-            <li style="margin-bottom: .5rem;">From the portal, or via <code>POST /api/admin/service-accounts</code>, mint a <code>SUPER_ADMIN</code> service-account token for agent use.</li>
-            <li>Revoke the seed account once your own admin is in place.</li>
+            <li style="margin-bottom: .5rem;">Run the stack (see the repository's <code>README.md</code> for the Docker Compose and Kubernetes manifests). The <code>default</code> tenant is created by migration; users are not.</li>
+            <li style="margin-bottom: .5rem;">Register the account that will become your admin, through the ordinary sign-up endpoint — no API key, and <code>X-Tenant-Slug</code> naming the tenant it belongs to:
+                <pre><code>curl -X POST $HOST/api/auth/register \
+    -H "X-Tenant-Slug: default" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"You","email":"you@example.com","password":"…"}'</code></pre>
+            </li>
+            <li style="margin-bottom: .5rem;">Set <code>APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL=you@example.com</code> and restart. On start-up that account is promoted to <code>SUPER_ADMIN</code>. The variable is the relaxed-binding form of <code>app.admin.bootstrap-super-admin-email</code> — a different spelling binds to nothing and promotes nobody, silently.</li>
+            <li style="margin-bottom: .5rem;">Sign in again. The promotion invalidates tokens issued beforehand, so a session opened before the restart will not carry the new authority.</li>
+            <li style="margin-bottom: .5rem;">Mint a <code>SUPER_ADMIN</code> service-account token for agent use via <code>POST /api/admin/service-accounts</code>.</li>
+            <li>Unset the bootstrap variable once your admin exists, so a later restart cannot re-promote an address you have since removed.</li>
         </ol>
 
         <h3>B.4 — Decommission a tenant</h3>
@@ -663,10 +673,11 @@ curl -s $HOST/t/{slug}/oauth2/jwks</code></pre>
         <p>Status code map:</p>
         <ul class="checklist">
             <li><code>400</code> — <code>bad_request</code> / <code>validation_error</code></li>
-            <li><code>401</code> — <code>unauthorized</code></li>
-            <li><code>403</code> — <code>forbidden</code> (also returned for missing <code>x-app-authorization</code>)</li>
+            <li><code>401</code> — <code>unauthorized</code> (no credential, or an invalid one — this is what a missing <code>x-app-authorization</code> returns)</li>
+            <li><code>403</code> — <code>forbidden</code> (authenticated, but not allowed to do this — e.g. a TENANT_ADMIN token on a SUPER_ADMIN endpoint)</li>
             <li><code>404</code> — <code>not_found</code></li>
             <li><code>405</code> — <code>method_not_allowed</code></li>
+            <li><code>409</code> — <code>seat_limit_exceeded</code> (tenant at its user cap)</li>
             <li><code>503</code> — <code>provider_unavailable</code> (circuit-breaker open on an upstream IdP, CRM, SMTP or Twilio)</li>
             <li><code>500</code> — <code>internal_error</code></li>
         </ul>
