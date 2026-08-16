@@ -36,6 +36,7 @@ public class AdminService {
     private final MfaService mfaService;
     private final AuditService auditService;
     private final PasswordResetService passwordResetService;
+    private final TenantSeatService seatService;
 
     private static final SecureRandom RNG = new SecureRandom();
 
@@ -138,7 +139,10 @@ public class AdminService {
         User user = userRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found"));
         if (!user.isActive()) {
+            // Restoring consumes a seat — a capped tenant can't restore its
+            // way past the limit.
             user.setActive(true);
+            seatService.assertCapacityForActivation(user.getTenant(), user, false);
             userRepository.save(user);
             User actor = currentActor();
             auditService.recordAdmin("user.restored", actor,
@@ -307,6 +311,8 @@ public class AdminService {
                     .orElseThrow(() -> new EntityNotFoundException(
                             "Role " + req.roleId() + " not found in this tenant"));
         }
+
+        seatService.assertCapacity(tenant);
 
         // Create the user with no password — they must complete a reset
         // to log in. emailVerified stays false until they click the link.

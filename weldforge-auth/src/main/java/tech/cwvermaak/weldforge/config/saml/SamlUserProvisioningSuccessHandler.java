@@ -45,6 +45,7 @@ public class SamlUserProvisioningSuccessHandler
     private final ScimGroupRepository scimGroupRepository;
     private final GroupRoleMappingService groupRoleMappingService;
     private final FederationRulesEngine federationRulesEngine;
+    private final tech.cwvermaak.weldforge.service.TenantSeatService seatService;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
@@ -113,6 +114,15 @@ public class SamlUserProvisioningSuccessHandler
                         .provider(AuthProvider.SAML)
                         .providerId(principal.getName() != null ? principal.getName() : finalEmail)
                         .build());
+
+        // JIT provisioning consumes a seat; an existing user re-authenticating
+        // does not. Note the caller swallows anything thrown here (see
+        // onAuthenticationSuccess) — so a capped-out tenant means the user is
+        // not provisioned and the failure is logged, rather than the SAML
+        // response itself being rejected.
+        if (user.getId() == null) {
+            seatService.assertCapacity(tenant);
+        }
 
         if (name != null) user.setName(name);
         if (user.getEmail() == null) user.setEmail(email);

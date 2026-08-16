@@ -58,6 +58,7 @@ public class ScimUserService {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final MeterRegistry meterRegistry;
+    private final tech.cwvermaak.weldforge.service.TenantSeatService seatService;
 
     // ---- Read paths --------------------------------------------------
 
@@ -106,6 +107,12 @@ public class ScimUserService {
         String email = primaryEmail(incoming);
         if (email == null) email = incoming.getUserName();
 
+        // An inactive user consumes no seat, so only guard when the incoming
+        // record would land active.
+        if (incoming.isActive()) {
+            seatService.assertCapacity(tenant);
+        }
+
         User user = User.builder()
                 .tenant(tenant)
                 .username(incoming.getUserName())
@@ -144,8 +151,10 @@ public class ScimUserService {
         String name = displayName(incoming);
         if (name != null) user.setName(name);
 
-        boolean activeChanged = user.isActive() != incoming.isActive();
+        boolean wasActive = user.isActive();
+        boolean activeChanged = wasActive != incoming.isActive();
         user.setActive(incoming.isActive());
+        seatService.assertCapacityForActivation(user.getTenant(), user, wasActive);
 
         auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
                 .eventType(AUDIT_SCIM_USER_REPLACE)
@@ -195,6 +204,10 @@ public class ScimUserService {
                 if (map.get("displayName") instanceof String s) user.setName(s);
             }
         }
+
+        // The loop above may have flipped `active`; a PATCH that reactivates
+        // a user consumes a seat exactly like a create does.
+        seatService.assertCapacityForActivation(user.getTenant(), user, wasActive);
 
         auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
                 .eventType(AUDIT_SCIM_USER_PATCH)

@@ -54,7 +54,8 @@ class AdminServiceTest {
         passwordResetService = mock(tech.cwvermaak.weldforge.service.PasswordResetService.class);
 
         admin = new AdminService(tenantAccessor, roleRepo, userRepo, envRepo,
-                appClientRepo, mfaService, auditService, passwordResetService);
+                appClientRepo, mfaService, auditService, passwordResetService,
+                new TenantSeatService(userRepo));
 
         tenant = Tenant.builder().id(7L).slug("acme").name("Acme").build();
     }

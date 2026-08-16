@@ -25,6 +25,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
+    private final tech.cwvermaak.weldforge.service.TenantSeatService seatService;
 
     @Override
     public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
@@ -64,10 +65,30 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
                         .providerId(oAuth2User.getName())
                         .build());
 
+        // Just-in-time provisioning consumes a seat. Only a brand-new user
+        // (no id yet) does — an existing user signing in again does not.
+        if (user.getId() == null) {
+            assertSeatAvailable(tenant);
+        }
+
         user.setName(name);
         user.setImageUrl(imageUrl);
         userRepository.save(user);
 
         return oAuth2User;
+    }
+
+    /**
+     * Translate a seat-cap refusal into an OAuth2 error. Without this the
+     * runtime exception surfaces to a first-time social sign-in as an opaque
+     * 500; as an {@code OAuth2AuthenticationException} it flows through the
+     * normal failure handler and the user sees why they were turned away.
+     */
+    private void assertSeatAvailable(Tenant tenant) {
+        try {
+            seatService.assertCapacity(tenant);
+        } catch (tech.cwvermaak.weldforge.service.SeatLimitExceededException e) {
+            throw new OAuth2AuthenticationException(new OAuth2Error("seat_limit_exceeded"), e.getMessage(), e);
+        }
     }
 }

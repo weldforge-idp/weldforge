@@ -55,6 +55,7 @@ public class AuthService {
     private final tech.cwvermaak.weldforge.service.crm.CrmProvisioningService crmProvisioningService;
     private final PublicHostProperties publicHost;
     private final FailedLoginRecorder failedLoginRecorder;
+    private final TenantSeatService seatService;
 
     @Transactional
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
@@ -81,6 +82,10 @@ public class AuthService {
         if (userRepository.findByTenantIdAndUsernameIgnoreCase(tenant.getId(), request.getName()).isPresent()) {
             throw new IllegalArgumentException("Username already in use for this tenant");
         }
+
+        // Seat cap — checked after the duplicate lookups so re-registering an
+        // existing email still reports the more useful error.
+        seatService.assertCapacity(tenant);
 
         User user = User.builder()
                 .tenant(tenant)

@@ -52,7 +52,8 @@ public class TenantIsolationSteps {
         auditService = mock(AuditService.class);
         admin = new AdminService(tenantAccessor, roleRepo, userRepo, envRepo,
                 appClientRepo, mfaService, auditService,
-                mock(tech.cwvermaak.weldforge.service.PasswordResetService.class));
+                mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),
+                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepo));
     }
 
     @Given("tenants {string} and {string} exist")

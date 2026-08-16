@@ -91,7 +91,8 @@ public class EpicGLdapSteps {
         // returns empty when no matching_rules are configured, which is
         // exactly what we want here.
         FederationRulesEngine engine = new FederationRulesEngine(mock(UserRepository.class));
-        service = new LdapUpstreamService(providerRepository, directory, userRepository, engine);
+        service = new LdapUpstreamService(providerRepository, directory, userRepository, engine,
+                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepository));
     }
 
     private Tenant tenant(String slug) {
