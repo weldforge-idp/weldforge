@@ -55,6 +55,7 @@ public class AuthService {
     private final tech.cwvermaak.weldforge.service.crm.CrmProvisioningService crmProvisioningService;
     private final PublicHostProperties publicHost;
     private final FailedLoginRecorder failedLoginRecorder;
+    private final TenantSeatService seatService;
 
     @Transactional
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
@@ -81,6 +82,10 @@ public class AuthService {
         if (userRepository.findByTenantIdAndUsernameIgnoreCase(tenant.getId(), request.getName()).isPresent()) {
             throw new IllegalArgumentException("Username already in use for this tenant");
         }
+
+        // Seat cap — checked after the duplicate lookups so re-registering an
+        // existing email still reports the more useful error.
+        seatService.assertCapacity(tenant);
 
         User user = User.builder()
                 .tenant(tenant)
@@ -474,7 +479,7 @@ public class AuthService {
     private void writeRefreshCookie(HttpServletResponse response, String rawToken, Long tenantRefreshTtlMs) {
         Cookie cookie = new Cookie(REFRESH_COOKIE, rawToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(publicHost.isSecureCookies());
         cookie.setPath("/api/auth");
         // Scope to the public base-domain so the cookie set on
         // {slug}.sso.weldforge.org is also sent when /api/auth/refresh runs
@@ -497,7 +502,7 @@ public class AuthService {
                 tech.cwvermaak.weldforge.config.JwtAuthenticationFilter.SESSION_COOKIE,
                 accessToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(publicHost.isSecureCookies());
         // SameSite=Lax so the cookie is sent on top-level redirects (the
         // OIDC /authorize flow lands here from a relying party). Strict
         // would block legitimate cross-site browser navigation.

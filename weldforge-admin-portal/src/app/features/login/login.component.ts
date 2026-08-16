@@ -11,6 +11,7 @@ import { AuthService, MfaFactorType } from '../../core/services/auth.service';
 import { TenantBrandingService } from '../../core/services/tenant-branding.service';
 import { catchError, tap } from 'rxjs/operators';
 import { of } from 'rxjs';
+import { forwardOidcParams, resolvePostAuthTarget } from '../../core/oidc-continuation';
 
 type Step = 'credentials' | 'mfa';
 
@@ -266,13 +267,10 @@ export class LoginComponent implements OnInit {
   }
 
   forwardQueryParams(): Record<string, string> {
-    const params: Record<string, string> = {};
     // Tenant identified by the page host — no tenant query param to forward.
-    // Carry only the OIDC continuation through to forgot/reset-password so a
-    // password reset can return the user to the calling app.
-    const oidcReturnTo = this.route.snapshot.queryParamMap.get('oidcReturnTo');
-    if (oidcReturnTo) params['oidcReturnTo'] = oidcReturnTo;
-    return params;
+    // Carry only the OIDC continuation through to forgot/reset-password and register, so a
+    // password reset or a sign-up can return the user to the calling app.
+    return forwardOidcParams(this.route.snapshot.queryParams);
   }
 
   private brandingValue<T>(key: string): T | null {
@@ -348,18 +346,25 @@ export class LoginComponent implements OnInit {
     this.error.set(null);
   }
 
+  /**
+   * Hand the freshly-authenticated browser back to the calling application, or to the portal.
+   *
+   * <p>This previously did `window.location.href = atob(oidcReturnTo)` with no validation.
+   * `oidcReturnTo` is a query parameter, so it is attacker-supplied: sending a victim to
+   * `https://{slug}.sso.weldforge.org/login/?oidcReturnTo=<base64 of https://evil.example>`
+   * redirected them there the instant they signed in. An open redirect on an identity
+   * provider is worth more than on an ordinary site, because the victim has just been taught
+   * to trust the page that bounced them.
+   *
+   * <p>The decision now lives in {@link resolvePostAuthTarget}, which validates both the
+   * off-origin continuation and the in-app `returnUrl`, and is unit-tested.
+   */
   private goToApp() {
-    const oidcReturnTo = this.route.snapshot.queryParams['oidcReturnTo'];
-    if (oidcReturnTo) {
-      try {
-        const decoded = atob(oidcReturnTo.replace(/-/g, '+').replace(/_/g, '/'));
-        window.location.href = decoded;
-        return;
-      } catch (e) {
-        console.error('Invalid oidcReturnTo, falling back to /tenants', e);
-      }
+    const target = resolvePostAuthTarget(this.route.snapshot.queryParams);
+    if (target.kind === 'external') {
+      window.location.href = target.url;
+      return;
     }
-    const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/tenants';
-    this.router.navigate([returnUrl]);
+    this.router.navigate([target.route]);
   }
 }

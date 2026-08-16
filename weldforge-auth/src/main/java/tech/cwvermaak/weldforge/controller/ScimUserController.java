@@ -85,6 +85,21 @@ public class ScimUserController {
                 .build());
     }
 
+    /**
+     * Seat cap reached. RFC 7644 §3.12 defines a closed set of
+     * {@code scimType} values and none of them describes a quota, so the
+     * field is left off rather than invented; the status and detail carry
+     * the meaning.
+     */
+    @ExceptionHandler(tech.cwvermaak.weldforge.service.SeatLimitExceededException.class)
+    public ResponseEntity<ScimErrorDto> handleSeatLimit(
+            tech.cwvermaak.weldforge.service.SeatLimitExceededException e) {
+        return ResponseEntity.status(409).body(ScimErrorDto.builder()
+                .status("409")
+                .detail(e.getMessage())
+                .build());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ScimErrorDto> handleBadRequest(IllegalArgumentException e) {
         return ResponseEntity.status(400).body(ScimErrorDto.builder()

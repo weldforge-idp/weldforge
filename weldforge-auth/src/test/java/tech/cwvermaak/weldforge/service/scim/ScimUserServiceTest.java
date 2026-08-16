@@ -15,6 +15,7 @@ import tech.cwvermaak.weldforge.model.dto.scim.ScimNameDto;
 import tech.cwvermaak.weldforge.model.dto.scim.ScimPatchRequestDto;
 import tech.cwvermaak.weldforge.model.dto.scim.ScimUserDto;
 import tech.cwvermaak.weldforge.repository.UserRepository;
+import tech.cwvermaak.weldforge.service.TenantSeatService;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 
 import java.time.LocalDateTime;
@@ -82,7 +83,8 @@ class ScimUserServiceTest {
                     .findFirst();
         });
 
-        service = new ScimUserService(tenantAccessor, userRepository, auditService, new SimpleMeterRegistry());
+        service = new ScimUserService(tenantAccessor, userRepository, auditService, new SimpleMeterRegistry(),
+                new TenantSeatService(userRepository));
     }
 
     private ScimUserDto sample(String userName) {

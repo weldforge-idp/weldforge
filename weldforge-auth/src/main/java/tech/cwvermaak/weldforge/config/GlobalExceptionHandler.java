@@ -97,6 +97,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(tech.cwvermaak.weldforge.service.SeatLimitExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleSeatLimit(
+            tech.cwvermaak.weldforge.service.SeatLimitExceededException ex,
+            HttpServletRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "seat_limit_exceeded");
+        body.put("message", ex.getMessage());
+        body.put("limit", ex.getLimit());
+        body.put("current", ex.getCurrent());
+        body.put("timestamp", Instant.now().toString());
+        body.put("path", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(ProviderUnavailableException.class)
     public ResponseEntity<Map<String, Object>> handleProviderUnavailable(ProviderUnavailableException ex,
                                                                           HttpServletRequest request) {

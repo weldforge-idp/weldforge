@@ -34,6 +34,21 @@ spring:
     enabled: true
     baseline-on-migrate: true
     fail-on-missing-locations: true
+    # V40 (the LEAP tenant) was removed from the repo, so databases that
+    # already applied it carry a history row with no matching script. Without
+    # this, Flyway's validate step aborts startup on every such database.
+    ignore-migration-patterns: "*:missing"
+    # Deployed instances get db/migration and nothing else. Local dev can add
+    # classpath:db/localdev, which carries opt-in seed data (e.g. the
+    # Wellspring tenant) that must never exist in a real deployment.
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
+    placeholders:
+      # bcrypt hash for the db/localdev Wellspring bootstrap admin. Empty
+      # (the default) seeds a NULL password — the account exists but cannot
+      # be signed into, so no environment gets a known credential by
+      # accident. Set WELLSPRING_ADMIN_PASSWORD_HASH locally to enable
+      # sign-in. Unused unless db/localdev is on the locations list.
+      wellspring_admin_password_hash: ${WELLSPRING_ADMIN_PASSWORD_HASH:}
     # Allow Flyway to work with newer PostgreSQL versions (like 18)
     postgresql:
       transactional-lock: false

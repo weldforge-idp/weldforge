@@ -43,8 +43,9 @@
         "spec": "docs/cross-tenant-admin-spec.md"
     },
     "endUserAuthForms": {
-        "purpose": "User-facing auth screens — where humans land in a browser to sign in, reset a password, register, or verify an email. Lives on per-tenant subdomains so password managers (Chrome/Firefox/Safari/Bitwarden/1Password) treat each tenant as a distinct site.",
-        "hostPattern": "https://{slug}.sso.weldforge.org",
+        "purpose": "User-facing auth screens — where humans land in a browser to sign in, reset a password, register, or verify an email. Served from the apex host https://sso.weldforge.org today. Per-tenant subdomains are the target shape, so password managers (Chrome/Firefox/Safari/Bitwarden/1Password) treat each tenant as a distinct site, but wildcard DNS and TLS are not yet provisioned: do not generate subdomain auth URLs, use the apex host.",
+        "hostPattern": "https://sso.weldforge.org",
+        "plannedHostPattern": "https://{slug}.sso.weldforge.org (not yet provisioned)",
         "slugPattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$",
         "reservedRootLabels": ["www", "api", "admin", "app", "mail", "static"],
         "paths": {
@@ -62,10 +63,24 @@
         "register":       "POST /api/auth/register",
         "passwordLogin":  "POST /api/auth/login",
         "refresh":        "POST /api/auth/refresh (cookie-borne refresh_token)",
-        "logout":         "POST /api/auth/logout",
+        "logout":         "POST /api/auth/logout-all (revokes every refresh token for the user; there is no per-session /api/auth/logout - a browser session ends by clearing the cookie, and OIDC RPs use GET /t/{slug}/oauth2/logout)",
+        "signUpTenantHeader": "X-Tenant-Slug selects the tenant on POST /api/auth/register; without it the request resolves to the 'default' tenant",
+        "signUpApiKey":   "none - /api/auth/** is exempt from x-app-authorization, because a browser calls it before the user has credentials",
+        "signUpErrors": {
+            "400 password_policy":     "message lists every unmet rule",
+            "400 bad_request":         "email already used in this tenant",
+            "404 not_found":           "tenant has registrationEnabled=false",
+            "409 seat_limit_exceeded": "tenant at maxUsers; body carries limit and current",
+            "429 too_many_requests":   "rate limited; retryAfterSeconds says how long"
+        },
         "mfa": {
-            "enroll":  "POST /api/auth/mfa/enroll",
-            "verify":  "POST /api/auth/mfa/verify",
+            "enrollTotp":     "POST /api/auth/mfa/totp/enroll then POST /api/auth/mfa/totp/activate",
+            "enrollSms":      "POST /api/auth/mfa/sms/enroll then POST /api/auth/mfa/sms/activate",
+            "enrollWebauthn": "POST /api/auth/mfa/webauthn/registration/start then .../finish",
+            "listFactors":    "GET /api/auth/mfa/factors",
+            "removeFactor":   "DELETE /api/auth/mfa/factors/{id}",
+            "verify":         "POST /api/auth/mfa/verify",
+            "backupCodes":    "GET /api/auth/mfa/backup-codes, POST /api/auth/mfa/backup-codes/regenerate",
             "methods": ["TOTP", "WEBAUTHN", "SMS_OTP", "BACKUP_CODES"]
         },
         "oauth2": {

@@ -33,6 +33,7 @@ class RefreshTokenServiceTest {
     private RefreshTokenRepository repo;
     private AuditService auditService;
     private RefreshTokenProperties props;
+    private RefreshTokenFamilyRevoker revoker;
     private RefreshTokenService service;
     private User user;
 
@@ -42,7 +43,8 @@ class RefreshTokenServiceTest {
         auditService = mock(AuditService.class);
         props = new RefreshTokenProperties();
         props.setLifetimeDays(7);
-        service = new RefreshTokenService(repo, props, auditService);
+        revoker = mock(RefreshTokenFamilyRevoker.class);
+        service = new RefreshTokenService(repo, revoker, props, auditService);
 
         Tenant t = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         user = User.builder().id(42L).tenant(t).email("alice@acme.test").build();
@@ -113,12 +115,12 @@ class RefreshTokenServiceTest {
                 .usedAt(LocalDateTime.now().minusMinutes(3))
                 .build();
         when(repo.findByTokenHash(existingHash)).thenReturn(Optional.of(alreadyUsed));
-        when(repo.revokeFamily(eq(familyId), any(), eq("reuse_detected"))).thenReturn(4);
+        when(revoker.revoke(eq(familyId), eq("reuse_detected"))).thenReturn(4);
 
         assertThatThrownBy(() -> service.rotate("stolen-raw", "1.2.3.4", "ua"))
                 .isInstanceOf(BadCredentialsException.class);
 
-        verify(repo).revokeFamily(eq(familyId), any(), eq("reuse_detected"));
+        verify(revoker).revoke(familyId, "reuse_detected");
         ArgumentCaptor<tech.cwvermaak.weldforge.model.AuditEvent.AuditEventBuilder> captor =
                 ArgumentCaptor.forClass(tech.cwvermaak.weldforge.model.AuditEvent.AuditEventBuilder.class);
         verify(auditService).log(captor.capture());
@@ -147,7 +149,7 @@ class RefreshTokenServiceTest {
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("expired");
 
-        verify(repo, never()).revokeFamily(any(), any(), anyString());
+        verify(revoker, never()).revoke(any(), anyString());
     }
 
     @Test

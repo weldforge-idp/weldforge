@@ -28,7 +28,7 @@ class AuthServiceTest {
         encoder12 = new BCryptPasswordEncoder(12);
         // Only userRepository + passwordEncoder are used by maybeUpgradePassword.
         auth = new AuthService(userRepo, null, encoder12, null, null, null, null, null,
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, new TenantSeatService(userRepo));
     }
 
     @Test

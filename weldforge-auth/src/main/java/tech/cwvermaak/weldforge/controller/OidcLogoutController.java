@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
@@ -58,6 +59,7 @@ public class OidcLogoutController {
     private final OidcClientRepository oidcClientRepository;
     private final TenantSigningKeyService signingKeyService;
     private final AuthService authService;
+    private final PublicHostProperties publicHost;
     private final AuditService auditService;
 
     @GetMapping("/t/{slug}/oauth2/logout")
@@ -137,8 +139,8 @@ public class OidcLogoutController {
         }
 
         // Clear cookies so the browser doesn't re-present them on the next request.
-        clearCookie(response, SESSION_COOKIE, "/");
-        clearCookie(response, REFRESH_COOKIE, "/api/auth");
+        clearCookie(response, SESSION_COOKIE, "/", publicHost.isSecureCookies());
+        clearCookie(response, REFRESH_COOKIE, "/api/auth", publicHost.isSecureCookies());
 
         if (validatedRedirect != null) {
             String location = validatedRedirect;
@@ -213,11 +215,15 @@ public class OidcLogoutController {
                 .getPayload();
     }
 
-    private static void clearCookie(HttpServletResponse response, String name, String path) {
+    // `secure` must match how the cookie was written: a Secure deletion
+    // cookie sent over plain HTTP is discarded by the browser, leaving the
+    // original session cookie in place.
+    private static void clearCookie(HttpServletResponse response, String name, String path,
+                                    boolean secure) {
         Cookie cookie = new Cookie(name, "");
         cookie.setPath(path);
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(secure);
         cookie.setMaxAge(0);
         response.addCookie(cookie);
     }

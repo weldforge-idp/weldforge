@@ -78,6 +78,20 @@ public class PublicHostProperties {
     }
 
     public String getScheme() { return scheme; }
+
+    /**
+     * Whether session/refresh cookies should carry the {@code Secure}
+     * attribute. Follows the scheme this deployment is actually served on:
+     * browsers silently DISCARD a Secure cookie delivered over plain HTTP,
+     * which in local development breaks the OIDC flow in a way that looks
+     * like a failed sign-in (the login form simply re-appears).
+     *
+     * <p>Anything other than an explicit "http" is treated as secure, so a
+     * missing or malformed scheme errs on the safe side.</p>
+     */
+    public boolean isSecureCookies() {
+        return !"http".equalsIgnoreCase(scheme);
+    }
     public void setScheme(String scheme) {
         this.scheme = scheme == null ? "https" : scheme.trim().toLowerCase(Locale.ROOT);
     }
@@ -96,6 +110,38 @@ public class PublicHostProperties {
     }
 
     /**
+     * Base domain with any port stripped — used for Host-header matching and
+     * cookie scope. The port is intentionally retained in
+     * {@link #getBaseDomain()} because {@link #originForTenant(String)} needs
+     * it to build absolute URLs in dev (e.g. {@code http://acme.localhost:8076}).
+     * An incoming Host header never carries a port once normalised, and the
+     * cookie {@code Domain} attribute must not contain one, so both compare
+     * against this port-less form.
+     */
+    public String getBaseDomainHost() {
+        if (baseDomain == null) return null;
+        int colon = baseDomain.indexOf(':');
+        return colon >= 0 ? baseDomain.substring(0, colon) : baseDomain;
+    }
+
+    /**
+     * Port half of {@link #getBaseDomain()}, or -1 when none is configured.
+     * Anything comparing a parsed URI against the base domain needs this and
+     * {@link #getBaseDomainHost()} separately, because {@code URI.getHost()}
+     * never returns the port.
+     */
+    public int getBaseDomainPort() {
+        if (baseDomain == null) return -1;
+        int colon = baseDomain.indexOf(':');
+        if (colon < 0) return -1;
+        try {
+            return Integer.parseInt(baseDomain.substring(colon + 1));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
      * Extract a tenant slug from a Host header value (which may carry a port).
      * Returns the first label when the host is {@code <label>.<baseDomain>},
      * the label looks like a slug, and it is not on the reserved list.
@@ -103,14 +149,15 @@ public class PublicHostProperties {
      * hosts that don't share the configured base domain.
      */
     public String slugFromHost(String hostHeader) {
-        if (hostHeader == null || baseDomain == null || baseDomain.isBlank()) return null;
+        String base = getBaseDomainHost();
+        if (hostHeader == null || base == null || base.isBlank()) return null;
         String host = hostHeader.trim().toLowerCase(Locale.ROOT);
         int colon = host.indexOf(':');
         if (colon >= 0) host = host.substring(0, colon);
         if (host.isEmpty()) return null;
-        if (host.equals(baseDomain)) return null;
+        if (host.equals(base)) return null;
 
-        String suffix = "." + baseDomain;
+        String suffix = "." + base;
         if (!host.endsWith(suffix)) return null;
 
         String label = host.substring(0, host.length() - suffix.length());
@@ -154,11 +201,13 @@ public class PublicHostProperties {
      * cookie stays host-only.</p>
      */
     public String cookieDomain() {
-        if (baseDomain == null || baseDomain.isBlank()) return null;
+        String base = getBaseDomainHost();
+        if (base == null || base.isBlank()) return null;
         // Don't scope to a single-label parent (e.g. "localhost") — browsers
         // refuse those for security reasons, and host-only cookies work fine
-        // when frontend + backend share one origin.
-        if (!baseDomain.contains(".")) return null;
-        return baseDomain;
+        // when frontend + backend share one origin. A dotted dev domain such
+        // as "lvh.me" (wildcard → 127.0.0.1) works and spans apex+subdomain.
+        if (!base.contains(".")) return null;
+        return base;
     }
 }

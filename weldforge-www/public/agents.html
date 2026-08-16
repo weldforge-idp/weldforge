@@ -49,6 +49,7 @@
         <div class="cta-row">
             <a class="btn primary" href="#integrate">Integrate an application</a>
             <a class="btn ghost" href="#onboarding">Onboard a new tenant</a>
+            <a class="btn ghost" href="#signup">New user sign-up</a>
             <a class="btn ghost" href="#auth-urls">End-user auth URLs</a>
         </div>
     </div>
@@ -143,10 +144,7 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
     <div class="container">
         <h2>Authentication scheme</h2>
         <p class="lead">
-            Every <code>/api/**</code> call requires the header
-            <code>x-app-authorization</code>. Two token shapes live on the
-            same header:
-        </p>
+            Calls to <code>/api/admin/**</code> carry the header <code>x-app-authorization</code>. The public protocol surface above and all of <code>/api/auth/**</code> are exempt — see <a href="#signup">New user sign-up</a> for why sending a key from a browser is the wrong instinct. Two token shapes live on the same header:</p>
 
         <div class="card-grid">
             <div class="card">
@@ -166,12 +164,77 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
         <h3>End-user authentication (separate)</h3>
         <p>For end-user identities (not agent identities):</p>
         <ul class="checklist">
-            <li><code>POST /api/auth/register</code> — create a user</li>
+            <li><code>POST /api/auth/register</code> — create a user (see <a href="#signup">New user sign-up</a>)</li>
             <li><code>POST /api/auth/login</code> — password + MFA, returns an access JWT</li>
             <li><code>POST /api/auth/refresh</code> — refresh via <code>refresh_token</code> cookie</li>
             <li><code>POST /t/{slug}/oauth2/token</code> — OAuth 2.0 token endpoint (authorization_code, client_credentials, refresh_token)</li>
             <li><code>GET /saml2/authenticate/{tenant-provider}</code> — initiate SAML SP login</li>
         </ul>
+    </div>
+</section>
+
+<section id="signup">
+    <div class="container">
+        <h2>New user sign-up</h2>
+        <p class="lead">
+            The contract for <code>POST /api/auth/register</code> in full,
+            because two details here are the most common way an integration
+            goes wrong quietly.
+        </p>
+
+        <h3>Send no API key</h3>
+        <p>
+            <code>/api/auth/**</code> is exempt from
+            <code>x-app-authorization</code>, along with <code>/t/**</code>,
+            <code>/saml2/**</code>, <code>/scim/v2/**</code> and
+            <code>/login</code>. A browser reaches these before the user has
+            any credentials, so a <code>wf_live_…</code> key would have to live
+            in the JS bundle — which is a leaked key, not a protected one.
+            Keys belong on a server, calling <code>/api/admin/**</code>.
+        </p>
+
+        <h3>Send the tenant</h3>
+        <p>
+            <code>X-Tenant-Slug</code> selects the tenant the account is
+            created in. Omit it on the apex host and the request resolves to
+            the <code>default</code> tenant: the call returns 200 and the user
+            exists — in the wrong tenant. A tenant subdomain will set this
+            implicitly once subdomains ship; until then, send the header.
+        </p>
+
+        <pre><code>curl -sS -X POST https://sso.weldforge.org/api/auth/register     -H "X-Tenant-Slug: acme"     -H "Content-Type: application/json"     -d '{"name":"Alice Example","email":"alice@example.com","password":"CorrectHorse-Battery-9"}'</code></pre>
+
+        <p>
+            Success is 200 with an access <code>token</code> and
+            <code>expiresIn</code>. The account is usable immediately unless
+            the tenant requires email verification.
+        </p>
+
+        <h3>Failures worth handling separately</h3>
+        <table class="pricing">
+            <thead>
+                <tr><th>Status</th><th><code>error</code></th><th>What it means</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>400</td><td><code>password_policy</code></td><td><code>message</code> lists every unmet rule. Default: at least 10 characters, upper, lower, digit, symbol. A tenant may set a stricter policy — show the message rather than your own copy of the rules.</td></tr>
+                <tr><td>400</td><td><code>bad_request</code></td><td>Email already in use <em>in this tenant</em>. The same address can exist in another tenant. Offer sign-in, not a retry.</td></tr>
+                <tr><td>404</td><td><code>not_found</code></td><td>The tenant has <code>registrationEnabled: false</code>. Self-service sign-up is switched off — this is not a wrong URL.</td></tr>
+                <tr><td>409</td><td><code>seat_limit_exceeded</code></td><td>The tenant is at its <code>maxUsers</code> cap. The body carries <code>limit</code> and <code>current</code>. Seats count active users, so deactivating one frees a seat.</td></tr>
+                <tr><td>429</td><td><code>too_many_requests</code></td><td>Registration is rate-limited per caller; <code>retryAfterSeconds</code> says for how long. Do not retry in a loop.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Staying signed in</h3>
+        <p>
+            Access tokens are short-lived (five minutes by default). A
+            confidential client registered for the <code>refresh_token</code>
+            grant receives a refresh token from the code exchange and spends it
+            at <code>POST /t/{slug}/oauth2/token</code>. Refresh tokens are
+            single-use: each exchange returns a new one, and presenting a spent
+            token revokes the entire family, on the assumption that a replay
+            means the token was stolen. They are also bound to the client they
+            were issued to. Store one server-side, never in the browser.
+        </p>
     </div>
 </section>
 
@@ -241,13 +304,19 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
         <h3>Cookie scoping (be aware)</h3>
         <p>
             Session cookies (<code>wf_session</code>,
-            <code>refresh_token</code>) are written without a
-            <code>Domain</code> attribute, so the browser confines them to
-            the exact host that set them. On the apex host today all tenants
-            share that host; once per-tenant subdomains ship, a session on
-            <code>acme.sso.weldforge.org</code> will not authenticate
-            against <code>contoso.sso.weldforge.org</code>, so plan for a
-            re-sign-in per host if your agent proxies a user between tenants.
+            <code>refresh_token</code>) carry a <code>Domain</code> of the
+            configured base domain — <code>sso.weldforge.org</code> — so they
+            are sent to the apex <em>and</em> to every host beneath it. That is
+            deliberate: it is what lets a session established on a tenant
+            sign-in page survive the hop to the apex OIDC authorize endpoint.
+            It also means the cookie is presented to other tenant subdomains,
+            which is safe because the JWT carries its own
+            <code>tenant_id</code> and every request re-checks it against the
+            resolved tenant — a session for one tenant does not authenticate
+            you against another, but do not rely on the cookie being absent.
+            (A single-label base domain such as <code>localhost</code> gets no
+            <code>Domain</code> attribute, because browsers reject it; there
+            the cookie is host-only.)
         </p>
 
         <p>
@@ -351,18 +420,71 @@ export TOKEN=wf_svc_...</code></pre>
 
         <h3>A.3 — Become a SCIM client so WeldForge provisions into your app</h3>
         <p>No registration endpoint — you consume the standard SCIM 2.0 resource URLs:</p>
+        <p>
+            <strong>SCIM uses a different credential from the rest of this
+            page.</strong> It authenticates an <em>app-client key</em>
+            (<code>wf_live_…</code>, from
+            <code>POST /api/admin/app-clients</code>) sent as
+            <code>Authorization: Bearer</code> — not the
+            <code>wf_svc_…</code> service-account token, which returns 401
+            here. The tenant slug in the URL must match the key's own tenant,
+            or the response is <code>401 tenant_mismatch</code>; and the slug
+            is required — <code>/scim/v2/Users</code> without it is a 404.
+        </p>
         <pre><code># List users (paged, RFC 7644).
 curl $HOST/scim/v2/$TENANT/Users \
-    -H "Authorization: Bearer $TOKEN"
+    -H "Authorization: Bearer $SCIM_KEY"
 
 # Create a group.
 curl -X POST $HOST/scim/v2/$TENANT/Groups \
-    -H "Authorization: Bearer $TOKEN" \
+    -H "Authorization: Bearer $SCIM_KEY" \
     -H "Content-Type: application/scim+json" \
     -d '{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],
          "displayName":"engineering"}'</code></pre>
 
-        <h3>A.4 — Subscribe to lifecycle webhooks</h3>
+        <h3>A.4 — Point a tenant at an existing LDAP / Active Directory</h3>
+        <p>
+            Advertised on the product pages but previously undocumented here.
+            Users authenticate against the directory you already run; WeldForge
+            queries it and provisions a local record on first successful login,
+            so a seat is consumed at that point (see the seat cap under
+            sign-up). The endpoints hang off the tenant, not off a top-level
+            /api/admin/ldap path:
+        </p>
+        <pre><code># List, create, update, delete.
+curl $HOST/api/admin/tenants/$TENANT_ID/ldap-providers \
+    -H "x-app-authorization: $TOKEN"
+
+curl -X POST $HOST/api/admin/tenants/$TENANT_ID/ldap-providers \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name":              "corp-ad",
+      "providerType":      "ACTIVE_DIRECTORY",
+      "url":               "ldaps://dc1.corp.example:636",
+      "bindDn":            "CN=svc-weldforge,OU=Service,DC=corp,DC=example",
+      "bindPassword":      "…",
+      "userBaseDn":        "OU=Staff,DC=corp,DC=example",
+      "userSearchFilter":  "(sAMAccountName={0})",
+      "emailAttribute":    "mail",
+      "nameAttribute":     "displayName",
+      "usernameAttribute": "sAMAccountName",
+      "startTls":          false
+    }'
+
+# Verify the bind before anyone tries to sign in.
+curl -X POST $HOST/api/admin/tenants/$TENANT_ID/ldap-providers/$ID/test-connection \
+    -H "x-app-authorization: $TOKEN"</code></pre>
+        <p>
+            <code>$TENANT_ID</code> is the numeric tenant id from
+            <code>GET /api/admin/tenants</code>, not the slug.
+            <code>test-connection</code> returns
+            <code>{"success": true|false}</code> — call it before pointing
+            users at the tenant, because a bad bind otherwise surfaces as a
+            failed login with nothing to distinguish it from a wrong password.
+        </p>
+
+        <h3>A.5 — Subscribe to lifecycle webhooks</h3>
         <pre><code>curl -X POST $HOST/api/admin/webhooks \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \
@@ -434,12 +556,25 @@ curl $HOST/t/newco/.well-known/openid-configuration | jq
 curl $HOST/t/newco/saml2/idp/metadata</code></pre>
 
         <h3>B.3 — First-time install — where does the SUPER_ADMIN token come from?</h3>
-        <p>The codebase ships with a Flyway migration that seeds an initial admin identity. On a fresh deploy:</p>
+        <p>
+            <strong>Nothing seeds an admin account.</strong> No migration
+            creates a user, so a fresh install has an empty
+            <code>users</code> table and no credentials to log in with. The
+            first admin is made by registering a normal user and promoting
+            them:
+        </p>
         <ol style="padding-left: 1.25rem; color: var(--ink-dim);">
-            <li style="margin-bottom: .5rem;">Run the stack (see the repository's <code>README.md</code> for the Docker Compose and Kubernetes manifests).</li>
-            <li style="margin-bottom: .5rem;">Log in to the admin portal with the seeded super-admin credentials; change the password immediately.</li>
-            <li style="margin-bottom: .5rem;">From the portal, or via <code>POST /api/admin/service-accounts</code>, mint a <code>SUPER_ADMIN</code> service-account token for agent use.</li>
-            <li>Revoke the seed account once your own admin is in place.</li>
+            <li style="margin-bottom: .5rem;">Run the stack (see the repository's <code>README.md</code> for the Docker Compose and Kubernetes manifests). The <code>default</code> tenant is created by migration; users are not.</li>
+            <li style="margin-bottom: .5rem;">Register the account that will become your admin, through the ordinary sign-up endpoint — no API key, and <code>X-Tenant-Slug</code> naming the tenant it belongs to:
+                <pre><code>curl -X POST $HOST/api/auth/register \
+    -H "X-Tenant-Slug: default" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"You","email":"you@example.com","password":"…"}'</code></pre>
+            </li>
+            <li style="margin-bottom: .5rem;">Set <code>APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL=you@example.com</code> and restart. On start-up that account is promoted to <code>SUPER_ADMIN</code>. The variable is the relaxed-binding form of <code>app.admin.bootstrap-super-admin-email</code> — a different spelling binds to nothing and promotes nobody, silently.</li>
+            <li style="margin-bottom: .5rem;">Sign in again. The promotion invalidates tokens issued beforehand, so a session opened before the restart will not carry the new authority.</li>
+            <li style="margin-bottom: .5rem;">Mint a <code>SUPER_ADMIN</code> service-account token for agent use via <code>POST /api/admin/service-accounts</code>.</li>
+            <li>Unset the bootstrap variable once your admin exists, so a later restart cannot re-promote an address you have since removed.</li>
         </ol>
 
         <h3>B.4 — Decommission a tenant</h3>
@@ -538,10 +673,11 @@ curl -s $HOST/t/{slug}/oauth2/jwks</code></pre>
         <p>Status code map:</p>
         <ul class="checklist">
             <li><code>400</code> — <code>bad_request</code> / <code>validation_error</code></li>
-            <li><code>401</code> — <code>unauthorized</code></li>
-            <li><code>403</code> — <code>forbidden</code> (also returned for missing <code>x-app-authorization</code>)</li>
+            <li><code>401</code> — <code>unauthorized</code> (no credential, or an invalid one — this is what a missing <code>x-app-authorization</code> returns)</li>
+            <li><code>403</code> — <code>forbidden</code> (authenticated, but not allowed to do this — e.g. a TENANT_ADMIN token on a SUPER_ADMIN endpoint)</li>
             <li><code>404</code> — <code>not_found</code></li>
             <li><code>405</code> — <code>method_not_allowed</code></li>
+            <li><code>409</code> — <code>seat_limit_exceeded</code> (tenant at its user cap)</li>
             <li><code>503</code> — <code>provider_unavailable</code> (circuit-breaker open on an upstream IdP, CRM, SMTP or Twilio)</li>
             <li><code>500</code> — <code>internal_error</code></li>
         </ul>

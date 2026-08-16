@@ -31,6 +31,16 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
       REFRESH_TOKEN_EXPIRATION_MS: ${REFRESH_TOKEN_EXPIRATION_MS}
+      # Both default to the deployed behaviour — real schema only, no seed
+      # data, no usable seeded password. The local .env opts in to
+      # classpath:db/localdev and supplies a hash; nothing committed does.
+      FLYWAY_LOCATIONS: ${FLYWAY_LOCATIONS:-classpath:db/migration}
+      WELLSPRING_ADMIN_PASSWORD_HASH: ${WELLSPRING_ADMIN_PASSWORD_HASH:-}
+      # Public origin stamped into OIDC issuer / discovery URLs. Defaults to
+      # production; local dev overrides it in .env to a host that resolves
+      # identically from the browser, the host, and other containers.
+      APP_PUBLIC_BASE_DOMAIN: ${APP_PUBLIC_BASE_DOMAIN:-sso.weldforge.org}
+      APP_PUBLIC_SCHEME: ${APP_PUBLIC_SCHEME:-https}
       # Twilio is per-tenant — configured via admin portal, not env vars.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
