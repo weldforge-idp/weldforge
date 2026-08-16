@@ -148,13 +148,11 @@ public class AuditService {
     }
 
     private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma == -1 ? forwarded : forwarded.substring(0, comma)).trim();
-        }
-        String real = request.getHeader("X-Real-IP");
-        return real != null && !real.isBlank() ? real : request.getRemoteAddr();
+        // B-AUTH-1: trust only the RemoteIpValve-resolved address
+        // (server.forward-headers-strategy=native), never the spoofable raw
+        // X-Forwarded-For leftmost token — otherwise audit rows record an
+        // attacker-chosen client IP.
+        return request.getRemoteAddr();
     }
 
     private static String truncate(String s, int max) {

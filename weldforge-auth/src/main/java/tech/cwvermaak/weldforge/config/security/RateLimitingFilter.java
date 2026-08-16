@@ -73,12 +73,13 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     }
 
     private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma == -1 ? forwarded : forwarded.substring(0, comma)).trim();
-        }
-        String real = request.getHeader("X-Real-IP");
-        return real != null && !real.isBlank() ? real : request.getRemoteAddr();
+        // B-AUTH-1: trust ONLY the address resolved by Tomcat's RemoteIpValve
+        // (server.forward-headers-strategy=native), which walks X-Forwarded-For
+        // right-to-left skipping trusted internal proxies and lands on the real
+        // client. Parsing the raw header here and taking the LEFTMOST token
+        // trusted an attacker-supplied value — a spoofed `X-Forwarded-For:
+        // <random>` minted a fresh per-IP bucket on every request, defeating the
+        // rate limiter. getRemoteAddr() is never client-spoofable.
+        return request.getRemoteAddr();
     }
 }

@@ -80,4 +80,19 @@ class RateLimitingFilterTest {
         verify(res).setHeader(eq("Retry-After"), any());
         verify(chain, never()).doFilter(any(), any());
     }
+
+    @Test
+    @DisplayName("B-AUTH-1: a spoofed X-Forwarded-For is ignored — the key is the resolved remote addr")
+    void ignoresSpoofedXForwardedFor() throws Exception {
+        when(service.tryConsume(any(), any())).thenReturn(ConsumptionProbe.consumed(4L, 0L));
+        FilterChain chain = mock(FilterChain.class);
+        HttpServletRequest r = req("/api/auth/forgot-password");
+        // Attacker supplies a forged XFF; the filter must NOT read it.
+        lenient().when(r.getHeader("X-Forwarded-For")).thenReturn("6.6.6.6, 10.0.0.1");
+
+        filter.doFilterInternal(r, mock(HttpServletResponse.class), chain);
+
+        // Bucket key is getRemoteAddr() (RemoteIpValve-resolved), not the XFF token.
+        verify(service).tryConsume(eq(Bucket4jEndpoint.RECOVERY), eq("203.0.113.7"));
+    }
 }
