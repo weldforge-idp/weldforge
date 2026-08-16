@@ -77,3 +77,45 @@ export function safeOidcReturnUrl(
   const ok = host === base || host.endsWith('.' + base);
   return ok ? url.toString() : null;
 }
+
+/** Where to send a browser that has just authenticated. */
+export type PostAuthTarget =
+  | { kind: 'external'; url: string }
+  | { kind: 'internal'; route: string };
+
+/**
+ * Decide where to send a freshly-authenticated browser.
+ *
+ * <p>Both inputs are attacker-supplied query parameters, so both are validated:
+ *
+ * <ul>
+ *   <li>`oidcReturnTo` — a full off-origin redirect. Checked by {@link safeOidcReturnUrl};
+ *       anything not on our own base domain over https is discarded.
+ *   <li>`returnUrl` — an in-app route handed to `Router.navigate`. Angular's router will not
+ *       leave the origin, so this is not an open redirect, but a protocol-relative value
+ *       (`//evil.example`) is still a confusing thing to accept from a query string. Only a
+ *       single-slash absolute path is allowed.
+ * </ul>
+ *
+ * <p>Extracted so the decision is unit-testable without a TestBed: the components that call
+ * it (login, register) have no component-level test coverage, and assigning
+ * `window.location.href` is not observable under jsdom. Keeping the logic here means the
+ * security-relevant part is tested even though the wiring is not.
+ */
+export function resolvePostAuthTarget(
+  queryParams: { [k: string]: unknown },
+  fallbackRoute: string = '/tenants',
+  baseDomain?: string,
+): PostAuthTarget {
+  const external = safeOidcReturnUrl(
+    readOidcReturnTo(queryParams),
+    baseDomain ?? environment.publicBaseDomain,
+  );
+  if (external) return { kind: 'external', url: external };
+
+  const raw = queryParams['returnUrl'];
+  const candidate = typeof raw === 'string' ? raw.trim() : '';
+  const safeRoute =
+    candidate.startsWith('/') && !candidate.startsWith('//') ? candidate : fallbackRoute;
+  return { kind: 'internal', route: safeRoute };
+}
