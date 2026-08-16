@@ -18,8 +18,13 @@ name: deploy-gcp
 # fail a required-looking check for a target that no longer exists.
 #
 # The workflow is kept rather than deleted: it documents the working GCP
-# topology (Artifact Registry + GKE Autopilot + Workload Identity Federation +
-# Secret Manager) and is the starting point if the estate is rebuilt or ported.
+# topology (Artifact Registry + GKE Autopilot + Workload Identity Federation)
+# and is the starting point if the estate is rebuilt or ported.
+#
+# Secrets no longer come from GCP Secret Manager — they are SOPS+age encrypted
+# in infrastructure/secrets/ and decrypted at deploy time with SOPS_AGE_KEY.
+# That part is portable: it will work unchanged against any Kubernetes cluster,
+# so only the image-registry and cluster-credential steps are GCP-specific.
 #
 # workflow_dispatch is retained deliberately, so it can still be run by hand
 # without editing this file. It will keep failing until billing is restored.
@@ -96,46 +101,42 @@ jobs:
           cluster_name: ${{ env.GKE_CLUSTER }}
           location: ${{ env.REGION }}
 
-      - name: Read sensitive values from Secret Manager
-        id: sm
+      - name: Install SOPS
         run: |
-          echo "::add-mask::$(gcloud secrets versions access latest --secret=wf-db-password)"
-          echo "::add-mask::$(gcloud secrets versions access latest --secret=wf-jwt-secret)"
-          echo "::add-mask::$(gcloud secrets versions access latest --secret=wf-app-crypto-secret)"
-          # Optional — SendGrid API key for SMTP. Absent until email is set up;
-          # an empty value keeps SmtpMailService dormant instead of failing the
-          # deploy. See docs/email-deliverability.md.
-          SENDGRID_API_KEY=$(gcloud secrets versions access latest --secret=wf-sendgrid-api-key 2>/dev/null || true)
-          if [ -n "$SENDGRID_API_KEY" ]; then echo "::add-mask::$SENDGRID_API_KEY"; fi
-          {
-            echo "DB_PASSWORD<<EOF"
-            gcloud secrets versions access latest --secret=wf-db-password
-            echo
-            echo "EOF"
-            echo "JWT_SECRET<<EOF"
-            gcloud secrets versions access latest --secret=wf-jwt-secret
-            echo
-            echo "EOF"
-            echo "APP_CRYPTO_SECRET<<EOF"
-            gcloud secrets versions access latest --secret=wf-app-crypto-secret
-            echo
-            echo "EOF"
-            echo "SENDGRID_API_KEY<<EOF"
-            echo "$SENDGRID_API_KEY"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          curl -fsSL -o /usr/local/bin/sops \
+            https://github.com/getsops/sops/releases/download/v3.12.0/sops-v3.12.0.linux.amd64
+          chmod +x /usr/local/bin/sops
+          sops --version
 
+      # Secrets come from infrastructure/secrets/prod.enc.yaml, encrypted with
+      # SOPS + age and committed to the repo. This replaces the previous
+      # "read from GCP Secret Manager" step, which died with the GCP estate and
+      # was never available to self-hosters anyway.
+      #
+      # The decrypted overlay is written to a mktemp path (mode 600) and removed
+      # by the trap on EXIT, so a failed deploy cannot leave plaintext on the
+      # runner. Values are never echoed and never pass through step outputs —
+      # they go straight from the file into `helm -f`, so nothing lands in the
+      # workflow log even without masking.
       - name: Helm upgrade
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: |
+          if [ -z "${SOPS_AGE_KEY:-}" ]; then
+            echo "::error::SOPS_AGE_KEY is not set. Add the age private key as a repository secret."
+            exit 1
+          fi
+          OVERLAY=$(mktemp /tmp/wf-secrets-XXXXXX.yaml)
+          chmod 600 "$OVERLAY"
+          trap 'shred -u "$OVERLAY" 2>/dev/null || rm -f "$OVERLAY"' EXIT
+          sops --decrypt infrastructure/secrets/prod.enc.yaml > "$OVERLAY"
+
           helm upgrade --install ${{ env.HELM_RELEASE }} infrastructure/helm/weldforge \
             --namespace ${{ env.K8S_NAMESPACE }} --create-namespace \
             -f infrastructure/helm/weldforge/values-prod.yaml \
+            -f "$OVERLAY" \
             --set api.image.repository=${{ env.AR_HOST }}/${{ env.AR_BACKEND }} \
             --set api.image.tag=${{ steps.tag.outputs.value }} \
             --set frontend.image.repository=${{ env.AR_HOST }}/${{ env.AR_FRONTEND }} \
             --set frontend.image.tag=${{ steps.tag.outputs.value }} \
-            --set-string api.secrets.SPRING_DATASOURCE_PASSWORD="${{ steps.sm.outputs.DB_PASSWORD }}" \
-            --set-string api.secrets.JWT_SECRET="${{ steps.sm.outputs.JWT_SECRET }}" \
-            --set-string api.secrets.APP_CRYPTO_SECRET="${{ steps.sm.outputs.APP_CRYPTO_SECRET }}" \
-            --set-string mail.password="${{ steps.sm.outputs.SENDGRID_API_KEY }}" \
             --wait --timeout=10m

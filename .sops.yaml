@@ -1,0 +1,37 @@
+# SOPS creation rules — which key encrypts what, and which fields get encrypted.
+#
+# Recipients are age PUBLIC keys. They are safe to commit; the matching private
+# keys are not, and live only in:
+#   - each operator's ~/.config/sops/age/keys.txt (chmod 600), and
+#   - the SOPS_AGE_KEY GitHub Actions secret used by deploys.
+#
+# Adding an operator: append their public key to the relevant `age:` value
+# (comma-separated — SOPS wants a string here, not a YAML list), then re-encrypt
+# so the new recipient can open the files:
+#   ./scripts/secrets.sh rotate
+#
+# Adding a recipient does NOT retroactively restrict anything: whoever could
+# read a file before can still read it in git history. Removing an operator
+# therefore means rotating the underlying secret VALUES, not just this file.
+#
+# `encrypted_regex` keeps structure readable in diffs — only the sensitive leaf
+# values are encrypted, so a reviewer can still see which keys exist and which
+# environment a file belongs to without being able to read the values.
+
+# NOTE on path_regex: these are intentionally suffix-only rather than anchored to
+# infrastructure/secrets/. SOPS matches against the path as invoked, and on
+# Windows that arrives with backslashes, so a rule containing forward slashes
+# silently fails to match ("no matching creation rules found"). Matching on the
+# .enc.yaml / .enc.env suffix works identically on every platform, and the
+# naming convention is what actually marks a file as secret material.
+
+creation_rules:
+  # Helm values overlays — only the secret leaves are encrypted.
+  - path_regex: \.enc\.yaml$
+    encrypted_regex: '^(SPRING_DATASOURCE_PASSWORD|JWT_SECRET|APP_CRYPTO_SECRET|password|DB_PASSWORD|SENDGRID_API_KEY)$'
+    # Primary operator key (Wimpie), generated 2026-08-16.
+    age: age17s7cevn7lthxa8782wfcjeeel54j6kqqm4rdm6rtljz07dn8u3vsfpzpk6
+
+  # dotenv files for the self-hosting compose stack — every value is sensitive.
+  - path_regex: \.enc\.env$
+    age: age17s7cevn7lthxa8782wfcjeeel54j6kqqm4rdm6rtljz07dn8u3vsfpzpk6
