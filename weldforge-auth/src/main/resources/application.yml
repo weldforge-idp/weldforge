@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8076
   shutdown: graceful
   # Honour X-Forwarded-* from the GCP HTTPS load balancer (and any other
   # TLS-terminating proxy) so generated absolute URLs — OIDC issuer,
@@ -34,6 +34,21 @@ spring:
     enabled: true
     baseline-on-migrate: true
     fail-on-missing-locations: true
+    # V40 (the LEAP tenant) was removed from the repo, so databases that
+    # already applied it carry a history row with no matching script. Without
+    # this, Flyway's validate step aborts startup on every such database.
+    ignore-migration-patterns: "*:missing"
+    # Deployed instances get db/migration and nothing else. Local dev can add
+    # classpath:db/localdev, which carries opt-in seed data (e.g. the
+    # Wellspring tenant) that must never exist in a real deployment.
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
+    placeholders:
+      # bcrypt hash for the db/localdev Wellspring bootstrap admin. Empty
+      # (the default) seeds a NULL password — the account exists but cannot
+      # be signed into, so no environment gets a known credential by
+      # accident. Set WELLSPRING_ADMIN_PASSWORD_HASH locally to enable
+      # sign-in. Unused unless db/localdev is on the locations list.
+      wellspring_admin_password_hash: ${WELLSPRING_ADMIN_PASSWORD_HASH:}
     # Allow Flyway to work with newer PostgreSQL versions (like 18)
     postgresql:
       transactional-lock: false
@@ -145,15 +160,37 @@ wf:
 
 app:
   jwt:
-    secret: ${JWT_SECRET:2dqSJTLVG5z0Im0APLXYgj9QB19HVfYSfGJnEbXRM8vp+93tw7sRn3+f9JvcUkA2dL0x6sbEEWOqf0IEzEsUBA==}
+    # The HMAC signing secret for legacy platform tokens. In every real
+    # deployment this MUST be supplied via the JWT_SECRET env var (sourced
+    # from GCP Secret Manager `wf-jwt-secret`). The default below is an
+    # obvious, insecure dev-only value so local `docker compose up` works
+    # out of the box; SecretHygieneValidator refuses to start the app with
+    # this value (or anything shorter than 64 bytes) outside the dev/test
+    # profiles. NOTE: this secret is shared with external token consumers
+    # (Safe Space / Krusty / Commons) — rotating it requires a coordinated
+    # roll. See docs/runbooks/key-rotation.md.
+    secret: ${JWT_SECRET:dev-only-insecure-jwt-secret-do-not-use-in-production-change-me-now-0123456789}
+    # Platform audience stamped on access tokens and required by
+    # JwtAuthenticationFilter (B-JWT-1). Scopes WeldForge's API to tokens minted
+    # for it; adding the claim is transparent to external token consumers.
+    audience: ${JWT_AUDIENCE:weldforge}
     access-token-expiration-ms: ${JWT_EXPIRATION_MS:300000} # 5 minutes
     refresh-token-expiration-ms: ${REFRESH_TOKEN_EXPIRATION_MS:604800000} # 7 days
   crypto:
     # Used to derive the AES-GCM key that encrypts per-tenant OAuth2 client
-    # secrets at rest. MUST be set to a strong random value in production
-    # and sourced from a KMS / HSM (see PRD SEC-09).
+    # secrets and RSA private keys at rest. MUST be set to a strong random
+    # value in production via APP_CRYPTO_SECRET (GCP Secret Manager
+    # `wf-app-crypto-secret`) and sourced from a KMS / HSM (see PRD SEC-09).
+    # The dev-only default below is kept stable so existing locally-encrypted
+    # data stays decryptable; SecretHygieneValidator refuses to boot with it
+    # outside the dev/test profiles.
     secret: ${APP_CRYPTO_SECRET:dev-only-change-me-weldforge-tenant-secret-key}
   security:
+    # When true, the app refuses to start if a security-critical secret is
+    # still a known dev/placeholder default (see SecretHygieneValidator).
+    # Set APP_REQUIRE_SECURE_SECRETS=true on every real deployment; left
+    # false locally so the convenient dev defaults boot out of the box.
+    require-secure-secrets: ${APP_REQUIRE_SECURE_SECRETS:false}
     password:
       min-length:        ${APP_PASSWORD_MIN_LENGTH:10}
       max-length:        ${APP_PASSWORD_MAX_LENGTH:72}
@@ -183,7 +220,7 @@ app:
       rp-id:   ${APP_MFA_WEBAUTHN_RP_ID:localhost}
       rp-name: ${APP_MFA_WEBAUTHN_RP_NAME:WeldForge}
       # Comma-separated list of origins the library will accept.
-      origins: ${APP_MFA_WEBAUTHN_ORIGINS:http://localhost:4200,http://localhost:8080}
+      origins: ${APP_MFA_WEBAUTHN_ORIGINS:http://localhost:4200,http://localhost:8076}
 
   key-rotation:
     enabled: ${APP_KEY_ROTATION_ENABLED:false}

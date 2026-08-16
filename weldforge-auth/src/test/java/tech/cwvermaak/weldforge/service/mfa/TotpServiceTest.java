@@ -56,6 +56,30 @@ class TotpServiceTest {
     }
 
     @Test
+    @DisplayName("matchingStep returns the current time-step for a valid code (anti-replay support)")
+    void matchingStep_returnsCurrentStep() throws Exception {
+        String secret = totp.generateSecret();
+        CodeGenerator codeGenerator = new DefaultCodeGenerator(HashingAlgorithm.SHA1, 6);
+        long bucket = System.currentTimeMillis() / 1000 / 30;
+        String code = codeGenerator.generate(secret, bucket);
+
+        java.util.OptionalLong step = totp.matchingStep(secret, code);
+        assertThat(step).isPresent();
+        // Allow for a step rollover between code generation and verification.
+        assertThat(step.getAsLong()).isBetween(bucket - 1, bucket + 1);
+    }
+
+    @Test
+    @DisplayName("matchingStep is empty for a wrong code or null inputs")
+    void matchingStep_emptyForInvalid() {
+        String secret = totp.generateSecret();
+        assertThat(totp.matchingStep(secret, "000000")).isEmpty();
+        assertThat(totp.matchingStep(null, "000000")).isEmpty();
+        assertThat(totp.matchingStep(secret, null)).isEmpty();
+        assertThat(totp.matchingStep(secret, "  ")).isEmpty();
+    }
+
+    @Test
     @DisplayName("verify returns false on null inputs without throwing")
     void verify_handlesNullsSafely() {
         assertThat(totp.verify(null, "000000")).isFalse();

@@ -1,6 +1,8 @@
 package tech.cwvermaak.weldforge.controller;
 
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.security.authentication.BadCredentialsException;
+import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -54,6 +56,8 @@ public class OidcAuthorizationController {
     private final OidcAuthorizationService authorizationService;
     private final OidcTokenService tokenService;
     private final PublicHostProperties publicHost;
+    private final tech.cwvermaak.weldforge.service.JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
     @GetMapping("/t/{slug}/oauth2/authorize")
     public ResponseEntity<?> authorize(@PathVariable String slug,
@@ -67,14 +71,32 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
                                        @AuthenticationPrincipal String email,
                                        HttpServletRequest request) {
-        if (!"code".equals(responseType)) {
-            throw new OidcAuthorizationException("unsupported_response_type",
-                    "Only response_type=code is supported");
-        }
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
 
-        // ---- Step 1: not authenticated → redirect to login ---------
+        // ---- Step 1: validate client_id + redirect_uri FIRST ----------
+        // Per RFC 6749 §4.1.2.1, errors may only be redirected back to the
+        // redirect_uri once the client and redirect_uri are known-good. An
+        // unknown client or an unregistered redirect_uri must NOT redirect
+        // (the target may be attacker-controlled) — they return a 400.
+        OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
+                .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
+                        "Unknown client_id for this tenant"));
+
+        if (!client.getRedirectUriList().contains(redirectUri)) {
+            throw new OidcAuthorizationException("invalid_request",
+                    "redirect_uri does not match a registered URI");
+        }
+
+        // ---- Step 2: redirect_uri is trusted — protocol errors now go
+        // back to it with error + state (RFC 6749 §4.1.2.1), instead of a
+        // JSON 400 that breaks conformant RP error handling. ------------
+        if (!"code".equals(responseType)) {
+            throw new OidcAuthorizationException("unsupported_response_type",
+                    "Only response_type=code is supported", redirectUri, state);
+        }
+
+        // ---- Step 3: not authenticated → redirect to login ---------
         // Spring Security materialises the principal as the string
         // "anonymousUser" for unauthenticated requests (see
         // AnonymousAuthenticationToken), so a null/blank check alone
@@ -96,18 +118,13 @@ public class OidcAuthorizationController {
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(slug, email)
                 .orElseThrow(() -> new EntityNotFoundException("User not in tenant"));
 
-        OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
-                .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
-                        "Unknown client_id for this tenant"));
-
-        if (!client.getRedirectUriList().contains(redirectUri)) {
-            throw new OidcAuthorizationException("invalid_request",
-                    "redirect_uri does not match a registered URI");
-        }
-
-        // ---- Step 2: render consent ---------------------------------
+        // ---- Step 4: render consent ---------------------------------
+        // Anti-CSRF token bound to this authenticated user + tenant. The
+        // decide endpoint requires it back and checks the binding, so a
+        // cross-site auto-submit of the consent form is rejected.
+        String csrfToken = jwtService.generateConsentCsrfToken(email, tenant.getId(), slug);
         String html = renderConsent(slug, user, client, redirectUri, scope, state, nonce,
-                codeChallenge, codeChallengeMethod);
+                codeChallenge, codeChallengeMethod, csrfToken);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
                 .body(html);
@@ -129,6 +146,7 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "nonce", required = false) String nonce,
                                        @RequestParam(value = "code_challenge", required = false) String codeChallenge,
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
+                                       @RequestParam(value = "csrf_token", required = false) String csrfToken,
                                        @AuthenticationPrincipal String email) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
@@ -136,8 +154,28 @@ public class OidcAuthorizationController {
             throw new OidcAuthorizationException("login_required",
                     "Session expired before consent — please log in again");
         }
+
+        // CSRF guard: the consent form carries a signed token bound to the
+        // authenticated user + tenant. Verify it before acting on the
+        // decision — this is what stops a cross-site forged submission of the
+        // consent form (decide is permitAll and global CSRF is disabled).
+        verifyConsentCsrf(csrfToken, email, slug);
+
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(slug, email)
                 .orElseThrow(() -> new EntityNotFoundException("User not in tenant"));
+
+        // The consent form posts redirect_uri back as a hidden field, so a
+        // forged POST could supply an attacker-controlled URI. Re-validate it
+        // against the client's registered list BEFORE any redirect (both the
+        // allow and deny branches build a 302 from it) — otherwise the deny
+        // path is an open redirect. Validation only happened at /authorize.
+        OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
+                .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
+                        "Unknown client_id for this tenant"));
+        if (!client.getRedirectUriList().contains(redirectUri)) {
+            throw new OidcAuthorizationException("invalid_request",
+                    "redirect_uri does not match a registered URI");
+        }
 
         if (!"allow".equals(decision)) {
             // Per RFC 6749 §4.1.2.1, deny redirects back with an error.
@@ -159,8 +197,9 @@ public class OidcAuthorizationController {
     }
 
     /**
-     * Token endpoint — handles {@code authorization_code} (PKCE) and
-     * {@code client_credentials}. Form-encoded per the spec.
+     * Token endpoint — handles {@code authorization_code} (PKCE),
+     * {@code refresh_token} and {@code client_credentials}. Form-encoded per
+     * the spec.
      */
     @PostMapping(value = "/t/{slug}/oauth2/token", consumes = "application/x-www-form-urlencoded")
     public ResponseEntity<Map<String, Object>> token(@PathVariable String slug,
@@ -170,6 +209,7 @@ public class OidcAuthorizationController {
                                                      @RequestParam(value = "client_id", required = false) String clientId,
                                                      @RequestParam(value = "client_secret", required = false) String clientSecret,
                                                      @RequestParam(value = "code_verifier", required = false) String codeVerifier,
+                                                     @RequestParam(value = "refresh_token", required = false) String refreshToken,
                                                      @RequestParam(value = "scope", required = false) String scope,
                                                      HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
@@ -183,18 +223,56 @@ public class OidcAuthorizationController {
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
                         tenant, result.client(), result.user(),
                         result.scopes(), result.nonce(), issuer);
-                yield ResponseEntity.ok(buildResponse(tokens, result.scopes()));
+                Map<String, Object> body = buildResponse(tokens, result.scopes());
+                // Only clients registered for the grant get one. Handing a
+                // refresh token to a client that never asked for it widens
+                // the blast radius of a leak for no benefit.
+                if (result.client().getGrantTypeList().contains("refresh_token")) {
+                    body.put("refresh_token", refreshTokenService.issueNewForClient(
+                            result.user(), result.client(),
+                            clientIp(request), userAgent(request)).rawToken());
+                }
+                yield ResponseEntity.ok(body);
+            }
+            case "refresh_token" -> {
+                OidcClient client = authorizationService.verifyClientForRefresh(
+                        tenant, clientId, clientSecret);
+                RefreshTokenService.Issued rotated;
+                try {
+                    rotated = refreshTokenService.rotateForClient(
+                            refreshToken, client, clientIp(request), userAgent(request));
+                } catch (BadCredentialsException e) {
+                    // Every rejection reads the same to the caller. Reuse,
+                    // expiry, an unknown token and the wrong client are all
+                    // invalid_grant: distinguishing them would tell an
+                    // attacker which of those they hit.
+                    throw new OidcAuthorizationException("invalid_grant", "Refresh token rejected");
+                }
+
+                User user = rotated.row().getUser();
+                // The token outlives any single access token, so re-check the
+                // account each time rather than trusting the state it had when
+                // the family was minted.
+                if (!user.isActive()) {
+                    throw new OidcAuthorizationException("invalid_grant", "Account is not active");
+                }
+
+                IssuedTokens tokens = tokenService.issueForCodeExchange(
+                        tenant, client, user, client.getScopeList(), null, issuer);
+                Map<String, Object> body = buildResponse(tokens, client.getScopeList());
+                body.put("refresh_token", rotated.rawToken());
+                yield ResponseEntity.ok(body);
             }
             case "client_credentials" -> {
                 OidcClient client = authorizationService.verifyClientCredentials(tenant, clientId, clientSecret);
                 List<String> scopes = scope == null
                         ? client.getScopeList()
                         : Arrays.stream(scope.split("\\s+")).filter(s -> !s.isBlank()).toList();
-                String accessToken = tokenService.issueForClientCredentials(tenant, client, scopes, issuer);
+                IssuedTokens issued = tokenService.issueForClientCredentials(tenant, client, scopes, issuer);
                 yield ResponseEntity.ok(Map.of(
-                        "access_token", accessToken,
+                        "access_token", issued.accessToken(),
                         "token_type",   "Bearer",
-                        "expires_in",   3600,
+                        "expires_in",   issued.expiresIn(),
                         "scope",        String.join(" ", scopes)
                 ));
             }
@@ -204,7 +282,18 @@ public class OidcAuthorizationController {
     }
 
     @ExceptionHandler(OidcAuthorizationException.class)
-    public ResponseEntity<Map<String, String>> handle(OidcAuthorizationException ex) {
+    public ResponseEntity<?> handle(OidcAuthorizationException ex) {
+        // RFC 6749 §4.1.2.1: once redirect_uri is validated, errors redirect
+        // back to it carrying error/error_description/state. Pre-validation
+        // errors (unknown client, bad redirect_uri) are not redirectable and
+        // fall through to a JSON 400.
+        if (ex.isRedirectable()) {
+            String url = appendQuery(ex.getRedirectUri(),
+                    "error", ex.getErrorCode(),
+                    "error_description", ex.getMessage(),
+                    "state", ex.getState());
+            return ResponseEntity.status(302).location(URI.create(url)).build();
+        }
         Map<String, String> body = new LinkedHashMap<>();
         body.put("error", ex.getErrorCode());
         body.put("error_description", ex.getMessage());
@@ -212,6 +301,44 @@ public class OidcAuthorizationController {
     }
 
     // ---- Helpers -----------------------------------------------------
+
+    /**
+     * Verify the consent CSRF token: it must be a validly-signed, unexpired
+     * {@code consent_csrf} token whose subject is the authenticated user and
+     * whose tenant claim matches the slug being acted on. Any failure throws
+     * {@code access_denied} rather than proceeding.
+     */
+    private void verifyConsentCsrf(String csrfToken, String email, String slug) {
+        if (csrfToken == null || csrfToken.isBlank()) {
+            throw new OidcAuthorizationException("access_denied", "Missing consent token");
+        }
+        try {
+            io.jsonwebtoken.Claims claims = jwtService.parse(csrfToken);
+            boolean ok = jwtService.isConsentCsrf(claims)
+                    && email.equalsIgnoreCase(claims.getSubject())
+                    && slug.equals(String.valueOf(claims.get(tech.cwvermaak.weldforge.service.JwtService.CLAIM_TENANT_SLUG)));
+            if (!ok) {
+                throw new OidcAuthorizationException("access_denied", "Invalid consent token");
+            }
+        } catch (io.jsonwebtoken.JwtException | IllegalArgumentException e) {
+            throw new OidcAuthorizationException("access_denied", "Invalid or expired consent token");
+        }
+    }
+
+    // Same rules as AuthService: the RemoteIpValve-resolved address only
+    // (server.forward-headers-strategy=native), never a raw X-Forwarded-For,
+    // because these values are stored on refresh-token records and a spoofed
+    // one would poison the session audit trail.
+    private static String clientIp(HttpServletRequest request) {
+        return request == null ? null : request.getRemoteAddr();
+    }
+
+    private static String userAgent(HttpServletRequest request) {
+        if (request == null) return null;
+        String ua = request.getHeader("User-Agent");
+        if (ua == null) return null;
+        return ua.length() > 512 ? ua.substring(0, 512) : ua;
+    }
 
     private static Map<String, Object> buildResponse(IssuedTokens tokens, List<String> scopes) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -256,7 +383,8 @@ public class OidcAuthorizationController {
      */
     private static String renderConsent(String slug, User user, OidcClient client, String redirectUri,
                                         String scope, String state, String nonce,
-                                        String codeChallenge, String codeChallengeMethod) {
+                                        String codeChallenge, String codeChallengeMethod,
+                                        String csrfToken) {
         String appName = client.getName() != null && !client.getName().isBlank()
                 ? client.getName() : client.getClientId();
         String scopesHtml = Arrays.stream(scope.split("\\s+"))
@@ -295,6 +423,7 @@ public class OidcAuthorizationController {
                 + hidden("nonce", nonce)
                 + hidden("code_challenge", codeChallenge)
                 + hidden("code_challenge_method", codeChallengeMethod)
+                + hidden("csrf_token", csrfToken)
                 + "<div class=\"actions\">"
                 + "<button class=\"deny\" type=\"submit\" name=\"decision\" value=\"deny\">Deny</button>"
                 + "<button class=\"allow\" type=\"submit\" name=\"decision\" value=\"allow\">Allow</button>"

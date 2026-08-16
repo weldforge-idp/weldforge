@@ -95,6 +95,14 @@ public class MfaFactor {
     @Column(name = "last_used_at")
     private LocalDateTime lastUsedAt;
 
+    /**
+     * The last TOTP time-step (epoch-seconds / 30) accepted for this factor.
+     * A code whose step is {@code <=} this is rejected as a replay (RFC 6238).
+     * Null until the first successful verification. TOTP factors only.
+     */
+    @Column(name = "last_totp_step")
+    private Long lastTotpStep;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();

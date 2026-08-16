@@ -36,6 +36,7 @@ class MfaServiceTest {
     private WebAuthnService webAuthnService;
     private PasswordEncoder passwordEncoder;
     private AuditService auditService;
+    private tech.cwvermaak.weldforge.repository.ConsumedMfaChallengeRepository consumedRepo;
 
     private MfaService mfa;
     private User user;
@@ -51,11 +52,12 @@ class MfaServiceTest {
         webAuthnService = mock(WebAuthnService.class);
         passwordEncoder = mock(PasswordEncoder.class);
         auditService = mock(AuditService.class);
+        consumedRepo = mock(tech.cwvermaak.weldforge.repository.ConsumedMfaChallengeRepository.class);
         var twilioService = mock(tech.cwvermaak.weldforge.service.TwilioService.class);
 
         mfa = new MfaService(factorRepo, backupRepo, userRepo, jwtService,
                 totpService, backupCodeService, webAuthnService, passwordEncoder, auditService,
-                twilioService);
+                twilioService, consumedRepo);
 
         Tenant t = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         user = User.builder()
@@ -120,6 +122,69 @@ class MfaServiceTest {
                 metaCaptor.capture());
         assertThat(metaCaptor.getValue()).containsEntry("target_email", "alice@acme.test");
         assertThat(metaCaptor.getValue()).containsEntry("removed", 1);
+    }
+
+    @Test
+    @DisplayName("verifyChallenge(TOTP) accepts a fresh time-step then rejects the same step as a replay")
+    void verifyTotp_antiReplay() {
+        MfaFactor totp = MfaFactor.builder()
+                .id(10L).user(user).type(MfaFactorType.TOTP)
+                .totpSecretEnc("SECRET").enabled(true).verified(true).build();
+        when(factorRepo.findByUserIdAndType(42L, MfaFactorType.TOTP)).thenReturn(List.of(totp));
+        when(totpService.matchingStep("SECRET", "123456")).thenReturn(java.util.OptionalLong.of(100L));
+
+        var req = tech.cwvermaak.weldforge.model.dto.MfaVerifyRequestDto.builder()
+                .type(MfaFactorType.TOTP).code("123456").build();
+
+        // First use of step 100 succeeds and records it on the factor.
+        assertThat(mfa.verifyChallenge(user, req)).isTrue();
+        assertThat(totp.getLastTotpStep()).isEqualTo(100L);
+
+        // Replaying the same code (same step) is now rejected.
+        assertThat(mfa.verifyChallenge(user, req)).isFalse();
+    }
+
+    @Test
+    @DisplayName("resolveChallenge rejects a challenge token whose jti was already consumed")
+    void resolveChallenge_rejectsConsumedJti() {
+        io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
+        when(jwtService.parse("tok")).thenReturn(claims);
+        when(jwtService.isMfaChallenge(claims)).thenReturn(true);
+        when(claims.getId()).thenReturn("JTI-1");
+        when(consumedRepo.existsById("JTI-1")).thenReturn(true);
+
+        assertThatThrownBy(() -> mfa.resolveChallenge("tok"))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(userRepo, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("consumeChallenge records the jti so the token can't be reused")
+    void consumeChallenge_recordsJti() {
+        io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
+        when(jwtService.parse("tok")).thenReturn(claims);
+        when(claims.getId()).thenReturn("JTI-2");
+        when(claims.getExpiration()).thenReturn(new java.util.Date(System.currentTimeMillis() + 300_000));
+        when(consumedRepo.existsById("JTI-2")).thenReturn(false);
+
+        mfa.consumeChallenge("tok");
+
+        ArgumentCaptor<tech.cwvermaak.weldforge.model.ConsumedMfaChallenge> captor =
+                ArgumentCaptor.forClass(tech.cwvermaak.weldforge.model.ConsumedMfaChallenge.class);
+        verify(consumedRepo).save(captor.capture());
+        assertThat(captor.getValue().getJti()).isEqualTo("JTI-2");
+    }
+
+    @Test
+    @DisplayName("consumeChallenge is a no-op for a legacy token without a jti")
+    void consumeChallenge_noJti_noop() {
+        io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
+        when(jwtService.parse("tok")).thenReturn(claims);
+        when(claims.getId()).thenReturn(null);
+
+        mfa.consumeChallenge("tok");
+
+        verify(consumedRepo, never()).save(any());
     }
 
     @Test

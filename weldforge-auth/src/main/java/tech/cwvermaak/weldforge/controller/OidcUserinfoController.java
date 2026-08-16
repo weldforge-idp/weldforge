@@ -46,21 +46,15 @@ public class OidcUserinfoController {
 
         Claims claims;
         try {
-            // Resolve the kid from the JWS header so we pick the right key.
-            String kid = Jwts.parser()
-                    .keyLocator(jws -> signingKeyService.loadPublicKey(
-                            signingKeyService.requireByKid(jws.get("kid").toString())))
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload()
-                    .getId() != null ? null : null;
-            // The above pattern is awkward — we re-parse to actually grab the
-            // claims now that the locator side-effect cached the key.
+            // The key locator reads the kid from the JWS header and returns
+            // the matching tenant public key, so a single parse both verifies
+            // the signature and yields the claims.
             claims = Jwts.parser()
                     .keyLocator(jws -> {
                         TenantSigningKey row = signingKeyService.requireByKid(jws.get("kid").toString());
                         return signingKeyService.loadPublicKey(row);
                     })
+                    .clockSkewSeconds(60)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -71,6 +65,13 @@ public class OidcUserinfoController {
         // The token must have been issued for *this* tenant.
         Object iss = claims.get("iss");
         if (iss == null || !iss.toString().endsWith("/t/" + tenant.getSlug())) {
+            return ResponseEntity.status(401).build();
+        }
+
+        // B-OIDC-3: userinfo must be called with an ACCESS token (OIDC Core
+        // §5.3.1). ID tokens are tenant-signed too but carry no token_type, so
+        // reject anything that isn't explicitly an access token.
+        if (!"access".equals(String.valueOf(claims.get("token_type")))) {
             return ResponseEntity.status(401).build();
         }
 

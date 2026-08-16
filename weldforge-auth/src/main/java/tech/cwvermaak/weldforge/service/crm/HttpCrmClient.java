@@ -48,6 +48,13 @@ public class HttpCrmClient implements CrmClient {
     public Result upsert(TenantCrmProvider provider,
                          String existingExternalId,
                          Map<String, Object> fields) {
+        // SSRF egress guard (B-LEGACY-1) on the admin-configured base URL.
+        try {
+            tech.cwvermaak.weldforge.service.security.EgressGuard.validate(provider.getBaseUrl());
+        } catch (tech.cwvermaak.weldforge.service.security.EgressNotAllowedException e) {
+            log.warn("CRM push blocked by egress guard: {} ({})", provider.getBaseUrl(), e.getMessage());
+            return new Result(false, null, 0, "blocked: " + e.getMessage());
+        }
         try {
             return circuitBreaker.executeSupplier(() -> doUpsert(provider, existingExternalId, fields));
         } catch (CallNotPermittedException cbOpen) {

@@ -66,15 +66,18 @@ public class OidcTokenService {
         return new IssuedTokens(accessToken, idToken, tenantTtlSeconds);
     }
 
-    public String issueForClientCredentials(Tenant tenant, OidcClient client, List<String> scopes, String issuer) {
+    public IssuedTokens issueForClientCredentials(Tenant tenant, OidcClient client, List<String> scopes, String issuer) {
         TenantSigningKey key = signingKeyService.getOrCreateActive(tenant);
         RSAPrivateKey privateKey = signingKeyService.loadPrivateKey(key);
         Instant now = Instant.now();
         meterRegistry.counter("sso.token.issued", "grant_type", "client_credentials",
                 "tenant", tenant.getSlug()).increment();
         long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
-        return buildAccessToken(client, null, scopes, issuer, key.getKid(), privateKey, now,
+        String accessToken = buildAccessToken(client, null, scopes, issuer, key.getKid(), privateKey, now,
                 tenantTtlSeconds, tenant.getCustomClaims());
+        // No ID token in the client_credentials grant; expiresIn carries the
+        // *resolved* per-tenant TTL so the response doesn't lie (B-OIDC-5).
+        return new IssuedTokens(accessToken, null, tenantTtlSeconds);
     }
 
     /** PRD SSO-03: per-tenant access TTL takes precedence over the OIDC default. */

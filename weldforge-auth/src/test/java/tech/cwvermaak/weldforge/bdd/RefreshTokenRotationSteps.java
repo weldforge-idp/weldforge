@@ -11,6 +11,7 @@ import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenProperties;
+import tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 
 import java.time.LocalDateTime;
@@ -56,7 +57,11 @@ public class RefreshTokenRotationSteps {
         repo = mock(RefreshTokenRepository.class);
         auditService = mock(AuditService.class);
         RefreshTokenProperties props = new RefreshTokenProperties();
-        service = new RefreshTokenService(repo, props, auditService);
+        // A real revoker over the same mock repository: outside Spring the
+        // REQUIRES_NEW propagation is inert, so the scenario still observes
+        // revokeFamily exactly as before.
+        service = new RefreshTokenService(
+                repo, new RefreshTokenFamilyRevoker(repo), props, auditService);
 
         // Mock the repo to use an in-memory map keyed by hash.
         when(repo.save(any(RefreshToken.class))).thenAnswer(inv -> {

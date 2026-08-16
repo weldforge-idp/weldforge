@@ -52,7 +52,8 @@ public class TenantIsolationSteps {
         auditService = mock(AuditService.class);
         admin = new AdminService(tenantAccessor, roleRepo, userRepo, envRepo,
                 appClientRepo, mfaService, auditService,
-                mock(tech.cwvermaak.weldforge.service.PasswordResetService.class));
+                mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),
+                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepo));
     }
 
     @Given("tenants {string} and {string} exist")
@@ -149,5 +150,37 @@ public class TenantIsolationSteps {
     public void noMfaFactorsRemoved() {
         verify(mfaService, never()).adminReset(any(), any());
         assertThat(world.lastRemoved).isZero();
+    }
+
+    // -------- setAdminRole tenant scoping (B-TEN-1) --------------------
+
+    @When("I grant the admin role {string} to user {string}")
+    public void iGrantAdminRole(String role, String email) {
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        User target = world.users.get(email);
+        admin.setAdminRole(target.getId(), tech.cwvermaak.weldforge.model.AdminRole.valueOf(role));
+    }
+
+    @When("I try to grant the admin role {string} to user {string}")
+    public void iTryToGrantAdminRole(String role, String email) {
+        User target = world.users.get(email);
+        try {
+            admin.setAdminRole(target.getId(), tech.cwvermaak.weldforge.model.AdminRole.valueOf(role));
+        } catch (Throwable t) {
+            world.lastError = t;
+        }
+    }
+
+    @Then("user {string} has admin role {string}")
+    public void userHasAdminRole(String email, String role) {
+        User u = world.users.get(email);
+        tech.cwvermaak.weldforge.model.AdminRole actual = u.getAdminRole() == null
+                ? tech.cwvermaak.weldforge.model.AdminRole.NONE : u.getAdminRole();
+        assertThat(actual).isEqualTo(tech.cwvermaak.weldforge.model.AdminRole.valueOf(role));
+    }
+
+    @Then("user {string} still has admin role {string}")
+    public void userStillHasAdminRole(String email, String role) {
+        userHasAdminRole(email, role);
     }
 }

@@ -33,6 +33,22 @@ public interface UserRepository extends JpaRepository<User, Long> {
     }
 
     /**
+     * Seats consumed in a tenant. Deactivated users are excluded, so
+     * deactivating somebody frees a seat rather than burning it for good.
+     * Drives {@code TenantSeatService}.
+     */
+    long countByTenantIdAndActiveTrue(Long tenantId);
+
+    /**
+     * Seats consumed by everyone <em>except</em> the given user. Used when
+     * checking whether a currently-inactive user can be reactivated: the
+     * caller may already have flipped {@code active} on the in-memory entity,
+     * and Hibernate's auto-flush would then include it in a plain count,
+     * making the tenant look one seat fuller than it is.
+     */
+    long countByTenantIdAndActiveTrueAndIdNot(Long tenantId, Long userId);
+
+    /**
      * Atomically bump every user's {@code token_version} in a tenant.
      * Called when the tenant is being deleted: any outstanding access JWT
      * carries a {@code ver} lower than the post-bump value and stops

@@ -47,6 +47,16 @@ public class SamlServiceProvider {
     @Column(name = "sp_certificate", columnDefinition = "TEXT")
     private String spCertificate;
 
+    /**
+     * B-SAML-1(a). When {@code true}, the IdP requires inbound AuthnRequests
+     * (and LogoutRequests) from this SP to carry a valid XML signature
+     * verifiable against {@link #spCertificate}, and rejects unsigned or
+     * badly-signed requests. Default {@code false} for backward compatibility.
+     */
+    @Column(name = "want_authn_request_signed", nullable = false)
+    @Builder.Default
+    private Boolean wantAuthnRequestSigned = false;
+
     @Column(name = "name_id_format", nullable = false, length = 128)
     @Builder.Default
     private String nameIdFormat = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";

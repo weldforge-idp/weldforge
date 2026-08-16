@@ -95,6 +95,7 @@ public class SamlIdpService {
                 .attributeMappings(dto.getAttributeMappings())
                 .enabled(dto.getEnabled() != null ? dto.getEnabled() : true)
                 .encryptAssertions(Boolean.TRUE.equals(dto.getEncryptAssertions()))
+                .wantAuthnRequestSigned(Boolean.TRUE.equals(dto.getWantAuthnRequestSigned()))
                 .build();
         spRepository.save(sp);
 
@@ -120,6 +121,7 @@ public class SamlIdpService {
         if (dto.getAttributeMappings() != null) sp.setAttributeMappings(dto.getAttributeMappings());
         if (dto.getEnabled() != null) sp.setEnabled(dto.getEnabled());
         if (dto.getEncryptAssertions() != null) sp.setEncryptAssertions(dto.getEncryptAssertions());
+        if (dto.getWantAuthnRequestSigned() != null) sp.setWantAuthnRequestSigned(dto.getWantAuthnRequestSigned());
 
         auditService.recordAdmin(AuditEventTypes.SAML_SP_UPDATE, null,
                 AuditEventTypes.TARGET_SAML_SP, String.valueOf(sp.getId()),
@@ -263,6 +265,25 @@ public class SamlIdpService {
                 .filter(SamlServiceProvider::getEnabled)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Unregistered or disabled SP: " + issuer));
+    }
+
+    /**
+     * Verify the XML signature on an inbound SAML request when the SP requires
+     * signed requests (B-SAML-1 part a). No-op for SPs that don't opt in. When
+     * required, a missing certificate is a configuration error and an
+     * unsigned / invalid signature throws {@link SamlMessageException}.
+     */
+    public void verifyAuthnRequestSignature(SamlServiceProvider sp, String requestXml) {
+        if (sp == null || !Boolean.TRUE.equals(sp.getWantAuthnRequestSigned())) {
+            return; // signing not required for this SP
+        }
+        String pem = sp.getSpCertificate();
+        if (pem == null || pem.isBlank()) {
+            throw new IllegalStateException(
+                    "SP " + sp.getEntityId() + " requires signed AuthnRequests but has no certificate on file");
+        }
+        java.security.PublicKey key = SamlSignatureValidator.publicKeyFromPem(pem);
+        SamlSignatureValidator.verify(requestXml, key);
     }
 
     // ---- Helpers ----------------------------------------------------
@@ -579,6 +600,7 @@ public class SamlIdpService {
                 .attributeMappings(sp.getAttributeMappings())
                 .enabled(sp.getEnabled())
                 .encryptAssertions(sp.getEncryptAssertions())
+                .wantAuthnRequestSigned(sp.getWantAuthnRequestSigned())
                 .build();
     }
 

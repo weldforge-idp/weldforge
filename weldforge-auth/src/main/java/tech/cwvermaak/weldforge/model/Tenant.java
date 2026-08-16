@@ -149,6 +149,19 @@ public class Tenant {
     @Column(name = "verified_by_user_id")
     private Long verifiedByUserId;
 
+    /**
+     * Maximum number of <em>active</em> users this tenant may hold.
+     * {@code null} means unlimited — the default, and what every tenant
+     * predating the free tier carries.
+     *
+     * <p>Counted over {@code active = true} only, so deactivating a user
+     * frees a seat. Enforced by
+     * {@link tech.cwvermaak.weldforge.service.TenantSeatService}, which
+     * every user-creation path calls before allocating a row.
+     */
+    @Column(name = "max_users")
+    private Integer maxUsers;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

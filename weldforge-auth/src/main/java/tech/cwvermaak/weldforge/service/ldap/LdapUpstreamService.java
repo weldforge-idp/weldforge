@@ -44,6 +44,7 @@ public class LdapUpstreamService {
     private final LdapClient ldapClient;
     private final UserRepository userRepository;
     private final FederationRulesEngine federationRulesEngine;
+    private final tech.cwvermaak.weldforge.service.TenantSeatService seatService;
 
     @Transactional
     public Optional<User> authenticate(Tenant tenant, String username, String password) {
@@ -98,6 +99,12 @@ public class LdapUpstreamService {
                         .provider(AuthProvider.LDAP)
                         .providerId(attrs.dn())
                         .build());
+
+        // JIT provisioning consumes a seat; an existing user re-authenticating
+        // does not.
+        if (user.getId() == null) {
+            seatService.assertCapacity(tenant);
+        }
 
         if (name != null) user.setName(name);
         if (user.getEmail() == null) user.setEmail(email);

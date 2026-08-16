@@ -40,6 +40,16 @@ public class RefreshToken {
     @JoinColumn(name = "tenant_id", nullable = false)
     private Tenant tenant;
 
+    /**
+     * OIDC client this token was issued to, or null for a session-flow token
+     * from {@code /api/auth/login}. A refresh token is only valid when
+     * presented by the client it was issued to (RFC 6749 §6): without that
+     * check one relying party could spend another's token.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "client_id")
+    private OidcClient client;
+
     @Column(name = "family_id", nullable = false)
     private UUID familyId;
 

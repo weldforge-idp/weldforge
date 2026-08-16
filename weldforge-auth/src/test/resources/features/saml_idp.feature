@@ -28,3 +28,30 @@ Feature: SAML IdP mode
     Given tenant "globex" is configured for SAML IdP with SP "https://app.globex.test/saml"
     When an AuthnRequest from "https://app.globex.test/saml" is validated for tenant "acme"
     Then the SAML IdP request is rejected
+
+  Scenario: A well-formed AuthnRequest's issuer is parsed safely
+    When a raw SAML AuthnRequest from "https://app.acme.test/saml" is parsed
+    Then the parsed SAML issuer is "https://app.acme.test/saml"
+
+  Scenario: A SAML message carrying a DOCTYPE is rejected (XXE defense)
+    When a SAML AuthnRequest containing a DOCTYPE is parsed
+    Then the SAML message is rejected as unsafe
+
+  Scenario: An SP that requires signed AuthnRequests accepts a validly-signed request
+    Given an SP "https://signed.acme.test/saml" that requires signed AuthnRequests
+    When a validly-signed AuthnRequest from that SP is verified
+    Then the SAML signature check passes
+
+  Scenario: An SP that requires signed AuthnRequests rejects an unsigned request
+    Given an SP "https://signed.acme.test/saml" that requires signed AuthnRequests
+    When an unsigned AuthnRequest from that SP is verified
+    Then the SAML signature check fails
+
+  Scenario: An SP that does not require signing accepts an unsigned request
+    Given an SP "https://unsigned.acme.test/saml" that does not require signed AuthnRequests
+    When an unsigned AuthnRequest from that SP is verified
+    Then the SAML signature check passes
+
+  Scenario: Signed-AuthnRequest enforcement is configurable through the admin API
+    When an SP "https://api.acme.test/saml" is registered requiring signed AuthnRequests
+    Then the registered SP "https://api.acme.test/saml" requires signed AuthnRequests

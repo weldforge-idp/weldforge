@@ -181,7 +181,8 @@ public class LoginController {
      * absolute URL — a relative redirect would land back on the
      * subdomain and miss the OIDC endpoint.
      */
-    private String sanitiseReturnTo(String oidcReturnTo) {
+    // Package-private for direct testing of the open-redirect rules.
+    String sanitiseReturnTo(String oidcReturnTo) {
         if (oidcReturnTo == null || oidcReturnTo.isBlank()) return "/";
         String decoded;
         try {
@@ -203,7 +204,16 @@ public class LoginController {
                 // tenant subdomain trick a victim into sending their
                 // (cross-domain-scoped) session cookie to that subdomain
                 // mid-flow. Apex-only closes that.
-                if (!host.equalsIgnoreCase(base)) return "/";
+                //
+                // base-domain may carry an explicit port in local development
+                // ("localhost:8076"), while URI.getHost() never includes one —
+                // so compare the two halves separately. Folding them into one
+                // string comparison makes every bounce-back fail closed to "/"
+                // whenever a port is configured, which lands the user on the
+                // apex root instead of finishing the OIDC flow.
+                if (!host.equalsIgnoreCase(publicHost.getBaseDomainHost())) return "/";
+                int basePort = publicHost.getBaseDomainPort();
+                if (basePort != -1 && u.getPort() != basePort) return "/";
                 return decoded;
             }
             return decoded.startsWith("/") ? decoded : "/";

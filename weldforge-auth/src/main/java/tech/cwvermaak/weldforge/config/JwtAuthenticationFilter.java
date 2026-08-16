@@ -65,6 +65,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        // B-JWT-1: access tokens must carry the platform audience. This scopes
+        // WeldForge's API to tokens explicitly minted for it — the shared HMAC
+        // key is also used by external consumers, so an unscoped same-key token
+        // must not authenticate here. Tokens minted before this claim existed
+        // (pre-deploy, <=5min TTL) lack it and are refused; they self-heal on
+        // the next refresh.
+        if (!jwtService.hasValidAudience(claims)) {
+            log.debug("jwt_missing_or_wrong_audience sub={}", claims.getSubject());
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String email = claims.getSubject();
         Object tenantSlug = claims.get(JwtService.CLAIM_TENANT_SLUG);
         Object tenantId   = claims.get(JwtService.CLAIM_TENANT_ID);

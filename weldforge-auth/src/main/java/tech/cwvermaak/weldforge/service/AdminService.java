@@ -36,6 +36,7 @@ public class AdminService {
     private final MfaService mfaService;
     private final AuditService auditService;
     private final PasswordResetService passwordResetService;
+    private final TenantSeatService seatService;
 
     private static final SecureRandom RNG = new SecureRandom();
 
@@ -138,7 +139,10 @@ public class AdminService {
         User user = userRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found"));
         if (!user.isActive()) {
+            // Restoring consumes a seat — a capped tenant can't restore its
+            // way past the limit.
             user.setActive(true);
+            seatService.assertCapacityForActivation(user.getTenant(), user, false);
             userRepository.save(user);
             User actor = currentActor();
             auditService.recordAdmin("user.restored", actor,
@@ -204,8 +208,14 @@ public class AdminService {
         if (newRole == null) {
             throw new IllegalArgumentException("adminRole is required");
         }
-        User target = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new EntityNotFoundException("User " + targetUserId + " not found"));
+        // Tenant-scoped lookup (B-TEN-1). Like every other user mutation here,
+        // the target must live in the caller's *resolved* tenant — which honours
+        // the audited X-WF-Tenant cross-tenant switch. A raw findById would let a
+        // super-admin grant admin roles across tenants with no cross-tenant audit.
+        Long tid = tenantAccessor.requireTenantId();
+        User target = userRepository.findByIdAndTenantId(targetUserId, tid)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "User " + targetUserId + " not found in this tenant"));
 
         target.setAdminRole(newRole);
         // Keep the legacy boolean in sync so code that still reads it
@@ -301,6 +311,8 @@ public class AdminService {
                     .orElseThrow(() -> new EntityNotFoundException(
                             "Role " + req.roleId() + " not found in this tenant"));
         }
+
+        seatService.assertCapacity(tenant);
 
         // Create the user with no password — they must complete a reset
         // to log in. emailVerified stays false until they click the link.

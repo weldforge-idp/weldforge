@@ -17,6 +17,13 @@ administration.
 
 ## 2. Current model and its limitation
 
+> **Historical (resolved).** This section describes the pre-implementation state
+> and motivates the design. The limitations below were addressed — see §10
+> (Implementation notes). In the live code, `resolveCrossTenant`/`canCrossTenants`
+> no longer exist; cross-tenant switching is done via `TenantAccessor.switchToTenant`
+> driven by `CrossTenantSelectorFilter` (the `X-WF-Tenant` header), and admin-role
+> assignment is tenant-scoped (see §6.4).
+
 - `User` belongs to **exactly one** tenant (`users.tenant_id`, `NOT NULL`).
 - `User.adminRole` (`AdminRole` enum: `NONE` / `READ_ONLY` / `TENANT_ADMIN` /
   `SUPER_ADMIN`) is a **single** role that applies only to that one tenant.
@@ -135,8 +142,21 @@ membership requires the caller to already hold one (no privilege escalation).
   straight off the token/user.
 - `wf_svc_*` service accounts may also be granted a global membership; a global
   service account can target any tenant via `X-WF-Tenant`.
-- Every cross-tenant action emits an audit event recording actor, target tenant,
-  and the membership that authorised it.
+- Every **successful** cross-tenant switch emits an audit event
+  (`admin.cross_tenant.access`) recording actor, target tenant, and the
+  membership that authorised it. (Denied/unknown-tenant switch attempts are not
+  yet audited — see §7.)
+
+### 6.4 Admin-role assignment is tenant-scoped (shipped)
+
+`PUT /api/admin/users/{id}/admin-role` (SUPER_ADMIN-gated, `AdminService.setAdminRole`)
+resolves the target user via `findByIdAndTenantId(userId, resolvedTenantId)`, where the
+resolved tenant honours the `X-WF-Tenant` selector. A super-admin therefore cannot mutate
+a role in tenant B without first performing the audited `X-WF-Tenant` switch to B — closing
+a path that would otherwise grant cross-tenant role changes with **no**
+`admin.cross_tenant.access` record (the prior implementation used an unscoped `findById`).
+The mutation bumps `token_version` so the change takes effect on the target's next request,
+and emits an `admin.role.assigned` audit event carrying the target tenant slug.
 
 ## 7. Security considerations
 
@@ -147,7 +167,13 @@ membership requires the caller to already hold one (no privilege escalation).
 - Global membership is the highest-value credential in the system — grant flow is
   `SUPER_ADMIN`-global-gated, self-escalation-proof, and audit-logged.
 - The April 2026 security audit's tenant-isolation findings remain satisfied: every
-  tenant-scoped query still filters by the *resolved* `tenantId`.
+  tenant-scoped query still filters by the *resolved* `tenantId` (including
+  `setAdminRole`, hardened in 2026-06 — see §6.4).
+- **Failed cross-tenant switch auditing (shipped).** `CrossTenantSelectorFilter` audits
+  both outcomes: a successful switch emits `admin.cross_tenant.access` (SUCCESS), and a
+  refused one emits `admin.cross_tenant.denied` (DENIED, with reason `unknown_tenant` for a
+  404 probe or `no_membership` for a 403). Cross-tenant access *attempts* are therefore
+  visible to a SOC (`B-TEN-2`, fixed).
 
 ## 8. Migration & backward compatibility
 

@@ -14,7 +14,7 @@ spec:
         app: sso-api
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "8076"
         prometheus.io/path: "/actuator/prometheus"
     spec:
       {{- if .Values.api.serviceAccount.create }}
@@ -27,7 +27,7 @@ spec:
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 8076
           envFrom:
             - secretRef:
                 name: sso-api-secret
@@ -36,21 +36,21 @@ spec:
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: 8080
+              port: 8076
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: 8080
+              port: 8076
             initialDelaySeconds: 60
             periodSeconds: 30
             failureThreshold: 3
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: 8080
+              port: 8076
             initialDelaySeconds: 15
             periodSeconds: 5
             failureThreshold: 20

@@ -151,6 +151,29 @@ class JwtAuthenticationFilterTest {
                 .isNull();
     }
 
+    @Test
+    @DisplayName("Access token without the platform audience is refused (B-JWT-1)")
+    void missing_platform_audience_refuses_authentication() throws Exception {
+        // A token signed with the same key but minted without the platform
+        // audience (pre-deploy token, or another same-key minter) must not
+        // authenticate against WeldForge's API.
+        JwtService noAud = new JwtService();
+        ReflectionTestUtils.setField(noAud, "secret", SECRET);
+        ReflectionTestUtils.setField(noAud, "accessExpirationMs", 300_000L);
+        ReflectionTestUtils.setField(noAud, "refreshExpirationMs", 604_800_000L);
+        String tokenNoAud = noAud.generateAccessToken("u@acme.test", 1L, "acme", false, 0,
+                null, null, "NONE", "https://sso.weldforge.org/t/acme");
+
+        HttpServletRequest req = req("acme.sso.weldforge.org", "/api/some/path");
+        when(req.getHeader("Authorization")).thenReturn("Bearer " + tokenNoAud);
+
+        filter.doFilter(req, mock(HttpServletResponse.class), (r, s) -> {});
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication())
+                .as("a token lacking the platform audience must not authenticate")
+                .isNull();
+    }
+
     // ── helpers ──────────────────────────────────────────────────────
 
     private static PublicHostProperties publicHost() {
@@ -166,6 +189,7 @@ class JwtAuthenticationFilterTest {
         ReflectionTestUtils.setField(s, "secret", SECRET);
         ReflectionTestUtils.setField(s, "accessExpirationMs", 300_000L);
         ReflectionTestUtils.setField(s, "refreshExpirationMs", 604_800_000L);
+        ReflectionTestUtils.setField(s, "audience", "weldforge");
         return s;
     }
 

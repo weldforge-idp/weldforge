@@ -24,12 +24,26 @@ SPA and returns HTML, so don't use them as a liveness check.)
 
 ## Authentication
 
-Every `/api/**` request requires the header `x-app-authorization` carrying one of:
+Machine-to-machine calls to `/api/admin/**` carry the header
+`x-app-authorization` with one of:
 
 - `wf_live_*` — scoped app-client API key. Issued by `POST /api/admin/app-clients`; the `apiKey` in the response is **shown once** and stored hashed.
 - `wf_svc_*` — service-account token carrying an admin role. Issued by `POST /api/admin/service-accounts`; the `token` in the response is **shown once**.
 
-End-user authentication is separate: `POST /api/auth/login`, `POST /api/auth/register`, OAuth 2.0 token endpoint `POST /t/{slug}/oauth2/token`.
+**End-user auth endpoints take no API key, by design.** `/api/auth/**` is
+exempt, along with `/t/**` (per-tenant OIDC + SAML), `/saml2/**`, `/scim/v2/**`
+and `/login`. A browser reaches these before the user has any credentials, and
+a `wf_live_*` key baked into a JS bundle is a leaked key. **If you are wiring
+sign-in or sign-up into a front-end, do not send `x-app-authorization` at
+all** — sending one is not a hardening measure, it is how the key escapes.
+
+`/api/admin/**` also accepts a user's bearer JWT instead of a key, which is
+how the admin SPA reaches it from a browser.
+
+End-user authentication: `POST /api/auth/login`, `POST /api/auth/register`,
+`POST /api/auth/refresh`, and the OAuth 2.0 token endpoint
+`POST /t/{slug}/oauth2/token` (grants: `authorization_code`,
+`refresh_token`, `client_credentials`).
 
 ## Auth URLs (where end users sign in)
 
@@ -68,6 +82,34 @@ If you are an AI agent that builds deep links into WeldForge for a user
 product), construct the URL on the apex host as shown above. The session
 cookies set after sign-in are scoped to the sign-in host.
 
+## New user sign-up
+
+`POST /api/auth/register` — the whole contract, because getting this wrong is
+the most common integration mistake.
+
+```
+curl -sS -X POST https://sso.weldforge.org/api/auth/register   -H "Content-Type: application/json"   -H "X-Tenant-Slug: acme"   -d '{"name":"Alice Example","email":"alice@example.com","password":"CorrectHorse-Battery-9"}'
+```
+
+- **No `x-app-authorization`.** See "Authentication" above.
+- **`X-Tenant-Slug` decides which tenant the user is created in.** Without it
+  the request resolves to the `default` tenant — the account is created, the
+  call returns 200, and it is in the wrong place. A tenant subdomain sets this
+  implicitly once subdomains ship; today, on the apex host, send the header.
+- Body is exactly `{name, email, password}`.
+- Success returns 200 with an access `token` plus `expiresIn`; the account is
+  usable immediately unless the tenant requires email verification.
+
+Failures, all of which an integration should handle distinctly:
+
+| Status | `error` | Meaning |
+| --- | --- | --- |
+| 400 | `password_policy` | `message` lists every unmet rule. Default: ≥10 chars, upper, lower, digit, symbol. Per-tenant policy can be stricter. |
+| 400 | `bad_request` | Email already in use **for this tenant**. The same address may exist in another tenant. |
+| 404 | `not_found` | The tenant has `registrationEnabled: false`. Not a missing endpoint — self-service sign-up is switched off. |
+| 409 | `seat_limit_exceeded` | The tenant is at its `maxUsers` cap. Body carries `limit` and `current`. Deactivating a user frees a seat; seats count active users only. |
+| 429 | `too_many_requests` | Registration is rate-limited per caller. `retryAfterSeconds` says how long. |
+
 ## Key URLs
 
 - API base: `https://sso.weldforge.org`
@@ -80,7 +122,20 @@ cookies set after sign-in are scoped to the sign-in host.
 - Per-tenant SCIM 2.0 base: `https://sso.weldforge.org/scim/v2/{tenant-slug}`
 - Per-tenant PKI CA bundle: `https://sso.weldforge.org/t/{slug}/pki/ca.pem`
 - Per-tenant CRL: `https://sso.weldforge.org/t/{slug}/pki/crl.pem`
-- Per-tenant OCSP responder: `https://sso.weldforge.org/t/{slug}/pki/ocsp`
+- Per-tenant OCSP responder (POST): `https://sso.weldforge.org/t/{slug}/pki/ocsp`
+
+Two credentials that are easy to mix up:
+
+- **SCIM** does not accept `x-app-authorization`, and does not accept a
+  `wf_svc_*` service-account token. It authenticates an **app-client key**
+  (`wf_live_*`, from `POST /api/admin/app-clients`) sent as
+  `Authorization: Bearer`. The tenant slug in the URL must equal that key's
+  own tenant, otherwise the response is `401 tenant_mismatch`. The slug is
+  not optional: `/scim/v2/Users` without it is a 404.
+- **PKI** URLs answer only after that tenant has a CA
+  (`POST /api/admin/pki/ca`). Before that they return
+  `404 {"error":"not_found","message":"Tenant has no CA"}` — an
+  unprovisioned tenant, not a wrong URL.
 
 ## Docs
 
@@ -110,10 +165,12 @@ cookies set after sign-in are scoped to the sign-in host.
 
 An AI agent typically needs one of these flows:
 
-1. **Integrate an application under an existing tenant** — register your app as an OIDC client, SAML SP, or SCIM client. Needs a `wf_svc_*` token with `TENANT_ADMIN` role scoped to that tenant. Browser SPAs register as public clients (Authorization Code + PKCE, no secret) with `tokenEndpointAuthMethod: "none"` and a `webOrigins` allow-list that drives CORS on the tenant OIDC endpoints. See https://www.weldforge.org/agents.html#integrate.
-2. **Onboard a new tenant** — `POST /api/admin/tenants`. Needs a `wf_svc_*` token with `SUPER_ADMIN` role. See https://www.weldforge.org/agents.html#onboarding.
-3. **Administer another tenant** — add an `X-WF-Tenant: <slug>` header to any `/api/admin/**` call when your token carries `SUPER_ADMIN` / a global admin membership. The effective role is re-resolved per tenant and the access is audited. See https://www.weldforge.org/agents.html#cross-tenant.
-4. **Decommission a tenant** — `DELETE /api/admin/tenants/{id}` (find the numeric id via `GET /api/admin/tenants`). Needs a `wf_svc_*` token with `SUPER_ADMIN`. Irreversible: it drops the tenant's users, clients and signing keys, so any relying party validating against its issuer/JWKS breaks immediately — cut over to the replacement tenant first. See https://www.weldforge.org/agents.html#onboarding (B.4).
+1. **Point a tenant at an existing LDAP / Active Directory** — `POST /api/admin/tenants/{id}/ldap-providers`, then `.../test-connection` before anyone signs in. Users are provisioned locally on first successful bind. See https://www.weldforge.org/agents.html#integrate (A.4).
+2. **Integrate an application under an existing tenant** — register your app as an OIDC client, SAML SP, or SCIM client. Needs a `wf_svc_*` token with `TENANT_ADMIN` role scoped to that tenant. Browser SPAs register as public clients (Authorization Code + PKCE, no secret) with `tokenEndpointAuthMethod: "none"` and a `webOrigins` allow-list that drives CORS on the tenant OIDC endpoints. See https://www.weldforge.org/agents.html#integrate.
+3. **Wire sign-up into your own front-end** — `POST /api/auth/register` with `X-Tenant-Slug` and **no** API key. Full contract, including every failure status, under "New user sign-up" above and at https://www.weldforge.org/agents.html#signup.
+4. **Onboard a new tenant** — `POST /api/admin/tenants`. Needs a `wf_svc_*` token with `SUPER_ADMIN` role. See https://www.weldforge.org/agents.html#onboarding.
+5. **Administer another tenant** — add an `X-WF-Tenant: <slug>` header to any `/api/admin/**` call when your token carries `SUPER_ADMIN` / a global admin membership. The effective role is re-resolved per tenant and the access is audited. See https://www.weldforge.org/agents.html#cross-tenant.
+6. **Decommission a tenant** — `DELETE /api/admin/tenants/{id}` (find the numeric id via `GET /api/admin/tenants`). Needs a `wf_svc_*` token with `SUPER_ADMIN`. Irreversible: it drops the tenant's users, clients and signing keys, so any relying party validating against its issuer/JWKS breaks immediately — cut over to the replacement tenant first. See https://www.weldforge.org/agents.html#onboarding (B.4).
 
 ## Standards
 

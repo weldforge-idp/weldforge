@@ -25,6 +25,7 @@ class JwtServiceTest {
                 "test-secret-that-is-long-enough-for-hs256-signing-0123456789abcdef");
         ReflectionTestUtils.setField(jwt, "accessExpirationMs", 60_000L);
         ReflectionTestUtils.setField(jwt, "refreshExpirationMs", 600_000L);
+        ReflectionTestUtils.setField(jwt, "audience", "weldforge");
     }
 
     @Test
@@ -56,6 +57,62 @@ class JwtServiceTest {
     void accessToken_isNotAChallenge() {
         Claims claims = jwt.parse(jwt.generateAccessToken("alice@acme.test", 1L, "acme", false));
         assertThat(jwt.isMfaChallenge(claims)).isFalse();
+    }
+
+    @Test
+    @DisplayName("consent CSRF token carries purpose=consent_csrf, the user email as sub, and the tenant slug")
+    void consentCsrfToken_carriesExpectedClaims() {
+        String token = jwt.generateConsentCsrfToken("alice@acme.test", 42L, "acme");
+        Claims claims = jwt.parse(token);
+
+        assertThat(claims.getSubject()).isEqualTo("alice@acme.test");
+        assertThat(claims.get(JwtService.CLAIM_TENANT_SLUG)).isEqualTo("acme");
+        assertThat(claims.get(JwtService.CLAIM_PURPOSE)).isEqualTo(JwtService.PURPOSE_CONSENT_CSRF);
+        assertThat(jwt.isConsentCsrf(claims)).isTrue();
+    }
+
+    @Test
+    @DisplayName("purpose claims do not cross over: access/mfa tokens are not consent_csrf and vice versa")
+    void purposeClaims_areIsolated() {
+        Claims access = jwt.parse(jwt.generateAccessToken("alice@acme.test", 1L, "acme", false));
+        Claims mfa = jwt.parse(jwt.generateMfaChallengeToken(1L, 1L, "acme"));
+        Claims consent = jwt.parse(jwt.generateConsentCsrfToken("alice@acme.test", 1L, "acme"));
+
+        assertThat(jwt.isConsentCsrf(access)).isFalse();
+        assertThat(jwt.isConsentCsrf(mfa)).isFalse();
+        assertThat(jwt.isMfaChallenge(consent)).isFalse();
+    }
+
+    @Test
+    @DisplayName("access tokens carry the platform audience and pass the audience check (B-JWT-1)")
+    void accessToken_carriesPlatformAudience() {
+        Claims claims = jwt.parse(jwt.generateAccessToken("alice@acme.test", 1L, "acme", false));
+        assertThat(claims.getAudience()).contains("weldforge");
+        assertThat(jwt.hasValidAudience(claims)).isTrue();
+    }
+
+    @Test
+    @DisplayName("a token minted without the platform audience fails the audience check")
+    void tokenWithoutAudience_failsAudienceCheck() {
+        // A JwtService with no configured audience mints an audience-less token
+        // (e.g. a pre-deploy token, or another same-key minter).
+        JwtService noAud = new JwtService();
+        ReflectionTestUtils.setField(noAud, "secret",
+                "test-secret-that-is-long-enough-for-hs256-signing-0123456789abcdef");
+        ReflectionTestUtils.setField(noAud, "accessExpirationMs", 60_000L);
+        ReflectionTestUtils.setField(noAud, "refreshExpirationMs", 600_000L);
+
+        Claims claims = jwt.parse(noAud.generateAccessToken("alice@acme.test", 1L, "acme", false));
+        assertThat(claims.getAudience()).isNull();
+        // The audience-enforcing service rejects it.
+        assertThat(jwt.hasValidAudience(claims)).isFalse();
+    }
+
+    @Test
+    @DisplayName("mfa_challenge tokens carry no audience (only access tokens are platform-scoped)")
+    void mfaChallenge_hasNoAudience() {
+        Claims claims = jwt.parse(jwt.generateMfaChallengeToken(1L, 1L, "acme"));
+        assertThat(claims.getAudience()).isNull();
     }
 
     @Test

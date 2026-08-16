@@ -46,6 +46,7 @@ public class WebhookSubscriptionService {
         if (dto.getTargetUrl() == null || dto.getTargetUrl().isBlank()) {
             throw new IllegalArgumentException("targetUrl is required");
         }
+        requireSafeTargetUrl(dto.getTargetUrl());
         Tenant tenant = tenantAccessor.requireTenant();
         String secret = generateSecret();
 
@@ -70,7 +71,10 @@ public class WebhookSubscriptionService {
         tenantAccessor.requireTenantAdmin();
         WebhookSubscription sub = loadOwn(id);
         if (dto.getName() != null) sub.setName(dto.getName().trim());
-        if (dto.getTargetUrl() != null) sub.setTargetUrl(dto.getTargetUrl().trim());
+        if (dto.getTargetUrl() != null) {
+            requireSafeTargetUrl(dto.getTargetUrl());
+            sub.setTargetUrl(dto.getTargetUrl().trim());
+        }
         if (dto.getEventFilters() != null) sub.setEventFilters(dto.getEventFilters());
         if (dto.getEnabled() != null) sub.setEnabled(dto.getEnabled());
         if (dto.getMaxAttempts() != null) sub.setMaxAttempts(dto.getMaxAttempts());
@@ -92,6 +96,20 @@ public class WebhookSubscriptionService {
     public void delete(Long id) {
         tenantAccessor.requireTenantAdmin();
         repository.delete(loadOwn(id));
+    }
+
+    /**
+     * Reject a webhook target that points at an internal/loopback/metadata
+     * address or a non-http(s) scheme (SSRF, B-LEGACY-1) — fail fast at config
+     * time so the admin gets immediate feedback, in addition to the send-time
+     * guard in {@code JdkWebhookHttpClient}.
+     */
+    private static void requireSafeTargetUrl(String url) {
+        try {
+            tech.cwvermaak.weldforge.service.security.EgressGuard.validate(url);
+        } catch (tech.cwvermaak.weldforge.service.security.EgressNotAllowedException e) {
+            throw new IllegalArgumentException("targetUrl is not allowed: " + e.getMessage());
+        }
     }
 
     private WebhookSubscription loadOwn(Long id) {

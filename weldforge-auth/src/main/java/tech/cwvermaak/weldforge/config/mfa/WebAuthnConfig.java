@@ -25,7 +25,7 @@ public class WebAuthnConfig {
     @Value("${app.mfa.webauthn.rp-name:WeldForge}")
     private String rpName;
 
-    @Value("${app.mfa.webauthn.origins:http://localhost:4200,http://localhost:8080}")
+    @Value("${app.mfa.webauthn.origins:http://localhost:4200,http://localhost:8076}")
     private String originsCsv;
 
     @Bean

@@ -51,6 +51,7 @@ public class MfaService {
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
     private final TwilioService twilioService;
+    private final tech.cwvermaak.weldforge.repository.ConsumedMfaChallengeRepository consumedMfaChallengeRepository;
 
     private static final SecureRandom SMS_CODE_RNG = new SecureRandom();
     private static final long SMS_CODE_TTL_SECONDS = 300;
@@ -109,10 +110,14 @@ public class MfaService {
         if (factor.getType() != MfaFactorType.TOTP) {
             throw new IllegalArgumentException("Factor is not a TOTP factor");
         }
-        if (!totpService.verify(factor.getTotpSecretEnc(), code)) {
+        java.util.OptionalLong step = totpService.matchingStep(factor.getTotpSecretEnc(), code);
+        if (step.isEmpty()) {
             throw new BadCredentialsException("Invalid code");
         }
         factor.setVerified(true);
+        // Record the activation step so the same code can't be replayed for the
+        // first login (RFC 6238 anti-replay).
+        factor.setLastTotpStep(step.getAsLong());
         factor.setLastUsedAt(LocalDateTime.now());
         auditService.recordUserAction(AuditEventTypes.MFA_FACTOR_ACTIVATE, user,
                 AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factor.getId()),
@@ -294,6 +299,13 @@ public class MfaService {
         if (!jwtService.isMfaChallenge(claims)) {
             throw new AccessDeniedException("Not an MFA challenge token");
         }
+        // Single-use guard (B-MFA-2): a challenge token already spent on a
+        // successful login cannot be replayed. Legacy tokens minted before the
+        // jti was added (during a deploy rollover) have no id — skip the check.
+        String jti = claims.getId();
+        if (jti != null && !jti.isBlank() && consumedMfaChallengeRepository.existsById(jti)) {
+            throw new AccessDeniedException("MFA challenge already used");
+        }
         Long userId;
         try {
             userId = Long.valueOf(claims.getSubject());
@@ -302,6 +314,35 @@ public class MfaService {
         }
         return userRepository.findById(userId)
                 .orElseThrow(() -> new AccessDeniedException("User no longer exists"));
+    }
+
+    /**
+     * Mark a challenge token as spent (B-MFA-2). Call this exactly once, after
+     * the second factor has been verified, so the same token cannot complete
+     * login again. No-op for tokens without a jti (legacy) or already recorded.
+     */
+    @Transactional
+    public void consumeChallenge(String challengeToken) {
+        if (challengeToken == null || challengeToken.isBlank()) return;
+        Claims claims;
+        try {
+            claims = jwtService.parse(challengeToken);
+        } catch (JwtException | IllegalArgumentException e) {
+            return;
+        }
+        String jti = claims.getId();
+        if (jti == null || jti.isBlank()) return;
+        if (consumedMfaChallengeRepository.existsById(jti)) return;
+        LocalDateTime expiresAt = claims.getExpiration() == null
+                ? LocalDateTime.now().plusMinutes(10)
+                : LocalDateTime.ofInstant(claims.getExpiration().toInstant(),
+                        java.time.ZoneId.systemDefault());
+        consumedMfaChallengeRepository.save(
+                tech.cwvermaak.weldforge.model.ConsumedMfaChallenge.builder()
+                        .jti(jti)
+                        .expiresAt(expiresAt)
+                        .consumedAt(LocalDateTime.now())
+                        .build());
     }
 
     public void recordChallengeFailure(User user, MfaFactorType type) {
@@ -375,8 +416,18 @@ public class MfaService {
     private boolean verifyTotp(User user, String code) {
         if (code == null || code.isBlank()) return false;
         for (MfaFactor f : mfaFactorRepository.findByUserIdAndType(user.getId(), MfaFactorType.TOTP)) {
-            if (Boolean.TRUE.equals(f.getEnabled()) && Boolean.TRUE.equals(f.getVerified())
-                    && totpService.verify(f.getTotpSecretEnc(), code)) {
+            if (Boolean.TRUE.equals(f.getEnabled()) && Boolean.TRUE.equals(f.getVerified())) {
+                java.util.OptionalLong step = totpService.matchingStep(f.getTotpSecretEnc(), code);
+                if (step.isEmpty()) continue;
+                long s = step.getAsLong();
+                // RFC 6238 anti-replay: reject a code whose time-step was already
+                // accepted (covers replay of the same code within its ±1 window).
+                if (f.getLastTotpStep() != null && s <= f.getLastTotpStep()) {
+                    log.warn("Rejected replayed TOTP code for factor {} (step {} <= last accepted {})",
+                            f.getId(), s, f.getLastTotpStep());
+                    continue;
+                }
+                f.setLastTotpStep(s);
                 f.setLastUsedAt(LocalDateTime.now());
                 return true;
             }

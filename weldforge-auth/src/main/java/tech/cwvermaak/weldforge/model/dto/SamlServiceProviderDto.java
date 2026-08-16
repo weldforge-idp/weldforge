@@ -22,4 +22,10 @@ public class SamlServiceProviderDto {
     private Boolean enabled;
     /** PRD SAM-04. When true and spCertificate is set, the IdP returns EncryptedAssertion. */
     private Boolean encryptAssertions;
+    /**
+     * B-SAML-1(a). When true (and spCertificate is set), the IdP verifies the
+     * XML signature on this SP's inbound AuthnRequest / LogoutRequest messages
+     * and rejects unsigned or invalid ones.
+     */
+    private Boolean wantAuthnRequestSigned;
 }

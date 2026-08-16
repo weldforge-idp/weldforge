@@ -26,6 +26,10 @@ api:
     maxReplicas: 6
     targetCPUUtilizationPercentage: 70
   env:
+    # Refuse to start if JWT_SECRET / APP_CRYPTO_SECRET fell through to the
+    # source-committed dev defaults — i.e. the Secret Manager injection below
+    # was missed. See SecretHygieneValidator.
+    APP_REQUIRE_SECURE_SECRETS: "true"
     # Datasource hits the Cloud SQL Auth Proxy sidecar on localhost.
     SPRING_DATASOURCE_URL: "jdbc:postgresql://127.0.0.1:5432/weldforge"
     SPRING_DATASOURCE_USERNAME: "wfuser"

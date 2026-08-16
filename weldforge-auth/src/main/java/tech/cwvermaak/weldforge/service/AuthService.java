@@ -55,6 +55,7 @@ public class AuthService {
     private final tech.cwvermaak.weldforge.service.crm.CrmProvisioningService crmProvisioningService;
     private final PublicHostProperties publicHost;
     private final FailedLoginRecorder failedLoginRecorder;
+    private final TenantSeatService seatService;
 
     @Transactional
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
@@ -68,6 +69,10 @@ public class AuthService {
             throw new EntityNotFoundException("Registration is not available for this tenant");
         }
 
+        // B-LEGACY-2: reject markup/control chars in the display name (used as
+        // username + surfaced in SAML attributes / emails).
+        validateDisplayName(request.getName());
+
         // Pre-check password policy before we allocate a user row.
         passwordPolicyService.validate(request.getPassword());
 
@@ -77,6 +82,10 @@ public class AuthService {
         if (userRepository.findByTenantIdAndUsernameIgnoreCase(tenant.getId(), request.getName()).isPresent()) {
             throw new IllegalArgumentException("Username already in use for this tenant");
         }
+
+        // Seat cap — checked after the duplicate lookups so re-registering an
+        // existing email still reports the more useful error.
+        seatService.assertCapacity(tenant);
 
         User user = User.builder()
                 .tenant(tenant)
@@ -96,6 +105,42 @@ public class AuthService {
     }
 
     @Transactional
+    /**
+     * B-AUTH-2: re-hash the password at the current encoder strength when the
+     * stored hash is weaker (e.g. a lower BCrypt cost from an older import).
+     * Runs only on a verified login, so the plaintext is already in hand.
+     * Package-private for testing.
+     */
+    void maybeUpgradePassword(User user, String rawPassword) {
+        if (user.getPassword() != null && passwordEncoder.upgradeEncoding(user.getPassword())) {
+            user.setPassword(passwordEncoder.encode(rawPassword));
+            userRepository.save(user);
+        }
+    }
+
+    private static final int MAX_DISPLAY_NAME = 255;
+
+    /**
+     * B-LEGACY-2: reject display names containing markup or control characters
+     * before they're stored — they flow into non-escaping sinks (SAML assertion
+     * attributes, email templates). Package-private for testing.
+     */
+    static void validateDisplayName(String name) {
+        if (name == null) return;
+        if (name.length() > MAX_DISPLAY_NAME) {
+            throw new IllegalArgumentException("name is too long (max " + MAX_DISPLAY_NAME + ")");
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c == '<' || c == '>') {
+                throw new IllegalArgumentException("name must not contain '<' or '>'");
+            }
+            if (Character.isISOControl(c)) {
+                throw new IllegalArgumentException("name must not contain control characters");
+            }
+        }
+    }
+
     public AuthResponseDto login(LoginRequestDto request, HttpServletRequest httpRequest,
                                  HttpServletResponse response) {
         Tenant tenant = currentTenant();
@@ -144,6 +189,10 @@ public class AuthService {
             failedLoginRecorder.badPassword(tenant, user, request.getIdentifier());
             throw new BadCredentialsException("Invalid credentials");
         }
+
+        // B-AUTH-2: transparently migrate a legacy / weaker password hash to the
+        // current encoder strength now that we have the plaintext in hand.
+        maybeUpgradePassword(user, request.getPassword());
 
         lockoutService.recordSuccess(user);
 
@@ -339,6 +388,7 @@ public class AuthService {
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
         if (newName != null && !newName.isBlank() && !newName.equals(user.getName())) {
+            validateDisplayName(newName);
             user.setName(newName.trim());
         }
         if (newEmail != null && !newEmail.isBlank()
@@ -429,7 +479,7 @@ public class AuthService {
     private void writeRefreshCookie(HttpServletResponse response, String rawToken, Long tenantRefreshTtlMs) {
         Cookie cookie = new Cookie(REFRESH_COOKIE, rawToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(publicHost.isSecureCookies());
         cookie.setPath("/api/auth");
         // Scope to the public base-domain so the cookie set on
         // {slug}.sso.weldforge.org is also sent when /api/auth/refresh runs
@@ -452,7 +502,7 @@ public class AuthService {
                 tech.cwvermaak.weldforge.config.JwtAuthenticationFilter.SESSION_COOKIE,
                 accessToken);
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(publicHost.isSecureCookies());
         // SameSite=Lax so the cookie is sent on top-level redirects (the
         // OIDC /authorize flow lands here from a relying party). Strict
         // would block legitimate cross-site browser navigation.
@@ -483,11 +533,10 @@ public class AuthService {
 
     private static String clientIp(HttpServletRequest request) {
         if (request == null) return null;
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma == -1 ? forwarded : forwarded.substring(0, comma)).trim();
-        }
+        // B-AUTH-1: trust only the RemoteIpValve-resolved address
+        // (server.forward-headers-strategy=native), never the spoofable raw
+        // X-Forwarded-For leftmost token — this IP is stored on refresh-token
+        // records, so a spoofed value would poison the session audit trail.
         return request.getRemoteAddr();
     }
 

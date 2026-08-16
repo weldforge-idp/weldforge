@@ -52,9 +52,19 @@ cd weldforge/weldforge-auth
 docker compose up -d postgres
 ./mvnw spring-boot:run
 # ──
-# Admin portal seeded at http://localhost:8080 with bootstrap credentials
-# logged to stdout. Swagger UI at http://localhost:8080/swagger-ui/index.html
-# (requires x-app-authorization header — see the tutorials page).
+# The API is now on http://localhost:8076. Nothing seeds a user, so there are
+# no credentials to log in with yet — create the first one, then promote it:
+#
+#   curl -X POST http://localhost:8076/api/auth/register \
+#     -H "X-Tenant-Slug: default" -H "Content-Type: application/json" \
+#     -d '{"name":"You","email":"you@example.com","password":"CorrectHorse-9!"}'
+#
+#   APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL=you@example.com ./mvnw spring-boot:run
+#
+# That promotes the account to SUPER_ADMIN on start-up; sign in again
+# afterwards, because the promotion invalidates earlier tokens. Swagger UI is
+# at http://localhost:8076/swagger-ui/index.html and needs an
+# x-app-authorization key — see the tutorials page.
 ```
 
 Full walkthrough: [weldforge.org/tutorials](https://www.weldforge.org/tutorials.html)
@@ -95,7 +105,7 @@ App ────────► │  │    Resilience4j circuit breakers       
 SP ─────────► │  └──────────────────────────────────────────────┘ │
               │                                                   │
               │  ┌─ Postgres 14+ ──────────────────────────────┐ │
-              │  │    Flyway-managed schema (V34 migrations)    │ │
+              │  │    Flyway-managed schema (V44 migrations)    │ │
               │  │    Tenant-scoped queries enforced at DAO     │ │
               │  └──────────────────────────────────────────────┘ │
               │                                                   │
@@ -114,13 +124,13 @@ Runs as one jar + one database. Scales horizontally behind a load balancer
 | Backend | Spring Boot 3.5.8, Java 25, JPA/Hibernate 6 |
 | Database | PostgreSQL 14+, Flyway migrations |
 | SAML | OpenSAML 4 + Spring Security SAML |
-| OAuth2 / OIDC | Spring Authorization Server + custom issuer |
+| OAuth2 / OIDC | Hand-rolled issuer (JJWT-signed; no Spring Authorization Server) |
 | MFA | Custom TOTP, Yubico WebAuthn, Twilio SMS |
 | PKI | Bouncy Castle (CA / CRL / OCSP / client certs) |
 | Payments | Stripe (first gateway; abstraction supports Paddle / PayFast / Yoco / Peach) |
 | Admin portal | Angular 21, TypeScript, served by nginx |
 | Container | Docker / Kubernetes manifests under `infrastructure/` |
-| Test | JUnit 5 + Cucumber (134 BDD scenarios, 819 steps) |
+| Test | JUnit 5 + Cucumber (153 BDD scenarios, 684 steps) |
 | Observability | Prometheus, Resilience4j, Spring Actuator |
 
 ## Deployment options
@@ -140,7 +150,7 @@ Six supported topologies, [documented in full here](https://www.weldforge.org/de
 
 ```
 weldforge/
-├── weldforge-auth/              # Spring Boot backend (Java 21)
+├── weldforge-auth/              # Spring Boot backend (Java 25)
 │   ├── src/main/java/.../            # Production code
 │   ├── src/main/resources/           # application.yml + Flyway migrations
 │   └── src/test/java/.../bdd/        # Cucumber BDD coverage
@@ -148,16 +158,35 @@ weldforge/
 ├── weldforge-www/               # Marketing site (github.com/weldforge-idp -> weldforge.org)
 ├── infrastructure/
 │   └── helm/weldforge/             # Helm chart deployed to GKE Autopilot (weldforge-gke, africa-south1)
-├── SECURITY_AUDIT_2026-04-15.md  # Independent security audit (April 2026)
-└── VALIDATION_REPORT_2026-04-17.md
+├── SECURITY_AUDIT_2026-04-15.md  # Internal security review — Phase 1 (passive)
+└── VALIDATION_REPORT_2026-04-17.md  # Follow-up validation pass
 ```
 
 ## Security
 
-WeldForge went through an independent security audit in April 2026 covering
-OWASP Top 10, authentication, authorisation, data protection, cryptographic
-primitives and dependency SCA. See [SECURITY_AUDIT_2026-04-15.md](SECURITY_AUDIT_2026-04-15.md)
-for the full report.
+WeldForge underwent an internal security review in April 2026 (Phase 1, passive
+analysis) covering OWASP Top 10, authentication, authorisation, data protection,
+cryptographic primitives and dependency SCA, followed by a validation pass. See
+[SECURITY_AUDIT_2026-04-15.md](SECURITY_AUDIT_2026-04-15.md) and
+[VALIDATION_REPORT_2026-04-17.md](VALIDATION_REPORT_2026-04-17.md). A full
+independent third-party penetration test has **not** yet been completed; the
+hardening backlog is tracked in
+[docs/security/hardening-backlog.md](docs/security/hardening-backlog.md), with a
+consolidated [threat model](docs/threat-model.md).
+
+**Recent hardening (June 2026).** Secret-hygiene boot validation (fail-fast on
+weak/default secrets); OAuth2 consent CSRF token, deny-path open-redirect fix and
+scope enforcement; constant-time client-secret checks and JWT clock-skew
+tolerance; MFA TOTP anti-replay and single-use challenge tokens; tenant-scoped
+admin-role assignment; SAML inbound XXE-hardened parsing and per-SP AuthnRequest
+signature verification. See the backlog (F1–F12) for details.
+
+**Operating WeldForge:**
+[Configuration reference](docs/security/configuration-reference.md) ·
+[Production bootstrap](docs/runbooks/production-bootstrap.md) ·
+[Key rotation](docs/runbooks/key-rotation.md) ·
+[Incident response](docs/runbooks/incident-response.md) ·
+[Relying-party onboarding](docs/integrations/relying-party-onboarding.md).
 
 To report a security issue, email **security@weldforge.org**. Do not open a
 public GitHub issue. We acknowledge within 48 hours and publish a CVE with

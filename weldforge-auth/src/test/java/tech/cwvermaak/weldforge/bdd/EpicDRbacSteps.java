@@ -121,6 +121,16 @@ public class EpicDRbacSteps {
             Long id = inv.getArgument(0);
             return users.values().stream().filter(u -> id.equals(u.getId())).findFirst();
         });
+        // Tenant-scoped lookup used by setAdminRole/setUserRole/etc. — returns a
+        // user only when both id and tenant match (mirrors the real query).
+        when(userRepository.findByIdAndTenantId(anyLong(), anyLong())).thenAnswer(inv -> {
+            Long id = inv.getArgument(0);
+            Long tid = inv.getArgument(1);
+            return users.values().stream()
+                    .filter(u -> id.equals(u.getId())
+                            && u.getTenant() != null && tid.equals(u.getTenant().getId()))
+                    .findFirst();
+        });
         when(userRepository.findByTenant_SlugAndEmailIgnoreCase(anyString(), anyString())).thenAnswer(inv -> {
             String slug = inv.getArgument(0);
             String email = inv.getArgument(1);
@@ -168,7 +178,8 @@ public class EpicDRbacSteps {
                 auditService, publicHost);
         adminService = new AdminService(tenantAccessor, roleRepository, userRepository,
                 envRepo, appClientRepo, mfaService, auditService,
-                mock(tech.cwvermaak.weldforge.service.PasswordResetService.class));
+                mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),
+                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepository));
         oidcClientService = new OidcClientService(tenantAccessor, oidcClientRepository);
     }
 

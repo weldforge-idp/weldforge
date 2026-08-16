@@ -142,7 +142,8 @@ public class TenantBrandingSteps {
                 mock(LdapUpstreamService.class),
                 mock(CrmProvisioningService.class),
                 publicHost,
-                mock(FailedLoginRecorder.class));
+                mock(FailedLoginRecorder.class),
+                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepository));
 
         passwordResetService = new PasswordResetService(
                 userRepository,

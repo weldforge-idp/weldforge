@@ -100,13 +100,37 @@ class OidcIntrospectionServiceTest {
                 "nonce-1", "https://weldforge.test/t/acme");
 
         Map<String, Object> result = introspectionService.introspect(
-                tokens.accessToken(), acme, "https://weldforge.test/t/acme");
+                tokens.accessToken(), acme, "https://weldforge.test/t/acme", "acme-app");
 
         assertThat(result).containsEntry("active", true);
         assertThat(result).containsEntry("client_id", "acme-app");
         assertThat(result).containsEntry("sub", "42");
         assertThat(result.get("scope")).isEqualTo("openid email");
         assertThat(result).containsKey("exp");
+    }
+
+    @Test
+    @DisplayName("a token introspected by a different client returns inactive (B-OIDC-3)")
+    void otherClient_isInactive() {
+        IssuedTokens tokens = tokenService.issueForCodeExchange(
+                acme, client, alice, List.of("openid"), null, "https://weldforge.test/t/acme");
+
+        Map<String, Object> result = introspectionService.introspect(
+                tokens.accessToken(), acme, "https://weldforge.test/t/acme", "other-app");
+
+        assertThat(result).containsEntry("active", false);
+    }
+
+    @Test
+    @DisplayName("a null caller client_id skips the per-client check (back-compat)")
+    void nullCaller_skipsClientCheck() {
+        IssuedTokens tokens = tokenService.issueForCodeExchange(
+                acme, client, alice, List.of("openid"), null, "https://weldforge.test/t/acme");
+
+        Map<String, Object> result = introspectionService.introspect(
+                tokens.accessToken(), acme, "https://weldforge.test/t/acme", null);
+
+        assertThat(result).containsEntry("active", true);
     }
 
     @Test
@@ -117,7 +141,7 @@ class OidcIntrospectionServiceTest {
                 "https://weldforge.test/t/acme");
 
         Map<String, Object> result = introspectionService.introspect(
-                tokens.accessToken(), acme, "https://weldforge.test/t/globex");
+                tokens.accessToken(), acme, "https://weldforge.test/t/globex", "acme-app");
 
         assertThat(result).containsEntry("active", false);
     }
@@ -131,7 +155,7 @@ class OidcIntrospectionServiceTest {
         revokedHashes.add(OidcIntrospectionService.hash(tokens.accessToken()));
 
         Map<String, Object> result = introspectionService.introspect(
-                tokens.accessToken(), acme, "https://weldforge.test/t/acme");
+                tokens.accessToken(), acme, "https://weldforge.test/t/acme", "acme-app");
 
         assertThat(result).containsEntry("active", false);
     }
@@ -140,16 +164,16 @@ class OidcIntrospectionServiceTest {
     @DisplayName("garbage input returns inactive without throwing")
     void garbageToken_isInactive() {
         Map<String, Object> result = introspectionService.introspect(
-                "not-a-jwt", acme, "https://weldforge.test/t/acme");
+                "not-a-jwt", acme, "https://weldforge.test/t/acme", "acme-app");
         assertThat(result).containsEntry("active", false);
     }
 
     @Test
     @DisplayName("null and empty tokens return inactive")
     void nullToken_isInactive() {
-        assertThat(introspectionService.introspect(null, acme, "https://weldforge.test/t/acme"))
+        assertThat(introspectionService.introspect(null, acme, "https://weldforge.test/t/acme", "acme-app"))
                 .containsEntry("active", false);
-        assertThat(introspectionService.introspect("", acme, "https://weldforge.test/t/acme"))
+        assertThat(introspectionService.introspect("", acme, "https://weldforge.test/t/acme", "acme-app"))
                 .containsEntry("active", false);
     }
 
@@ -163,7 +187,7 @@ class OidcIntrospectionServiceTest {
                 "https://weldforge.test/t/acme");
 
         Map<String, Object> result = introspectionService.introspect(
-                tokens.accessToken(), acme, "https://weldforge.test/t/acme");
+                tokens.accessToken(), acme, "https://weldforge.test/t/acme", "acme-app");
 
         assertThat(result).containsEntry("active", false);
     }
