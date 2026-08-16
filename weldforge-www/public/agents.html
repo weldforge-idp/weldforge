@@ -445,7 +445,49 @@ curl -X POST $HOST/scim/v2/$TENANT/Groups \
     -d '{"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],
          "displayName":"engineering"}'</code></pre>
 
-        <h3>A.4 — Subscribe to lifecycle webhooks</h3>
+        <h3>A.4 — Point a tenant at an existing LDAP / Active Directory</h3>
+        <p>
+            Advertised on the product pages but previously undocumented here.
+            Users authenticate against the directory you already run; WeldForge
+            queries it and provisions a local record on first successful login,
+            so a seat is consumed at that point (see the seat cap under
+            sign-up). The endpoints hang off the tenant, not off a top-level
+            /api/admin/ldap path:
+        </p>
+        <pre><code># List, create, update, delete.
+curl $HOST/api/admin/tenants/$TENANT_ID/ldap-providers \
+    -H "x-app-authorization: $TOKEN"
+
+curl -X POST $HOST/api/admin/tenants/$TENANT_ID/ldap-providers \
+    -H "x-app-authorization: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name":              "corp-ad",
+      "providerType":      "ACTIVE_DIRECTORY",
+      "url":               "ldaps://dc1.corp.example:636",
+      "bindDn":            "CN=svc-weldforge,OU=Service,DC=corp,DC=example",
+      "bindPassword":      "…",
+      "userBaseDn":        "OU=Staff,DC=corp,DC=example",
+      "userSearchFilter":  "(sAMAccountName={0})",
+      "emailAttribute":    "mail",
+      "nameAttribute":     "displayName",
+      "usernameAttribute": "sAMAccountName",
+      "startTls":          false
+    }'
+
+# Verify the bind before anyone tries to sign in.
+curl -X POST $HOST/api/admin/tenants/$TENANT_ID/ldap-providers/$ID/test-connection \
+    -H "x-app-authorization: $TOKEN"</code></pre>
+        <p>
+            <code>$TENANT_ID</code> is the numeric tenant id from
+            <code>GET /api/admin/tenants</code>, not the slug.
+            <code>test-connection</code> returns
+            <code>{"success": true|false}</code> — call it before pointing
+            users at the tenant, because a bad bind otherwise surfaces as a
+            failed login with nothing to distinguish it from a wrong password.
+        </p>
+
+        <h3>A.5 — Subscribe to lifecycle webhooks</h3>
         <pre><code>curl -X POST $HOST/api/admin/webhooks \
     -H "x-app-authorization: $TOKEN" \
     -H "Content-Type: application/json" \

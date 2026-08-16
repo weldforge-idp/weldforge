@@ -165,11 +165,12 @@ Two credentials that are easy to mix up:
 
 An AI agent typically needs one of these flows:
 
-1. **Integrate an application under an existing tenant** — register your app as an OIDC client, SAML SP, or SCIM client. Needs a `wf_svc_*` token with `TENANT_ADMIN` role scoped to that tenant. Browser SPAs register as public clients (Authorization Code + PKCE, no secret) with `tokenEndpointAuthMethod: "none"` and a `webOrigins` allow-list that drives CORS on the tenant OIDC endpoints. See https://www.weldforge.org/agents.html#integrate.
-2. **Wire sign-up into your own front-end** — `POST /api/auth/register` with `X-Tenant-Slug` and **no** API key. Full contract, including every failure status, under "New user sign-up" above and at https://www.weldforge.org/agents.html#signup.
-3. **Onboard a new tenant** — `POST /api/admin/tenants`. Needs a `wf_svc_*` token with `SUPER_ADMIN` role. See https://www.weldforge.org/agents.html#onboarding.
-4. **Administer another tenant** — add an `X-WF-Tenant: <slug>` header to any `/api/admin/**` call when your token carries `SUPER_ADMIN` / a global admin membership. The effective role is re-resolved per tenant and the access is audited. See https://www.weldforge.org/agents.html#cross-tenant.
-5. **Decommission a tenant** — `DELETE /api/admin/tenants/{id}` (find the numeric id via `GET /api/admin/tenants`). Needs a `wf_svc_*` token with `SUPER_ADMIN`. Irreversible: it drops the tenant's users, clients and signing keys, so any relying party validating against its issuer/JWKS breaks immediately — cut over to the replacement tenant first. See https://www.weldforge.org/agents.html#onboarding (B.4).
+1. **Point a tenant at an existing LDAP / Active Directory** — `POST /api/admin/tenants/{id}/ldap-providers`, then `.../test-connection` before anyone signs in. Users are provisioned locally on first successful bind. See https://www.weldforge.org/agents.html#integrate (A.4).
+2. **Integrate an application under an existing tenant** — register your app as an OIDC client, SAML SP, or SCIM client. Needs a `wf_svc_*` token with `TENANT_ADMIN` role scoped to that tenant. Browser SPAs register as public clients (Authorization Code + PKCE, no secret) with `tokenEndpointAuthMethod: "none"` and a `webOrigins` allow-list that drives CORS on the tenant OIDC endpoints. See https://www.weldforge.org/agents.html#integrate.
+3. **Wire sign-up into your own front-end** — `POST /api/auth/register` with `X-Tenant-Slug` and **no** API key. Full contract, including every failure status, under "New user sign-up" above and at https://www.weldforge.org/agents.html#signup.
+4. **Onboard a new tenant** — `POST /api/admin/tenants`. Needs a `wf_svc_*` token with `SUPER_ADMIN` role. See https://www.weldforge.org/agents.html#onboarding.
+5. **Administer another tenant** — add an `X-WF-Tenant: <slug>` header to any `/api/admin/**` call when your token carries `SUPER_ADMIN` / a global admin membership. The effective role is re-resolved per tenant and the access is audited. See https://www.weldforge.org/agents.html#cross-tenant.
+6. **Decommission a tenant** — `DELETE /api/admin/tenants/{id}` (find the numeric id via `GET /api/admin/tenants`). Needs a `wf_svc_*` token with `SUPER_ADMIN`. Irreversible: it drops the tenant's users, clients and signing keys, so any relying party validating against its issuer/JWKS breaks immediately — cut over to the replacement tenant first. See https://www.weldforge.org/agents.html#onboarding (B.4).
 
 ## Standards
 
