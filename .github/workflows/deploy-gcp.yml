@@ -2,15 +2,33 @@ name: deploy-gcp
 
 # Builds weldforge-auth + weldforge-admin-portal images, pushes to GCP
 # Artifact Registry, then Helm-upgrades the GKE Autopilot release.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# DORMANT as of 2026-08-16 — the GCP environment is no longer running.
+#
+# The automatic push trigger is removed. Every run since 2026-06-05 has failed
+# at the first step, "Build & push backend image":
+#
+#     denied: This API method requires billing to be enabled.
+#     Please enable billing on project #42633983307
+#
+# The failure went unnoticed for two months because nothing touched the deploy
+# paths in that window; merging #73 was the first push to trigger it, and #75
+# failed identically. Left on the push trigger, every merge to main would now
+# fail a required-looking check for a target that no longer exists.
+#
+# The workflow is kept rather than deleted: it documents the working GCP
+# topology (Artifact Registry + GKE Autopilot + Workload Identity Federation +
+# Secret Manager) and is the starting point if the estate is rebuilt or ported.
+#
+# workflow_dispatch is retained deliberately, so it can still be run by hand
+# without editing this file. It will keep failing until billing is restored.
+#
+# NOTE: merges to main no longer deploy anything. Anything merged while this is
+# dormant is on main but NOT running anywhere.
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'weldforge-auth/**'
-      - 'weldforge-admin-portal/**'
-      - 'infrastructure/helm/weldforge/**'
-      - '.github/workflows/deploy-gcp.yml'
   workflow_dispatch:
 
 env:
