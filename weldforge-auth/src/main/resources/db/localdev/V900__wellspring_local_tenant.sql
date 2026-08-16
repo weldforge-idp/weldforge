@@ -45,12 +45,19 @@ SELECT 'SUPERADMIN',
  WHERE t.slug = 'wellspring'
 ON CONFLICT (tenant_id, lower(name)) DO NOTHING;
 
--- Bootstrap admin. admin_role is what actually drives authorization —
+-- Bootstrap admin. SUPER_ADMIN rather than TENANT_ADMIN: locally this account
+-- has to be able to mint the service account the dashboard's Users page uses,
+-- and Weldforge reserves that, invitations and admin-role changes for a real
+-- super admin. The global admin_membership row below is what makes it real —
+-- a per-tenant SUPER_ADMIN is downgraded to TENANT_ADMIN by
+-- TenantAccessor.effectiveRole, so the row alone is what carries the authority.
+--
+-- admin_role is what actually drives authorization —
 -- AuthService stamps the JWT `adm` claim from it and JwtAuthenticationFilter
 -- prefers that claim over the legacy is_super_admin boolean, so setting the
 -- boolean alone would leave the user with no admin rights at all.
--- TENANT_ADMIN (not SUPER_ADMIN) is the correct level: this account
--- administers the Wellspring tenant, not the WeldForge platform.
+-- This is a local-dev seed only, so platform-level authority is acceptable
+-- here; a real deployment would provision a tenant admin instead.
 INSERT INTO users (tenant_id, username, email, password, name,
                    provider, provider_id, role_id,
                    email_verified, admin_role, is_super_admin, active)
@@ -61,10 +68,21 @@ SELECT t.id,
        'Wellspring Admin',
        'LOCAL', 'local',
        r.id,
-       true, 'TENANT_ADMIN', false, true
+       true, 'SUPER_ADMIN', true, true
   FROM tenants t
   JOIN roles r
     ON r.tenant_id = t.id
    AND lower(r.name) = 'superadmin'
  WHERE t.slug = 'wellspring'
 ON CONFLICT (tenant_id, lower(email)) DO NOTHING;
+
+-- Global admin membership (tenant_id NULL) is what Weldforge treats as genuine
+-- platform SUPER_ADMIN. Without it the account is downgraded to TENANT_ADMIN
+-- whenever it acts on a tenant, and cannot mint a SUPER_ADMIN service account.
+INSERT INTO admin_membership (user_id, tenant_id, admin_role)
+SELECT u.id, NULL, 'SUPER_ADMIN'
+  FROM users u
+  JOIN tenants t ON t.id = u.tenant_id
+ WHERE t.slug = 'wellspring'
+   AND lower(u.email) = 'info@wellspring.org.za'
+ON CONFLICT DO NOTHING;
