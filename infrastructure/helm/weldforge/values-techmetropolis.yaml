@@ -1,0 +1,98 @@
+# ============================================================
+# Dedicated WeldForge instance for the Tech Metropolis trio.
+#
+# Consumers: Safe Space, Commentalk, Krusty (+ the Commons
+# microservice), all on the single tenant slug `techmetropolis`.
+#
+# This is a SEPARATE Helm release in a SEPARATE project from the
+# shared weldforge instance. The tenant slug is deliberately kept
+# as `techmetropolis` so no consumer has to change its
+# `X-Tenant-Slug` header. What changes is the base URL and the
+# HMAC secret. See DEPLOY-TECHMETROPOLIS.md before applying.
+#
+# Apply with:
+#   helm upgrade --install weldforge-tm infrastructure/helm/weldforge \
+#     --namespace sso --create-namespace \
+#     -f infrastructure/helm/weldforge/values-techmetropolis.yaml
+# ============================================================
+
+global:
+  namespace: sso
+
+api:
+  image:
+    repository: africa-south1-docker.pkg.dev/techmetropolis-501911/images/weldforge-auth
+    # Pinned at deploy time by --set api.image.tag=<12-char sha>.
+    tag: "latest"
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  env:
+    APP_REQUIRE_SECURE_SECRETS: "true"
+    SPRING_DATASOURCE_URL: "jdbc:postgresql://127.0.0.1:5432/weldforge"
+    SPRING_DATASOURCE_USERNAME: "wfuser"
+    APP_KEY_ROTATION_ENABLED: "true"
+    APP_KEY_ROTATION_MAX_AGE_DAYS: "90"
+    # Drives Host-based tenant resolution (TenantResolverFilter) and the
+    # password-reset link, which is built as
+    # https://techmetropolis.sso.techmetropolis.co.za/reset-password?token=...
+    # The wildcard cert below must cover that subdomain.
+    APP_PUBLIC_BASE_DOMAIN: "sso.techmetropolis.co.za"
+    APP_PUBLIC_SCHEME: "https"
+    APP_PUBLIC_RESERVED_LABELS: "www,api,admin,app,mail,static"
+    APP_PUBLIC_SLUG_HOLDBACK_DAYS: "90"
+  # Real values injected at deploy time from Secret Manager in
+  # techmetropolis-501911. NEVER commit real values here.
+  secrets:
+    SPRING_DATASOURCE_PASSWORD: ""
+    JWT_SECRET: ""
+    APP_CRYPTO_SECRET: ""
+  cloudsql:
+    enabled: true
+    connectionName: techmetropolis-501911:africa-south1:weldforge-tm-db
+    proxyImage: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+    port: 5432
+  serviceAccount:
+    create: true
+    name: sso-api
+    gcpServiceAccount: sso-api@techmetropolis-501911.iam.gserviceaccount.com
+
+frontend:
+  image:
+    repository: africa-south1-docker.pkg.dev/techmetropolis-501911/images/weldforge-admin-portal
+    tag: "latest"
+  replicas: 2
+  ingress:
+    enabled: true
+    staticIpName: sso-tm-frontend-ip
+    managedCert:
+      enabled: true
+      name: sso-tm-frontend-cert
+      domains:
+        - sso.techmetropolis.co.za
+
+postgres:
+  enabled: false
+
+monitoring:
+  serviceMonitor:
+    enabled: false
+  prometheusRules:
+    enabled: false
+
+# Apex for the admin portal / OIDC endpoints, the wildcard for the
+# per-tenant auth subdomain, plus the three consumer app origins.
+cors:
+  allowedOrigins: "https://sso.techmetropolis.co.za,https://*.sso.techmetropolis.co.za,https://api.techmetropolis.co.za"
+
+mail:
+  host: smtp.sendgrid.net
+  port: 587
+  username: apikey
+  from: no-reply@techmetropolis.co.za
+  # Injected from Secret Manager (wf-sendgrid-api-key). Empty keeps
+  # SmtpMailService dormant and LoggingMailService active.
+  password: ""
