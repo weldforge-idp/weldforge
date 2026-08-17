@@ -9,6 +9,7 @@ import { catchError, of, tap } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { AuthShellComponent } from './auth-shell.component';
 import { forwardOidcParams, readOidcReturnTo, safeOidcReturnUrl } from '../../core/oidc-continuation';
+import { ExternalNavigator } from '../../core/external-navigator';
 
 @Component({
   selector: 'app-register',
@@ -89,7 +90,8 @@ export class RegisterComponent {
 
   forwardQueryParams: Record<string, string> = {};
 
-  constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute) {
+  constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute,
+              private externalNav: ExternalNavigator) {
     // Tenant is identified by the page host ({slug}.sso.weldforge.org).
     // No tenant query param to forward to /login. See docs/auth-url-spec.md.
     //
@@ -143,7 +145,7 @@ export class RegisterComponent {
   private goToApp(): void {
     const target = safeOidcReturnUrl(readOidcReturnTo(this.route.snapshot.queryParams));
     if (target) {
-      window.location.href = target;
+      this.externalNav.go(target);
       return;
     }
     this.router.navigate(['/tenants']);
