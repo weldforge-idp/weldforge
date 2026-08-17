@@ -72,6 +72,7 @@ public class AuthController {
      */
     @PostMapping("/logout-all")
     public ResponseEntity<Map<String, Object>> logoutAll(@AuthenticationPrincipal String email) {
+        if (isAnonymous(email)) return ResponseEntity.status(401).build();
         String tenantSlug = TenantContext.get();
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenantSlug, email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -81,6 +82,7 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<UserResponseDto> currentUser(@AuthenticationPrincipal String email) {
+        if (isAnonymous(email)) return ResponseEntity.status(401).build();
         String tenantSlug = TenantContext.get();
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenantSlug, email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -98,7 +100,7 @@ public class AuthController {
     @PutMapping("/me")
     public ResponseEntity<UserResponseDto> updateMe(@AuthenticationPrincipal String email,
                                                      @RequestBody Map<String, String> body) {
-        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
+        if (isAnonymous(email)) {
             return ResponseEntity.status(401).build();
         }
         try {
@@ -121,7 +123,7 @@ public class AuthController {
     @PostMapping("/change-password")
     public ResponseEntity<Map<String, String>> changePassword(@AuthenticationPrincipal String email,
                                                                @RequestBody Map<String, String> body) {
-        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
+        if (isAnonymous(email)) {
             return ResponseEntity.status(401).body(Map.of("error", "Not signed in"));
         }
         String current = body.get("currentPassword");
@@ -321,5 +323,18 @@ public class AuthController {
                     "error",   "invalid_or_expired_token",
                     "message", e.getMessage()));
         }
+    }
+
+    /**
+     * These endpoints are reachable without authentication, so Spring hands the
+     * handler a principal of {@code "anonymousUser"} — or {@code null} — when
+     * the bearer token is missing, expired or unreadable. Looking that up as an
+     * email finds nobody, and an unguarded orElseThrow turned an ordinary
+     * expired session into a 500 no client could act on: a proxy that retries
+     * after a 401 never retried, and the user was shown "an unexpected error"
+     * instead of being quietly refreshed.
+     */
+    private static boolean isAnonymous(String email) {
+        return email == null || email.isBlank() || "anonymousUser".equals(email);
     }
 }
