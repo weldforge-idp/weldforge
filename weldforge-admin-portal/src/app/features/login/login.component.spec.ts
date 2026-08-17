@@ -10,25 +10,30 @@ import { ExternalNavigator } from '../../core/external-navigator';
 
 /**
  * The FIRST component spec in this codebase — the conventions here are meant to
- * be copied, so they are kept deliberately plain: no TestBed helper module, no
- * shared harness, just overridden providers.
+ * be copied, so they are kept deliberately plain: no helper module, no shared
+ * harness, just overridden providers.
  *
  * WHY THIS EXISTS
- * `login.component.goToApp()` carried an open redirect: it assigned
- * `window.location.href` straight from an attacker-supplied query parameter.
- * The decision was fixed in #75 and unit-tested via `resolvePostAuthTarget`, but
- * the *wiring* was not — nothing proved the component actually consults that
- * decision, or that a hostile continuation fails to leave the origin. The
- * absence of any component-test infrastructure is precisely why the bug lived
- * as long as it did, so the coverage gap was the real defect.
+ * `login.component` carried an open redirect: it assigned `window.location.href`
+ * straight from an attacker-supplied query parameter. #75 fixed the decision and
+ * unit-tested it via `resolvePostAuthTarget`; these specs cover the part unit
+ * tests cannot — that the component actually consults that decision on the paths
+ * a real user takes.
+ *
+ * DRIVEN THROUGH THE PUBLIC ENTRY POINTS ON PURPOSE.
+ * `goToApp()` is private and reached only from `submitCredentials()` (password
+ * login) and `submitMfa()` (after a TOTP challenge). Calling it directly with a
+ * cast would leave exactly the gap this file is meant to close: nothing would
+ * notice if a future edit stopped calling it, or redirected some other way after
+ * a successful login. So every case below authenticates the way a user does.
  *
  * The redirect is asserted through `ExternalNavigator`, which exists as a
- * testing seam: `window.location.href` assignment is not observable in jsdom.
+ * testing seam — assigning `window.location.href` is not observable in jsdom.
  *
- * base domain: the spec relies on `environment.publicBaseDomain`, which is
- * 'localhost' in the dev environment file used by tests. The continuations
- * below are therefore localhost URLs — a real authorize URL on
- * sso.weldforge.org would (correctly) be rejected against that base.
+ * BASE DOMAIN: assertions run against `environment.publicBaseDomain`, which is
+ * 'localhost' in the environment file used by tests. Hence localhost
+ * continuations; a real `sso.weldforge.org` authorize URL would correctly be
+ * REJECTED against that base.
  */
 
 function b64url(s: string): string {
@@ -37,94 +42,127 @@ function b64url(s: string): string {
 
 /** https, on the configured base domain -> accepted by safeOidcReturnUrl. */
 const LEGITIMATE = 'https://localhost/t/acme/oauth2/authorize?client_id=app';
-/** Somewhere else entirely -> must be refused. */
-const HOSTILE = 'https://evil.example/phish';
 
 describe('LoginComponent — post-authentication redirect', () => {
   let externalNav: { go: ReturnType<typeof vi.fn> };
   let router: { navigate: ReturnType<typeof vi.fn> };
-  let queryParams: Record<string, string>;
+  let auth: { login: ReturnType<typeof vi.fn>; verifyMfa: ReturnType<typeof vi.fn> };
 
-  function createComponent() {
+  /** Builds the component with the given URL query parameters. */
+  function componentWith(queryParams: Record<string, string>): LoginComponent {
+    TestBed.resetTestingModule();
+    externalNav = { go: vi.fn() };
+    router = { navigate: vi.fn() };
+    auth = {
+      // A successful password login: token present, no MFA required.
+      login: vi.fn().mockReturnValue(of({ token: 'test-token' })),
+      verifyMfa: vi.fn().mockReturnValue(of({ token: 'test-token' })),
+    };
+
     TestBed.configureTestingModule({
       imports: [LoginComponent],
       providers: [
-        { provide: AuthService, useValue: { login: vi.fn(), verifyMfa: vi.fn() } },
+        { provide: AuthService, useValue: auth },
         {
           provide: TenantBrandingService,
           useValue: { current: signal(null), slugFromHost: () => null, load: () => of(null) },
         },
         { provide: Router, useValue: router },
         { provide: ExternalNavigator, useValue: externalNav },
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParams, queryParamMap: new Map() } } },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
       ],
     });
     return TestBed.createComponent(LoginComponent).componentInstance as LoginComponent;
   }
 
-  /** goToApp is private; the security behaviour is what is under test, not its visibility. */
-  function goToApp(c: LoginComponent) {
-    (c as unknown as { goToApp: () => void }).goToApp();
+  /** Authenticate the way a user does: username + password. */
+  function logIn(queryParams: Record<string, string> = {}): void {
+    componentWith(queryParams).submitCredentials();
   }
 
-  beforeEach(() => {
-    TestBed.resetTestingModule();
-    externalNav = { go: vi.fn() };
-    router = { navigate: vi.fn() };
-    queryParams = {};
+  describe('refuses to leave the origin', () => {
+    it('for a hostile continuation', () => {
+      // The exact attack #75 closed: attacker-supplied oidcReturnTo pointing
+      // off-site, redirecting the victim the instant they authenticate.
+      logIn({ oidcReturnTo: b64url('https://evil.example/phish') });
+
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+    });
+
+    it('for a lookalike host', () => {
+      logIn({ oidcReturnTo: b64url('https://localhost.evil.example/phish') });
+
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+    });
+
+    it('for a non-https continuation', () => {
+      logIn({ oidcReturnTo: b64url('http://localhost/t/acme/oauth2/authorize') });
+
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+    });
+
+    it('for a protocol-relative returnUrl', () => {
+      logIn({ returnUrl: '//evil.example' });
+
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+    });
   });
 
-  it('does NOT leave the origin for a hostile continuation', () => {
-    // The exact attack #75 closed: an attacker-supplied oidcReturnTo pointing
-    // off-site, redirecting the victim the moment they authenticate.
-    queryParams = { oidcReturnTo: b64url(HOSTILE) };
-    goToApp(createComponent());
+  describe('completes the flow it is supposed to', () => {
+    it('returns the user to the calling application after password login', () => {
+      logIn({ oidcReturnTo: b64url(LEGITIMATE) });
 
-    expect(externalNav.go).not.toHaveBeenCalled();
-    expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+      expect(externalNav.go).toHaveBeenCalledWith(LEGITIMATE);
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('returns the user to the calling application after MFA', () => {
+      // Second entry point: goToApp() is also reached from submitMfa(), so the
+      // continuation must survive a TOTP challenge as well.
+      const c = componentWith({ oidcReturnTo: b64url(LEGITIMATE) });
+      (c as unknown as { challengeToken: string | null }).challengeToken = 'challenge';
+      c.submitMfa();
+
+      expect(auth.verifyMfa).toHaveBeenCalled();
+      expect(externalNav.go).toHaveBeenCalledWith(LEGITIMATE);
+    });
+
+    it('honours an in-app returnUrl', () => {
+      logIn({ returnUrl: '/tenants/42/users' });
+
+      expect(router.navigate).toHaveBeenCalledWith(['/tenants/42/users']);
+      expect(externalNav.go).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the portal when there is no continuation', () => {
+      logIn();
+
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+    });
   });
 
-  it('does NOT leave the origin for a lookalike host', () => {
-    queryParams = { oidcReturnTo: b64url('https://localhost.evil.example/phish') };
-    goToApp(createComponent());
+  describe('degrades safely', () => {
+    it('sends the user to the portal on malformed base64 rather than throwing', () => {
+      expect(() => logIn({ oidcReturnTo: '!!!not-base64!!!' })).not.toThrow();
 
-    expect(externalNav.go).not.toHaveBeenCalled();
-    expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
-  });
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+    });
 
-  it('returns the user to the calling application for a legitimate continuation', () => {
-    queryParams = { oidcReturnTo: b64url(LEGITIMATE) };
-    goToApp(createComponent());
+    it('does not redirect at all when MFA is still outstanding', () => {
+      // mfaRequired and no token: authentication is incomplete, so nothing
+      // should navigate anywhere yet.
+      const c = componentWith({ oidcReturnTo: b64url(LEGITIMATE) });
+      auth.login.mockReturnValue(of({ mfaRequired: true, mfaChallengeToken: 'c', availableFactors: [] }));
+      c.submitCredentials();
 
-    expect(externalNav.go).toHaveBeenCalledWith(LEGITIMATE);
-    expect(router.navigate).not.toHaveBeenCalled();
-  });
-
-  it('falls back to the portal when there is no continuation', () => {
-    goToApp(createComponent());
-
-    expect(externalNav.go).not.toHaveBeenCalled();
-    expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
-  });
-
-  it('honours an in-app returnUrl but refuses a protocol-relative one', () => {
-    queryParams = { returnUrl: '/tenants/42/users' };
-    goToApp(createComponent());
-    expect(router.navigate).toHaveBeenCalledWith(['/tenants/42/users']);
-
-    TestBed.resetTestingModule();
-    router = { navigate: vi.fn() };
-    externalNav = { go: vi.fn() };
-    queryParams = { returnUrl: '//evil.example' };
-    goToApp(createComponent());
-    expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
-    expect(externalNav.go).not.toHaveBeenCalled();
-  });
-
-  it('malformed base64 degrades to the portal rather than throwing', () => {
-    queryParams = { oidcReturnTo: '!!!not-base64!!!' };
-    expect(() => goToApp(createComponent())).not.toThrow();
-    expect(externalNav.go).not.toHaveBeenCalled();
-    expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
   });
 });
