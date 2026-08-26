@@ -55,7 +55,18 @@ public class RefreshTokenService {
     /** Mint a brand new token family for a just-completed login. */
     @Transactional
     public Issued issueNew(User user, String ipAddress, String userAgent) {
-        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent);
+        return issueNew(user, ipAddress, userAgent, null);
+    }
+
+    /**
+     * Mint a brand new token family, recording how the user authenticated
+     * (RFC 8176 {@code amr}, space-separated). The family outlives every
+     * access token minted from it, so without this a refreshed token would
+     * silently lose the authentication context the original login had.
+     */
+    @Transactional
+    public Issued issueNew(User user, String ipAddress, String userAgent, String amr) {
+        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent, amr);
     }
 
     /**
@@ -65,7 +76,14 @@ public class RefreshTokenService {
     @Transactional
     public Issued issueNewForClient(User user, OidcClient client,
                                     String ipAddress, String userAgent) {
-        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent);
+        return issueNewForClient(user, client, ipAddress, userAgent, null);
+    }
+
+    /** As {@link #issueNewForClient(User, OidcClient, String, String)}, carrying the login's {@code amr}. */
+    @Transactional
+    public Issued issueNewForClient(User user, OidcClient client,
+                                    String ipAddress, String userAgent, String amr) {
+        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr);
     }
 
     /**
@@ -163,8 +181,10 @@ public class RefreshTokenService {
         // Mark current token used, then mint the successor in the same family.
         row.setUsedAt(now);
 
+        // The successor describes the same authentication event as its
+        // predecessor — rotation is not a re-authentication.
         Issued successor = persist(row.getUser(), row.getFamilyId(), row.getClient(),
-                ipAddress, userAgent);
+                ipAddress, userAgent, row.getAmr());
         row.setReplacedBy(successor.row.getId());
 
         auditService.recordUserAction(AUDIT_REFRESH_ROTATE, row.getUser(),
@@ -187,7 +207,7 @@ public class RefreshTokenService {
     // ---- helpers -----------------------------------------------------
 
     private Issued persist(User user, UUID familyId, OidcClient client,
-                           String ipAddress, String userAgent) {
+                           String ipAddress, String userAgent, String amr) {
         String raw = randomToken();
         // PRD SSO-03: per-tenant refresh TTL overrides the application default.
         LocalDateTime expiresAt;
@@ -207,6 +227,7 @@ public class RefreshTokenService {
                 .expiresAt(expiresAt)
                 .ipAddress(ipAddress)
                 .userAgent(userAgent)
+                .amr(amr)
                 .build();
         repository.save(row);
         return new Issued(raw, row);

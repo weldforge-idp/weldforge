@@ -22,7 +22,10 @@ import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService.AuthorizeRequest;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService.CodeExchangeRequest;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService.CodeExchangeResult;
+import tech.cwvermaak.weldforge.config.JwtAuthenticationFilter;
 import tech.cwvermaak.weldforge.service.oidc.OidcTokenService;
+import tech.cwvermaak.weldforge.service.security.AuthenticationMethods;
+import tech.cwvermaak.weldforge.service.oidc.RedirectUriMatcher;
 import tech.cwvermaak.weldforge.service.oidc.OidcTokenService.IssuedTokens;
 
 import java.net.URI;
@@ -83,7 +86,7 @@ public class OidcAuthorizationController {
                 .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
                         "Unknown client_id for this tenant"));
 
-        if (!client.getRedirectUriList().contains(redirectUri)) {
+        if (!RedirectUriMatcher.matches(client.getRedirectUriList(), redirectUri)) {
             throw new OidcAuthorizationException("invalid_request",
                     "redirect_uri does not match a registered URI");
         }
@@ -147,7 +150,8 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "code_challenge", required = false) String codeChallenge,
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
                                        @RequestParam(value = "csrf_token", required = false) String csrfToken,
-                                       @AuthenticationPrincipal String email) {
+                                       @AuthenticationPrincipal String email,
+                                       HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
         if (email == null || email.isBlank()) {
@@ -172,7 +176,7 @@ public class OidcAuthorizationController {
         OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
                 .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
                         "Unknown client_id for this tenant"));
-        if (!client.getRedirectUriList().contains(redirectUri)) {
+        if (!RedirectUriMatcher.matches(client.getRedirectUriList(), redirectUri)) {
             throw new OidcAuthorizationException("invalid_request",
                     "redirect_uri does not match a registered URI");
         }
@@ -189,7 +193,12 @@ public class OidcAuthorizationController {
         AuthorizeRequest req = new AuthorizeRequest(
                 clientId, redirectUri,
                 Arrays.stream(scope.split("\\s+")).filter(s -> !s.isBlank()).toList(),
-                state, nonce, codeChallenge, codeChallengeMethod);
+                state, nonce, codeChallenge, codeChallengeMethod, null,
+                // How the user authenticated for this session, so the token
+                // endpoint can report it. Read from the request attribute the
+                // JWT filter sets on the session it accepted — never from a
+                // request parameter, which the client controls.
+                sessionAmr(request));
         String code = authorizationService.issueAuthorizationCode(tenant, user, req);
 
         String url = appendQuery(redirectUri, "code", code, "state", state);
@@ -222,7 +231,7 @@ public class OidcAuthorizationController {
                         new CodeExchangeRequest(code, clientId, clientSecret, redirectUri, codeVerifier));
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
                         tenant, result.client(), result.user(),
-                        result.scopes(), result.nonce(), issuer);
+                        result.scopes(), result.nonce(), issuer, result.amr());
                 Map<String, Object> body = buildResponse(tokens, result.scopes());
                 // Only clients registered for the grant get one. Handing a
                 // refresh token to a client that never asked for it widens
@@ -230,7 +239,8 @@ public class OidcAuthorizationController {
                 if (result.client().getGrantTypeList().contains("refresh_token")) {
                     body.put("refresh_token", refreshTokenService.issueNewForClient(
                             result.user(), result.client(),
-                            clientIp(request), userAgent(request)).rawToken());
+                            clientIp(request), userAgent(request),
+                            AuthenticationMethods.toStorage(result.amr())).rawToken());
                 }
                 yield ResponseEntity.ok(body);
             }
@@ -257,8 +267,11 @@ public class OidcAuthorizationController {
                     throw new OidcAuthorizationException("invalid_grant", "Account is not active");
                 }
 
+                // The family records the login it came from, so a refreshed
+                // token still describes that authentication event.
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
-                        tenant, client, user, client.getScopeList(), null, issuer);
+                        tenant, client, user, client.getScopeList(), null, issuer,
+                        AuthenticationMethods.fromStorage(rotated.row().getAmr()));
                 Map<String, Object> body = buildResponse(tokens, client.getScopeList());
                 body.put("refresh_token", rotated.rawToken());
                 yield ResponseEntity.ok(body);
@@ -279,6 +292,20 @@ public class OidcAuthorizationController {
             default -> throw new OidcAuthorizationException("unsupported_grant_type",
                     "grant_type " + grantType + " is not supported");
         };
+    }
+
+    /**
+     * The authenticated session's RFC 8176 authentication methods, as recorded
+     * on the session token by {@link JwtAuthenticationFilter}. Empty when the
+     * session predates the claim — the grant then carries no {@code amr},
+     * which is the honest reading rather than a guess.
+     */
+    private static List<String> sessionAmr(HttpServletRequest request) {
+        Object attribute = request.getAttribute(JwtAuthenticationFilter.AMR_ATTRIBUTE);
+        if (attribute instanceof List<?> methods) {
+            return methods.stream().map(String::valueOf).toList();
+        }
+        return List.of();
     }
 
     @ExceptionHandler(OidcAuthorizationException.class)

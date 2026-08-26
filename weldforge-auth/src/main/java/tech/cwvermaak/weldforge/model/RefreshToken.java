@@ -80,6 +80,16 @@ public class RefreshToken {
     @Column(name = "user_agent", length = 512)
     private String userAgent;
 
+    /**
+     * Space-separated RFC 8176 authentication methods from the login that
+     * created this family, so an access token minted from a refresh still
+     * describes the original authentication event rather than losing it.
+     * Rotation copies it forward. Null for tokens issued before the column
+     * existed.
+     */
+    @Column(name = "amr", length = 255)
+    private String amr;
+
     @PrePersist
     void onCreate() {
         if (issuedAt == null) issuedAt = LocalDateTime.now();

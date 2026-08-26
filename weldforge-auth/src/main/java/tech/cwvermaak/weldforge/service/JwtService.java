@@ -9,6 +9,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -20,6 +21,8 @@ public class JwtService {
     public static final String CLAIM_ADMIN_ROLE   = "adm";
     public static final String CLAIM_PURPOSE      = "purpose";
     public static final String CLAIM_TOKEN_VERSION = "ver";
+    /** RFC 8176 authentication methods used on this login. */
+    public static final String CLAIM_AMR          = "amr";
     public static final String PURPOSE_MFA_CHALLENGE = "mfa_challenge";
     public static final String PURPOSE_ACCESS       = "access";
     public static final String PURPOSE_CONSENT_CSRF = "consent_csrf";
@@ -68,7 +71,22 @@ public class JwtService {
                                       Long tenantTtlMs, Map<String, Object> customClaims,
                                       String adminRole, String issuer) {
         return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
-                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer);
+                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, null);
+    }
+
+    /**
+     * Full overload carrying the authentication methods (RFC 8176 {@code amr})
+     * of the login this token represents. Only the login paths in
+     * {@code AuthService} know which factors were actually exercised, so only
+     * they can populate it — every other overload leaves the claim off rather
+     * than guessing.
+     */
+    public String generateAccessToken(String email, Long tenantId, String tenantSlug,
+                                      boolean superAdmin, int tokenVersion,
+                                      Long tenantTtlMs, Map<String, Object> customClaims,
+                                      String adminRole, String issuer, List<String> amr) {
+        return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
+                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, amr);
     }
 
     /**
@@ -98,13 +116,13 @@ public class JwtService {
                                       Long tenantTtlMs, Map<String, Object> customClaims,
                                       String adminRole) {
         return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
-                tokenVersion, tenantTtlMs, customClaims, adminRole, null);
+                tokenVersion, tenantTtlMs, customClaims, adminRole, null, null);
     }
 
     private String generateAccessTokenInternal(String email, Long tenantId, String tenantSlug,
                                                boolean superAdmin, int tokenVersion,
                                                Long tenantTtlMs, Map<String, Object> customClaims,
-                                               String adminRole, String issuer) {
+                                               String adminRole, String issuer, List<String> amr) {
         Map<String, Object> claims = new LinkedHashMap<>();
         // Custom claims go first so reserved claims below always win on collision.
         if (customClaims != null) {
@@ -120,6 +138,12 @@ public class JwtService {
         claims.put(CLAIM_ADMIN_ROLE, adminRole == null ? "NONE" : adminRole);
         claims.put(CLAIM_PURPOSE, PURPOSE_ACCESS);
         claims.put(CLAIM_TOKEN_VERSION, tokenVersion);
+        // Omitted rather than empty when unknown: a relying party reading an
+        // absent amr knows nothing was asserted, whereas an empty array reads
+        // as "authenticated by no method at all".
+        if (amr != null && !amr.isEmpty()) {
+            claims.put(CLAIM_AMR, List.copyOf(amr));
+        }
 
         long ttl = tenantTtlMs != null && tenantTtlMs > 0 ? tenantTtlMs : accessExpirationMs;
         JwtBuilder b = Jwts.builder()
@@ -144,7 +168,8 @@ public class JwtService {
         return switch (name) {
             case "sub", "iss", "aud", "exp", "iat", "nbf", "jti",
                  CLAIM_TENANT_ID, CLAIM_TENANT_SLUG, CLAIM_SUPER_ADMIN,
-                 CLAIM_ADMIN_ROLE, CLAIM_PURPOSE, CLAIM_TOKEN_VERSION -> true;
+                 CLAIM_ADMIN_ROLE, CLAIM_PURPOSE, CLAIM_TOKEN_VERSION,
+                 CLAIM_AMR -> true;
             default -> false;
         };
     }

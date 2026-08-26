@@ -20,6 +20,7 @@ import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.AuthService;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.oidc.RedirectUriMatcher;
 import tech.cwvermaak.weldforge.service.oidc.TenantSigningKeyService;
 
 import java.net.URI;
@@ -105,8 +106,10 @@ public class OidcLogoutController {
             client = oidcClientRepository.findByTenantIdAndClientId(tenant.getId(), clientIdHint).orElse(null);
         }
 
-        // Validate post_logout_redirect_uri — it must be an exact match of one of the client's
-        // registered redirect URIs. If no client resolved, we can't validate, so we refuse.
+        // Validate post_logout_redirect_uri — it must match one of the client's
+        // registered redirect URIs (exactly, or ignoring the port for a
+        // loopback IP — see RedirectUriMatcher). If no client resolved, we
+        // can't validate, so we refuse.
         String validatedRedirect = null;
         if (postLogoutRedirectUri != null && !postLogoutRedirectUri.isBlank()) {
             if (client == null) {
@@ -118,7 +121,7 @@ public class OidcLogoutController {
             // fall back to redirect_uris so they keep working unchanged.
             java.util.List<String> allowed = client.getPostLogoutRedirectUriList();
             if (allowed.isEmpty()) allowed = client.getRedirectUriList();
-            if (!allowed.contains(postLogoutRedirectUri)) {
+            if (!RedirectUriMatcher.matches(allowed, postLogoutRedirectUri)) {
                 log.warn("OIDC logout: post_logout_redirect_uri '{}' not in client's allow-list",
                         postLogoutRedirectUri);
                 return ResponseEntity.badRequest().build();
