@@ -1220,7 +1220,7 @@ CONF-3.1 moves to Sprint 3 now that `replicas: 1` makes it latent rather than li
 | Sprint | Theme | Stories | Points |
 |---|---|---|---|
 | **1** ✅ | Fix what is broken in production — **delivered 2026-09-08** | 3.0, 3.2, 3.3, 1.1, 6.4 | 21 |
-| **2** | Grant integrity and token lifecycle | 1.2, 6.1, 6.2, 6.3 | 18 |
+| **2** ✅ | Grant integrity and token lifecycle — **delivered 2026-09-08** | 1.2, 6.1, 6.2, 6.3 | 18 |
 | **3** | Interoperability truthfulness | 4.1, 4.2, 4.3, 1.4, 3.1 | 29 |
 | **4** | OIDC Core request parameters | 2.1, 2.2, 2.3, 2.4, 1.3 | 29 |
 | **5** | SAML assertion fidelity | 5.1, 5.2, 5.3, 5.4, 5.5 | 21 |
@@ -1252,6 +1252,38 @@ database.
 push to `ghcr.io/weldforge-idp`, verify on `staging.weldforge.org` **from a
 tenant subdomain** (the apex check does not exercise CONF-3.0), then bump the
 production overlay. That last step also discharges **D5** for the API image.
+
+### Sprint 2 — delivered 2026-09-08
+
+PR [#87](https://github.com/weldforge-idp/weldforge/pull/87), merged as `207aeea`.
+563 tests green. Three of the four stories shared one shape: **the server
+reported success for something that had not happened, so nobody retried.**
+
+| Story | What it fixed |
+|---|---|
+| CONF-6.3 | `/oauth2/revoke` returned 200 without revoking refresh tokens; `client_secret` now optional so public clients can revoke at all |
+| CONF-1.2 | V50 — a replayed code now revokes the family it produced |
+| CONF-6.1 | UserInfo respects granted scope and consults the revocation list |
+| CONF-6.2 | 401s carry a `WWW-Authenticate` challenge |
+
+### Production release — 2026-09-08
+
+Sprints 1 and 2 went live as `ghcr.io/weldforge-idp/weldforge-auth:sha-207aeea`
+(infrastructure `bb6c776`).
+
+**This also discharged D5.** Production had been running `weldforge-auth:r2` from
+the billing-closed GCP project, imported into the node's containerd and existing
+nowhere else under our control. It now runs a public, CI-rebuilt image.
+
+**The migration span was larger than the sprints.** The production database was
+at **V44**, applied 2026-06-16 — not V47 as the branch implied — so V45–V50 ran
+on first boot. V45 and V46 predate this programme and were read before deploying
+rather than assumed; all six are additive with no rewrites. A full dump was taken
+and gzip-verified first (`/backups/pg-20260908T200435Z.sql.gz`).
+
+Post-deploy: 7 tenants, 13 users, 1152 live refresh tokens — all intact. Apex,
+`leap.sso` and `intellisuite.sso` all 200; OIDC discovery, JWKS and SAML IdP
+metadata all 200.
 
 ### Sprint goals
 
