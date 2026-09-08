@@ -61,6 +61,8 @@ public class OidcAuthorizationController {
     private final PublicHostProperties publicHost;
     private final tech.cwvermaak.weldforge.service.JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    /** Meters the CONF-1.1 legacy-scope fallback so it can be retired on evidence. */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     @GetMapping("/t/{slug}/oauth2/authorize")
     public ResponseEntity<?> authorize(@PathVariable String slug,
@@ -237,10 +239,13 @@ public class OidcAuthorizationController {
                 // refresh token to a client that never asked for it widens
                 // the blast radius of a leak for no benefit.
                 if (result.client().getGrantTypeList().contains("refresh_token")) {
+                    // CONF-1.1: record what the user actually granted, not what
+                    // the client is registered for. Rotation replays this.
                     body.put("refresh_token", refreshTokenService.issueNewForClient(
                             result.user(), result.client(),
                             clientIp(request), userAgent(request),
-                            AuthenticationMethods.toStorage(result.amr())).rawToken());
+                            AuthenticationMethods.toStorage(result.amr()),
+                            String.join(" ", result.scopes())).rawToken());
                 }
                 yield ResponseEntity.ok(body);
             }
@@ -268,11 +273,14 @@ public class OidcAuthorizationController {
                 }
 
                 // The family records the login it came from, so a refreshed
-                // token still describes that authentication event.
+                // token still describes that authentication event — and the
+                // scopes the user granted at that login, which is what the
+                // refreshed token is allowed to carry (CONF-1.1, RFC 6749 §6).
+                List<String> issuedScopes = resolveRefreshScopes(rotated.row(), client, scope);
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
-                        tenant, client, user, client.getScopeList(), null, issuer,
+                        tenant, client, user, issuedScopes, null, issuer,
                         AuthenticationMethods.fromStorage(rotated.row().getAmr()));
-                Map<String, Object> body = buildResponse(tokens, client.getScopeList());
+                Map<String, Object> body = buildResponse(tokens, issuedScopes);
                 body.put("refresh_token", rotated.rawToken());
                 yield ResponseEntity.ok(body);
             }
@@ -292,6 +300,58 @@ public class OidcAuthorizationController {
             default -> throw new OidcAuthorizationException("unsupported_grant_type",
                     "grant_type " + grantType + " is not supported");
         };
+    }
+
+    /**
+     * The scopes a refreshed token may carry (CONF-1.1).
+     *
+     * <p>RFC 6749 §6: the scope of a refreshed token <em>MUST NOT</em> include
+     * any scope not originally granted. This method is the enforcement point —
+     * previously the refresh branch passed {@code client.getScopeList()}, the
+     * client's whole registration, so consenting to {@code openid email} handed
+     * back everything the client could ask for on the first refresh.
+     *
+     * <p>Three cases:
+     * <ol>
+     *   <li><b>The family records its grant.</b> That set is the ceiling. A
+     *       {@code scope} parameter may narrow it — §6 permits that — and
+     *       anything outside it is {@code invalid_scope}.</li>
+     *   <li><b>The family predates the column</b> ({@code granted_scopes} null).
+     *       Fall back to the client registration, which is the old behaviour,
+     *       because the alternative is breaking every live session at deploy.
+     *       Metered on {@code sso.oidc.refresh.legacy_scope} so the fallback can
+     *       be retired on evidence: once it reads zero for longer than the
+     *       refresh TTL, no legacy family survives.</li>
+     *   <li><b>No {@code scope} parameter.</b> The granted set is reissued
+     *       unchanged, which is what a client that just wants a fresh token
+     *       expects.</li>
+     * </ol>
+     */
+    private List<String> resolveRefreshScopes(tech.cwvermaak.weldforge.model.RefreshToken row,
+                                              OidcClient client, String requestedScope) {
+        String granted = row.getGrantedScopes();
+        List<String> ceiling;
+        if (granted == null || granted.isBlank()) {
+            meterRegistry.counter("sso.oidc.refresh.legacy_scope",
+                    "client_id", client.getClientId()).increment();
+            ceiling = client.getScopeList();
+        } else {
+            ceiling = Arrays.stream(granted.split("\\s+")).filter(s -> !s.isBlank()).toList();
+        }
+
+        if (requestedScope == null || requestedScope.isBlank()) {
+            return ceiling;
+        }
+
+        List<String> requested = Arrays.stream(requestedScope.split("\\s+"))
+                .filter(s -> !s.isBlank()).toList();
+        for (String s : requested) {
+            if (!ceiling.contains(s)) {
+                throw new OidcAuthorizationException("invalid_scope",
+                        "Scope '" + s + "' was not granted to this refresh token");
+            }
+        }
+        return requested;
     }
 
     /**

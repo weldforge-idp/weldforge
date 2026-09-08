@@ -66,7 +66,9 @@ public class RefreshTokenService {
      */
     @Transactional
     public Issued issueNew(User user, String ipAddress, String userAgent, String amr) {
-        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent, amr);
+        // A password login is not an OIDC grant -- there is no consented scope
+        // set to carry, so this stays null rather than inventing one.
+        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent, amr, null);
     }
 
     /**
@@ -83,7 +85,25 @@ public class RefreshTokenService {
     @Transactional
     public Issued issueNewForClient(User user, OidcClient client,
                                     String ipAddress, String userAgent, String amr) {
-        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr);
+        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr, null);
+    }
+
+    /**
+     * Mint a token family for an OIDC code exchange, recording both how the user
+     * authenticated ({@code amr}) and what they granted ({@code grantedScopes}).
+     *
+     * <p>CONF-1.1: the granted scopes are the resource owner's decision, made at
+     * /authorize while they were present. Rotation replays them rather than
+     * re-deriving scope from the client registration, which would hand back
+     * everything the client is allowed to ask for (RFC 6749 §6).
+     *
+     * @param grantedScopes space-separated granted scopes, or null when unknown
+     */
+    @Transactional
+    public Issued issueNewForClient(User user, OidcClient client,
+                                    String ipAddress, String userAgent, String amr,
+                                    String grantedScopes) {
+        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr, grantedScopes);
     }
 
     /**
@@ -182,9 +202,11 @@ public class RefreshTokenService {
         row.setUsedAt(now);
 
         // The successor describes the same authentication event as its
-        // predecessor — rotation is not a re-authentication.
+        // predecessor — rotation is not a re-authentication — and it carries
+        // the same consent. Neither the methods used nor the scopes granted can
+        // change without the user being present, which on this path they are not.
         Issued successor = persist(row.getUser(), row.getFamilyId(), row.getClient(),
-                ipAddress, userAgent, row.getAmr());
+                ipAddress, userAgent, row.getAmr(), row.getGrantedScopes());
         row.setReplacedBy(successor.row.getId());
 
         auditService.recordUserAction(AUDIT_REFRESH_ROTATE, row.getUser(),
@@ -207,7 +229,8 @@ public class RefreshTokenService {
     // ---- helpers -----------------------------------------------------
 
     private Issued persist(User user, UUID familyId, OidcClient client,
-                           String ipAddress, String userAgent, String amr) {
+                           String ipAddress, String userAgent, String amr,
+                           String grantedScopes) {
         String raw = randomToken();
         // PRD SSO-03: per-tenant refresh TTL overrides the application default.
         LocalDateTime expiresAt;
@@ -228,6 +251,7 @@ public class RefreshTokenService {
                 .ipAddress(ipAddress)
                 .userAgent(userAgent)
                 .amr(amr)
+                .grantedScopes(grantedScopes)
                 .build();
         repository.save(row);
         return new Issued(raw, row);
