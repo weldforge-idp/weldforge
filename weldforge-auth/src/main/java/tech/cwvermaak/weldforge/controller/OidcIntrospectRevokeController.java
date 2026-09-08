@@ -60,18 +60,33 @@ public class OidcIntrospectRevokeController {
         return ResponseEntity.ok(introspectionService.introspect(token, tenant, issuer, clientId));
     }
 
+    /**
+     * RFC 7009 revocation.
+     *
+     * <p>{@code client_secret} is optional (CONF-6.3): a public client holds no
+     * secret, so requiring one meant the clients most likely to need revocation
+     * -- native and single-page apps, whose tokens live on devices that get lost
+     * -- could not revoke anything at all. A public client authenticates by
+     * {@code client_id}; a confidential one must still present its secret.
+     *
+     * <p>{@code token_type_hint} is accepted and ignored, which is what §2.1
+     * asks for: it is a hint, and a server that trusted it would fail to revoke
+     * a correctly-presented token that the client mislabelled. Both token types
+     * are tried regardless.
+     */
     @PostMapping(value = "/t/{slug}/oauth2/revoke",
                  consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public ResponseEntity<Void> revoke(@PathVariable String slug,
                                        @RequestParam("token") String token,
                                        @RequestParam("client_id") String clientId,
-                                       @RequestParam("client_secret") String clientSecret,
+                                       @RequestParam(value = "client_secret", required = false) String clientSecret,
+                                       @RequestParam(value = "token_type_hint", required = false) String tokenTypeHint,
                                        HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
 
         OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId).orElse(null);
-        if (client == null || !constantTimeEquals(clientSecret, client.getClientSecret())) {
+        if (client == null || !authenticatesAs(client, clientSecret)) {
             return ResponseEntity.status(401).build();
         }
 
@@ -93,5 +108,21 @@ public class OidcIntrospectRevokeController {
         return java.security.MessageDigest.isEqual(
                 a.getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 b.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Whether the presented credentials authenticate this client.
+     *
+     * <p>A public client has no secret to present, so possession of the
+     * {@code client_id} is all there is -- the same position the token endpoint
+     * already takes for a public client's code exchange, where PKCE rather than
+     * a secret is what proves the caller. A confidential client must present
+     * its secret, compared in constant time.
+     */
+    private static boolean authenticatesAs(OidcClient client, String clientSecret) {
+        if (client.isPublicClient()) {
+            return true;
+        }
+        return constantTimeEquals(clientSecret, client.getClientSecret());
     }
 }

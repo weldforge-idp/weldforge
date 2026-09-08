@@ -11,9 +11,15 @@ import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.RevokedOidcToken;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.TenantSigningKey;
+import tech.cwvermaak.weldforge.model.RefreshToken;
+import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
 import tech.cwvermaak.weldforge.repository.RevokedOidcTokenRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker;
+import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
+
+import java.util.Optional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -21,8 +27,20 @@ import java.time.ZoneId;
 import java.util.Map;
 
 /**
- * RFC 7009 token revocation. Inserts the token's hash into the
- * revocation list so subsequent introspection calls return inactive.
+ * RFC 7009 token revocation.
+ *
+ * <p>Two token types reach this endpoint and they are stored completely
+ * differently. An <b>access token</b> is a tenant-signed JWT held only by the
+ * client, so revoking it means writing its hash to a blocklist introspection
+ * consults. A <b>refresh token</b> is opaque and already has a database row, so
+ * revoking it means killing its family.
+ *
+ * <p>Until CONF-6.3 only the first was handled. A refresh token failed to parse
+ * as a tenant JWT, fell into the catch block, logged at debug and returned --
+ * and because the spec mandates 200 either way, the caller got a success
+ * response for a revocation that never happened. A relying party ending a
+ * user's session was told it had, and hadn't. That is worse than an error:
+ * an error would have been retried.
  *
  * Tenant-scoped: a token from tenant A presented by tenant B's client
  * is silently treated as success per the spec ("revocation always
@@ -40,6 +58,8 @@ public class OidcRevocationService {
     private final TenantSigningKeyService signingKeyService;
     private final RevokedOidcTokenRepository revocationRepository;
     private final AuditService auditService;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenFamilyRevoker familyRevoker;
 
     @Transactional
     public void revoke(String token, Tenant tenant, OidcClient client, String tenantIssuer) {
@@ -63,7 +83,11 @@ public class OidcRevocationService {
                     .parseSignedClaims(token)
                     .getPayload();
         } catch (JwtException | IllegalStateException | IllegalArgumentException e) {
-            log.debug("Revoke called for unrecognised token: {}", e.getMessage());
+            // Not a tenant-signed JWT. Before CONF-6.3 that ended here with a
+            // 200 and nothing revoked. An opaque refresh token looks exactly
+            // like this, so try that interpretation before giving up.
+            log.debug("Revoke: not a tenant JWT, trying refresh token: {}", e.getMessage());
+            revokeRefreshToken(token, tenant, client);
             return;
         }
 
@@ -109,5 +133,56 @@ public class OidcRevocationService {
                         "client_id", client.getClientId(),
                         "tenant", tenant.getSlug(),
                         "expires_at", expiresAt.toString())));
+    }
+
+    /**
+     * Revoke an opaque refresh token by killing its family (CONF-6.3).
+     *
+     * <p>Rotation already makes a family the unit of revocation: a token and
+     * every successor minted from it share one {@code familyId}. Revoking only
+     * the presented token would leave its successor alive, which is not what a
+     * caller saying "revoke this" means.
+     *
+     * <p>Both bindings are re-checked before anything is written, for the same
+     * reason {@code rotateForClient} checks them: without the client check, any
+     * client holding a token hash could revoke another client's sessions, which
+     * turns a cleanup endpoint into a denial-of-service primitive.
+     *
+     * <p>Silent on every failure. RFC 7009 §2.2 requires 200 for an unknown
+     * token so the endpoint cannot be used to probe which tokens exist, and
+     * that has to hold for a token belonging to someone else too — otherwise
+     * the response time or an error would leak exactly what the 200 hides.
+     */
+    private void revokeRefreshToken(String token, Tenant tenant, OidcClient client) {
+        Optional<RefreshToken> found =
+                refreshTokenRepository.findByTokenHash(RefreshTokenService.hash(token));
+        if (found.isEmpty()) {
+            return;
+        }
+        RefreshToken row = found.get();
+
+        if (row.getTenant() == null || !row.getTenant().getId().equals(tenant.getId())) {
+            log.warn("Revoke refused: refresh token belongs to a different tenant");
+            return;
+        }
+        if (row.getClient() == null || !row.getClient().getId().equals(client.getId())) {
+            log.warn("Revoke refused: refresh token was issued to a different client");
+            return;
+        }
+
+        int revoked = familyRevoker.revoke(row.getFamilyId(), "client_request");
+
+        auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
+                .eventType(AUDIT_TOKEN_REVOKED)
+                .outcome(tech.cwvermaak.weldforge.model.AuditEvent.Outcome.SUCCESS)
+                .tenant(tenant)
+                .actorUser(row.getUser())
+                .targetType("refresh_token_family")
+                .targetId(row.getFamilyId().toString())
+                .metadata(Map.of(
+                        "client_id", client.getClientId(),
+                        "tenant", tenant.getSlug(),
+                        "token_type", "refresh_token",
+                        "revoked_count", revoked)));
     }
 }

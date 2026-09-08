@@ -34,6 +34,8 @@ class OidcRevocationServiceTest {
     private AuditService auditService;
     private TenantSigningKeyService signingKeyService;
     private OidcTokenService tokenService;
+    private tech.cwvermaak.weldforge.repository.RefreshTokenRepository refreshTokenRepo;
+    private tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker familyRevoker;
     private OidcRevocationService revocationService;
 
     private Tenant acme;
@@ -79,7 +81,11 @@ class OidcRevocationServiceTest {
         tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
         ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
-        revocationService = new OidcRevocationService(signingKeyService, revocationRepo, auditService);
+        refreshTokenRepo = mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class);
+        familyRevoker =
+                mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class);
+        revocationService = new OidcRevocationService(signingKeyService, revocationRepo, auditService,
+                refreshTokenRepo, familyRevoker);
 
         acme = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         globex = Tenant.builder().id(2L).slug("globex").name("Globex").build();

@@ -137,13 +137,16 @@ public class OidcIssuerSteps {
                         .defaultStepupMaxAge(0)
                         .build());
         authorizationService = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
+                mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class),
                 mfaFactorRepo, mfaPolicyService);
         tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
         // Set @Value-injected lifetimes since we constructed the bean by hand.
         ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
         introspectionService = new OidcIntrospectionService(signingKeyService, revocationRepo);
-        revocationService = new OidcRevocationService(signingKeyService, revocationRepo, auditService);
+        revocationService = new OidcRevocationService(signingKeyService, revocationRepo, auditService,
+                mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
+                mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class));
     }
 
     private Map<String, Object> lastIntrospection;

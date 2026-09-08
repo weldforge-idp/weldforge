@@ -69,7 +69,11 @@ class OidcUserinfoControllerTest {
         tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
         ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
-        controller = new OidcUserinfoController(tenantRepo, userRepo, signingKeyService);
+        // CONF-6.1: userinfo now consults the revocation list. Nothing is
+        // revoked in these scenarios, so the stub answers false throughout.
+        var revocationRepo = mock(tech.cwvermaak.weldforge.repository.RevokedOidcTokenRepository.class);
+        when(revocationRepo.existsByTokenHash(anyString())).thenReturn(false);
+        controller = new OidcUserinfoController(tenantRepo, userRepo, signingKeyService, revocationRepo);
 
         acme = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         client = OidcClient.builder().id(10L).tenant(acme).clientId("acme-app")
