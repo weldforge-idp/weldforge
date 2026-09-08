@@ -58,6 +58,26 @@ public class MfaFactor {
     @Builder.Default
     private Long signatureCount = 0L;
 
+    /**
+     * WebAuthn only (CONF-3.2): true when this credential was enrolled under a
+     * {@code REQUIRED} user-verification policy.
+     *
+     * <p>A credential used as a second factor should verify the user, or the
+     * factor is only "the key is plugged in". Both ceremonies previously asked
+     * for {@code PREFERRED}, which an authenticator may ignore, and nothing
+     * recorded whether it complied. Demanding UV globally at assertion time
+     * would lock out credentials enrolled on authenticators without the
+     * capability — so the requirement is recorded here at enrolment, and the
+     * assertion ceremony demands UV only when every one of the user's
+     * credentials carries it.
+     *
+     * <p>False for credentials enrolled before this column existed; the
+     * population self-heals as users re-enrol.
+     */
+    @Column(name = "uv_required", nullable = false)
+    @Builder.Default
+    private boolean uvRequired = false;
+
     @Column(length = 64)
     private String aaguid;
 
