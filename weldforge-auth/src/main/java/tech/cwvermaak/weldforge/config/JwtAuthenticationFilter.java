@@ -21,6 +21,7 @@ import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.JwtService;
 
 import java.io.IOException;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
@@ -29,6 +30,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     /** Cookie name used for browser-redirect OIDC flows. */
     public static final String SESSION_COOKIE = "wf_session";
+
+    /**
+     * Request attribute holding this session's RFC 8176 authentication
+     * methods as a {@code List<String>}, or absent when the token carries
+     * none. Set only for a token this filter accepted, so a caller reading it
+     * is reading the methods of an authenticated session.
+     */
+    public static final String AMR_ATTRIBUTE = "weldforge.amr";
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
@@ -174,6 +183,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     });
                 }
             }
+        }
+
+        // Expose the login's authentication methods (RFC 8176 amr) for the
+        // OIDC authorize flow, which mints an authorization code from this
+        // session and must record how the session was established. Carried as
+        // a request attribute rather than on the Authentication so the
+        // principal stays the plain email every other caller expects.
+        Object amrClaim = claims.get(JwtService.CLAIM_AMR);
+        if (amrClaim instanceof List<?> amrList && !amrList.isEmpty()) {
+            request.setAttribute(AMR_ATTRIBUTE, amrList.stream().map(String::valueOf).toList());
         }
 
         UsernamePasswordAuthenticationToken authToken =

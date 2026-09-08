@@ -80,6 +80,32 @@ public class RefreshToken {
     @Column(name = "user_agent", length = 512)
     private String userAgent;
 
+    /**
+     * Space-separated RFC 8176 authentication methods from the login that
+     * created this family, so an access token minted from a refresh still
+     * describes the original authentication event rather than losing it.
+     * Rotation copies it forward. Null for tokens issued before the column
+     * existed.
+     */
+    @Column(name = "amr", length = 255)
+    private String amr;
+
+    /**
+     * Space-separated scopes the resource owner granted when this family was
+     * created (CONF-1.1). Replayed onto every token minted by rotating it, so a
+     * refresh cannot widen scope past the original consent — RFC 6749 §6.
+     *
+     * <p>Registration says what the client <em>may</em> request; only the grant
+     * says what the user <em>agreed to</em>. Recomputing scope from the client
+     * row at refresh time conflates the two and hands back the full registered
+     * set. Like {@link #amr}, this has to travel with the grant.
+     *
+     * <p>Null for families issued before the column existed; the token endpoint
+     * falls back to the client registration for those and meters it.
+     */
+    @Column(name = "granted_scopes", columnDefinition = "TEXT")
+    private String grantedScopes;
+
     @PrePersist
     void onCreate() {
         if (issuedAt == null) issuedAt = LocalDateTime.now();

@@ -22,7 +22,9 @@ import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.model.MfaFactorType;
 import tech.cwvermaak.weldforge.service.mfa.MfaService;
+import tech.cwvermaak.weldforge.service.security.AuthenticationMethods;
 import tech.cwvermaak.weldforge.service.security.AccountLockedException;
 import tech.cwvermaak.weldforge.service.security.AccountLockoutService;
 import tech.cwvermaak.weldforge.service.security.FailedLoginRecorder;
@@ -30,6 +32,7 @@ import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService.Issued;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -101,7 +104,7 @@ public class AuthService {
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
                 AuditService.meta("provider", "LOCAL"));
         emailVerificationService.sendVerification(user);
-        return issueTokens(user, httpRequest, response);
+        return issueTokens(user, httpRequest, response, AuthenticationMethods.password());
     }
 
     @Transactional
@@ -230,7 +233,7 @@ public class AuthService {
         // to run inline — the service catches all errors so a CRM outage
         // never rolls back a successful login.
         crmProvisioningService.provisionOnEvent(AuditEventTypes.AUTH_LOGIN_SUCCESS, user);
-        return issueTokens(user, httpRequest, response);
+        return issueTokens(user, httpRequest, response, AuthenticationMethods.password());
     }
 
     /**
@@ -281,17 +284,26 @@ public class AuthService {
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
                 AuditService.meta("source", "ldap"));
         crmProvisioningService.provisionOnEvent(AuditEventTypes.AUTH_LOGIN_SUCCESS, user);
-        return issueTokens(user, httpRequest, response);
+        return issueTokens(user, httpRequest, response, AuthenticationMethods.password());
     }
 
-    public AuthResponseDto completeMfaLogin(User user, HttpServletRequest httpRequest,
+    /**
+     * Complete a login whose second factor has just been verified.
+     *
+     * @param factor     the factor presented, or null for a backup code
+     * @param backupCode true when a one-time backup code was redeemed — the
+     *                   backup path is independent of the requested type
+     */
+    public AuthResponseDto completeMfaLogin(User user, MfaFactorType factor, boolean backupCode,
+                                            HttpServletRequest httpRequest,
                                             HttpServletResponse response) {
         auditService.recordUserAction(AuditEventTypes.MFA_CHALLENGE_SUCCESS, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
         auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_SUCCESS, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
                 AuditService.meta("mfa", true));
-        return issueTokens(user, httpRequest, response);
+        return issueTokens(user, httpRequest, response,
+                AuthenticationMethods.passwordAnd(factor, backupCode));
     }
 
     /** Exchange a refresh token cookie for a fresh access token (rotating the refresh token). */
@@ -313,7 +325,8 @@ public class AuthService {
                 tenant.getAccessTtlMs(),
                 tenant.getCustomClaims(),
                 refreshAdminRole,
-                tenantIssuer(tenant));
+                tenantIssuer(tenant),
+                AuthenticationMethods.fromStorage(issued.row().getAmr()));
         long effectiveTtl = tenant.getAccessTtlMs() != null
                 ? tenant.getAccessTtlMs() / 1000
                 : jwtService.getExpirationTime();
@@ -437,8 +450,17 @@ public class AuthService {
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant: " + slug));
     }
 
+    /**
+     * Mint the session tokens for a completed login.
+     *
+     * @param amr the RFC 8176 authentication methods actually exercised. Only
+     *            the caller knows which factors were satisfied, so it is
+     *            passed in rather than derived here — deriving it from the
+     *            user's enrolled factors would report what they could have
+     *            used, not what they did.
+     */
     private AuthResponseDto issueTokens(User user, HttpServletRequest httpRequest,
-                                        HttpServletResponse response) {
+                                        HttpServletResponse response, List<String> amr) {
         Tenant tenant = user.getTenant();
         // PRD SSO-03 + OA2-07 + ADM-02: per-tenant TTL, custom claims, admin role.
         String adminRoleName = user.getAdminRole() != null ? user.getAdminRole().name() : "NONE";
@@ -451,9 +473,11 @@ public class AuthService {
                 tenant.getAccessTtlMs(),
                 tenant.getCustomClaims(),
                 adminRoleName,
-                tenantIssuer(tenant));
+                tenantIssuer(tenant),
+                amr);
 
-        Issued refresh = refreshTokenService.issueNew(user, clientIp(httpRequest), userAgent(httpRequest));
+        Issued refresh = refreshTokenService.issueNew(user, clientIp(httpRequest), userAgent(httpRequest),
+                AuthenticationMethods.toStorage(amr));
         writeRefreshCookie(response, refresh.rawToken(), tenant.getRefreshTtlMs());
 
         // Also set the access token as an HttpOnly cookie so server-side

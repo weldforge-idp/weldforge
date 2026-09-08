@@ -25,6 +25,13 @@ public final class AuditEventTypes {
     public static final String MFA_CHALLENGE_BLOCKED  = "mfa.challenge.blocked";
     public static final String MFA_SELF_RESET         = "mfa.self_reset";
     public static final String MFA_ADMIN_RESET        = "mfa.admin_reset";
+    /**
+     * A WebAuthn assertion whose signature counter went backwards (CONF-3.3).
+     * The spec's cloning signal: two authenticators holding the same credential
+     * keep independent counters, so the lower one betrays the copy. The factor
+     * is disabled and the assertion refused.
+     */
+    public static final String MFA_WEBAUTHN_COUNTER_REGRESSION = "mfa.webauthn.counter_regression";
     public static final String MFA_BACKUP_CODES_REGENERATED = "mfa.backup_codes.regenerated";
 
     // Tenant management

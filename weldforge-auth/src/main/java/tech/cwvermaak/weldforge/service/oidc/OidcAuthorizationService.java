@@ -12,6 +12,7 @@ import tech.cwvermaak.weldforge.repository.OAuthAuthorizationCodeRepository;
 import tech.cwvermaak.weldforge.repository.OidcClientRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.security.AuthenticationMethods;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -77,14 +78,30 @@ public class OidcAuthorizationService {
             String codeChallenge,
             String codeChallengeMethod,
             /** OIDC max_age param — overrides client.max_authentication_age_s when smaller. */
-            Integer maxAge) {
+            Integer maxAge,
+            /**
+             * RFC 8176 authentication methods of the session authorising this
+             * request, taken from the session token. Recorded on the code so
+             * the token endpoint — which sees no session — can stamp them onto
+             * the tokens it mints.
+             */
+            List<String> amr) {
+
+        /** Backwards-compatible constructor for callers that don't know about amr. */
+        public AuthorizeRequest(String clientId, String redirectUri, List<String> scopes,
+                                String state, String nonce,
+                                String codeChallenge, String codeChallengeMethod,
+                                Integer maxAge) {
+            this(clientId, redirectUri, scopes, state, nonce,
+                    codeChallenge, codeChallengeMethod, maxAge, null);
+        }
 
         // Backwards-compatible constructor for callers that don't know about max_age.
         public AuthorizeRequest(String clientId, String redirectUri, List<String> scopes,
                                 String state, String nonce,
                                 String codeChallenge, String codeChallengeMethod) {
             this(clientId, redirectUri, scopes, state, nonce,
-                    codeChallenge, codeChallengeMethod, null);
+                    codeChallenge, codeChallengeMethod, null, null);
         }
     }
 
@@ -94,7 +111,7 @@ public class OidcAuthorizationService {
                 .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
                         "Unknown client_id for this tenant"));
 
-        if (!client.getRedirectUriList().contains(request.redirectUri())) {
+        if (!RedirectUriMatcher.matches(client.getRedirectUriList(), request.redirectUri())) {
             throw new OidcAuthorizationException("invalid_request",
                     "redirect_uri does not match a registered URI");
         }
@@ -144,6 +161,7 @@ public class OidcAuthorizationService {
                 .nonce(request.nonce())
                 .codeChallenge(request.codeChallenge())
                 .codeChallengeMethod(request.codeChallengeMethod())
+                .amr(AuthenticationMethods.toStorage(request.amr()))
                 .expiresAt(LocalDateTime.now().plusSeconds(CODE_TTL_SECONDS))
                 .build();
         codeRepository.save(row);
@@ -163,7 +181,8 @@ public class OidcAuthorizationService {
             String redirectUri,
             String codeVerifier) {}
 
-    public record CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce) {}
+    public record CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce,
+                                     List<String> amr) {}
 
     @Transactional
     public CodeExchangeResult exchangeCode(Tenant tenant, CodeExchangeRequest request) {
@@ -229,7 +248,8 @@ public class OidcAuthorizationService {
                 row.getClient(),
                 row.getUser(),
                 List.of(row.getScopes().split("\\s+")),
-                row.getNonce());
+                row.getNonce(),
+                AuthenticationMethods.fromStorage(row.getAmr()));
     }
 
     // ---- Token endpoint: client credentials --------------------------

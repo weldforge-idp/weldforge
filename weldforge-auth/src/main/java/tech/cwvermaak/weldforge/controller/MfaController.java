@@ -61,7 +61,12 @@ public class MfaController {
         lockoutService.recordSuccess(user);
         // Spend the challenge token so it can't be replayed (B-MFA-2).
         mfaService.consumeChallenge(req.getChallengeToken());
-        return ResponseEntity.ok(authService.completeMfaLogin(user, httpRequest, response));
+        // Report the factor that was actually satisfied. verifyChallenge takes
+        // the backup-code path independently of the requested type, so the
+        // amr must be derived the same way rather than from req.getType().
+        boolean backupCode = req.getBackupCode() != null && !req.getBackupCode().isBlank();
+        return ResponseEntity.ok(authService.completeMfaLogin(
+                user, req.getType(), backupCode, httpRequest, response));
     }
 
     /** Start a WebAuthn assertion ceremony while mid-login. */

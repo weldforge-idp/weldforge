@@ -41,6 +41,17 @@ services:
       # identically from the browser, the host, and other containers.
       APP_PUBLIC_BASE_DOMAIN: ${APP_PUBLIC_BASE_DOMAIN:-sso.weldforge.org}
       APP_PUBLIC_SCHEME: ${APP_PUBLIC_SCHEME:-https}
+      # WebAuthn relying-party binding. The RP ID must be a registrable suffix
+      # of the origin the login form is served from, and the origin must be
+      # listed — locally the form runs on {slug}.lvh.me:8076, so the
+      # application.yml default of "localhost" makes every passkey ceremony
+      # fail in the browser before it reaches the server. These were not
+      # forwarded here at all, so setting them in .env had no effect on the
+      # container; the defaults below repeat application.yml's, so behaviour
+      # is unchanged unless .env overrides them.
+      APP_MFA_WEBAUTHN_RP_ID: ${APP_MFA_WEBAUTHN_RP_ID:-localhost}
+      APP_MFA_WEBAUTHN_RP_NAME: ${APP_MFA_WEBAUTHN_RP_NAME:-WeldForge}
+      APP_MFA_WEBAUTHN_ORIGINS: ${APP_MFA_WEBAUTHN_ORIGINS:-http://localhost:4200,http://localhost:8076}
       # Twilio is per-tenant — configured via admin portal, not env vars.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}

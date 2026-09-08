@@ -50,6 +50,21 @@ public class OidcTokenService {
      */
     public IssuedTokens issueForCodeExchange(Tenant tenant, OidcClient client, User user,
                                              List<String> scopes, String nonce, String issuer) {
+        return issueForCodeExchange(tenant, client, user, scopes, nonce, issuer, null);
+    }
+
+    /**
+     * As above, stamping the RFC 8176 {@code amr} of the login that authorised
+     * the grant onto both tokens. Relying parties gate on it — "was this
+     * session established with a phishing-resistant factor?" — so it is
+     * carried from the authenticating login rather than derived here, where
+     * only the user's *enrolled* factors are visible.
+     *
+     * @param amr the methods actually exercised; null or empty omits the claim
+     */
+    public IssuedTokens issueForCodeExchange(Tenant tenant, OidcClient client, User user,
+                                             List<String> scopes, String nonce, String issuer,
+                                             List<String> amr) {
         TenantSigningKey key = signingKeyService.getOrCreateActive(tenant);
         RSAPrivateKey privateKey = signingKeyService.loadPrivateKey(key);
         Instant now = Instant.now();
@@ -57,9 +72,9 @@ public class OidcTokenService {
         long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
         Map<String, Object> tenantClaims = tenant.getCustomClaims();
         String accessToken = buildAccessToken(client, user, scopes, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenantClaims);
+                tenantTtlSeconds, tenantClaims, amr);
         String idToken     = buildIdToken(client, user, nonce, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenantClaims);
+                tenantTtlSeconds, tenantClaims, amr);
 
         meterRegistry.counter("sso.token.issued", "grant_type", "authorization_code",
                 "tenant", tenant.getSlug()).increment();
@@ -73,8 +88,10 @@ public class OidcTokenService {
         meterRegistry.counter("sso.token.issued", "grant_type", "client_credentials",
                 "tenant", tenant.getSlug()).increment();
         long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
+        // No end-user authenticated, so no amr: the claim describes how a
+        // *person* proved who they are, and this grant has no person in it.
         String accessToken = buildAccessToken(client, null, scopes, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenant.getCustomClaims());
+                tenantTtlSeconds, tenant.getCustomClaims(), null);
         // No ID token in the client_credentials grant; expiresIn carries the
         // *resolved* per-tenant TTL so the response doesn't lie (B-OIDC-5).
         return new IssuedTokens(accessToken, null, tenantTtlSeconds);
@@ -90,7 +107,8 @@ public class OidcTokenService {
 
     private String buildAccessToken(OidcClient client, User user, List<String> scopes,
                                     String issuer, String kid, RSAPrivateKey privateKey, Instant now,
-                                    long ttlSeconds, Map<String, Object> tenantCustomClaims) {
+                                    long ttlSeconds, Map<String, Object> tenantCustomClaims,
+                                    List<String> amr) {
         Map<String, Object> claims = new LinkedHashMap<>();
         // Per-tenant custom claims go in first so the reserved claims below
         // always win on collision (OA2-07).
@@ -121,6 +139,7 @@ public class OidcTokenService {
             // Client credentials grant — there's no end-user.
             claims.put("sub", client.getClientId());
         }
+        putAmr(claims, amr);
         return Jwts.builder()
                 .header().keyId(kid).and()
                 .claims(claims)
@@ -132,7 +151,8 @@ public class OidcTokenService {
 
     private String buildIdToken(OidcClient client, User user, String nonce,
                                 String issuer, String kid, RSAPrivateKey privateKey, Instant now,
-                                long ttlSeconds, Map<String, Object> tenantCustomClaims) {
+                                long ttlSeconds, Map<String, Object> tenantCustomClaims,
+                                List<String> amr) {
         Map<String, Object> claims = new LinkedHashMap<>();
         if (tenantCustomClaims != null) {
             for (Map.Entry<String, Object> e : tenantCustomClaims.entrySet()) {
@@ -148,6 +168,7 @@ public class OidcTokenService {
         if (user.getName() != null) claims.put("name", user.getName());
         claims.put("roles", rolesFor(user));
         if (nonce != null && !nonce.isBlank()) claims.put("nonce", nonce);
+        putAmr(claims, amr);
         return Jwts.builder()
                 .header().keyId(kid).and()
                 .claims(claims)
@@ -157,10 +178,27 @@ public class OidcTokenService {
                 .compact();
     }
 
+    /**
+     * Stamp the authentication methods, or leave the claim off entirely when
+     * there are none. An absent {@code amr} says "nothing was asserted about
+     * how this user authenticated"; an empty array would read as "no method
+     * was used", which is a claim we cannot make.
+     */
+    private static void putAmr(Map<String, Object> claims, List<String> amr) {
+        if (amr != null && !amr.isEmpty()) {
+            claims.put("amr", List.copyOf(amr));
+        }
+    }
+
     private static boolean isReservedOidcClaim(String name) {
         return switch (name) {
             case "iss", "aud", "sub", "exp", "iat", "nbf", "jti",
-                 "client_id", "scope", "token_type", "email", "name", "nonce", "roles" -> true;
+                 "client_id", "scope", "token_type", "email", "name", "nonce", "roles",
+                 // A tenant custom claim must never be able to assert an
+                 // authentication method: a relying party gating on a
+                 // phishing-resistant amr would be trusting tenant config
+                 // rather than what the user actually did.
+                 "amr" -> true;
             default -> false;
         };
     }

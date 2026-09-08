@@ -57,6 +57,14 @@ public class OAuthAuthorizationCode {
     @Column(name = "code_challenge_method", length = 16)
     private String codeChallengeMethod;
 
+    /**
+     * Space-separated RFC 8176 authentication methods from the login that
+     * authorised this code, copied onto the tokens at exchange. Null for
+     * codes issued before the column existed.
+     */
+    @Column(name = "amr", length = 255)
+    private String amr;
+
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 

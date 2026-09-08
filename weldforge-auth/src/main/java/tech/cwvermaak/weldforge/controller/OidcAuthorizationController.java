@@ -22,7 +22,10 @@ import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService.AuthorizeRequest;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService.CodeExchangeRequest;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService.CodeExchangeResult;
+import tech.cwvermaak.weldforge.config.JwtAuthenticationFilter;
 import tech.cwvermaak.weldforge.service.oidc.OidcTokenService;
+import tech.cwvermaak.weldforge.service.security.AuthenticationMethods;
+import tech.cwvermaak.weldforge.service.oidc.RedirectUriMatcher;
 import tech.cwvermaak.weldforge.service.oidc.OidcTokenService.IssuedTokens;
 
 import java.net.URI;
@@ -58,6 +61,8 @@ public class OidcAuthorizationController {
     private final PublicHostProperties publicHost;
     private final tech.cwvermaak.weldforge.service.JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    /** Meters the CONF-1.1 legacy-scope fallback so it can be retired on evidence. */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     @GetMapping("/t/{slug}/oauth2/authorize")
     public ResponseEntity<?> authorize(@PathVariable String slug,
@@ -83,7 +88,7 @@ public class OidcAuthorizationController {
                 .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
                         "Unknown client_id for this tenant"));
 
-        if (!client.getRedirectUriList().contains(redirectUri)) {
+        if (!RedirectUriMatcher.matches(client.getRedirectUriList(), redirectUri)) {
             throw new OidcAuthorizationException("invalid_request",
                     "redirect_uri does not match a registered URI");
         }
@@ -147,7 +152,8 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "code_challenge", required = false) String codeChallenge,
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
                                        @RequestParam(value = "csrf_token", required = false) String csrfToken,
-                                       @AuthenticationPrincipal String email) {
+                                       @AuthenticationPrincipal String email,
+                                       HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
         if (email == null || email.isBlank()) {
@@ -172,7 +178,7 @@ public class OidcAuthorizationController {
         OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
                 .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
                         "Unknown client_id for this tenant"));
-        if (!client.getRedirectUriList().contains(redirectUri)) {
+        if (!RedirectUriMatcher.matches(client.getRedirectUriList(), redirectUri)) {
             throw new OidcAuthorizationException("invalid_request",
                     "redirect_uri does not match a registered URI");
         }
@@ -189,7 +195,12 @@ public class OidcAuthorizationController {
         AuthorizeRequest req = new AuthorizeRequest(
                 clientId, redirectUri,
                 Arrays.stream(scope.split("\\s+")).filter(s -> !s.isBlank()).toList(),
-                state, nonce, codeChallenge, codeChallengeMethod);
+                state, nonce, codeChallenge, codeChallengeMethod, null,
+                // How the user authenticated for this session, so the token
+                // endpoint can report it. Read from the request attribute the
+                // JWT filter sets on the session it accepted — never from a
+                // request parameter, which the client controls.
+                sessionAmr(request));
         String code = authorizationService.issueAuthorizationCode(tenant, user, req);
 
         String url = appendQuery(redirectUri, "code", code, "state", state);
@@ -222,15 +233,19 @@ public class OidcAuthorizationController {
                         new CodeExchangeRequest(code, clientId, clientSecret, redirectUri, codeVerifier));
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
                         tenant, result.client(), result.user(),
-                        result.scopes(), result.nonce(), issuer);
+                        result.scopes(), result.nonce(), issuer, result.amr());
                 Map<String, Object> body = buildResponse(tokens, result.scopes());
                 // Only clients registered for the grant get one. Handing a
                 // refresh token to a client that never asked for it widens
                 // the blast radius of a leak for no benefit.
                 if (result.client().getGrantTypeList().contains("refresh_token")) {
+                    // CONF-1.1: record what the user actually granted, not what
+                    // the client is registered for. Rotation replays this.
                     body.put("refresh_token", refreshTokenService.issueNewForClient(
                             result.user(), result.client(),
-                            clientIp(request), userAgent(request)).rawToken());
+                            clientIp(request), userAgent(request),
+                            AuthenticationMethods.toStorage(result.amr()),
+                            String.join(" ", result.scopes())).rawToken());
                 }
                 yield ResponseEntity.ok(body);
             }
@@ -257,9 +272,15 @@ public class OidcAuthorizationController {
                     throw new OidcAuthorizationException("invalid_grant", "Account is not active");
                 }
 
+                // The family records the login it came from, so a refreshed
+                // token still describes that authentication event — and the
+                // scopes the user granted at that login, which is what the
+                // refreshed token is allowed to carry (CONF-1.1, RFC 6749 §6).
+                List<String> issuedScopes = resolveRefreshScopes(rotated.row(), client, scope);
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
-                        tenant, client, user, client.getScopeList(), null, issuer);
-                Map<String, Object> body = buildResponse(tokens, client.getScopeList());
+                        tenant, client, user, issuedScopes, null, issuer,
+                        AuthenticationMethods.fromStorage(rotated.row().getAmr()));
+                Map<String, Object> body = buildResponse(tokens, issuedScopes);
                 body.put("refresh_token", rotated.rawToken());
                 yield ResponseEntity.ok(body);
             }
@@ -279,6 +300,72 @@ public class OidcAuthorizationController {
             default -> throw new OidcAuthorizationException("unsupported_grant_type",
                     "grant_type " + grantType + " is not supported");
         };
+    }
+
+    /**
+     * The scopes a refreshed token may carry (CONF-1.1).
+     *
+     * <p>RFC 6749 §6: the scope of a refreshed token <em>MUST NOT</em> include
+     * any scope not originally granted. This method is the enforcement point —
+     * previously the refresh branch passed {@code client.getScopeList()}, the
+     * client's whole registration, so consenting to {@code openid email} handed
+     * back everything the client could ask for on the first refresh.
+     *
+     * <p>Three cases:
+     * <ol>
+     *   <li><b>The family records its grant.</b> That set is the ceiling. A
+     *       {@code scope} parameter may narrow it — §6 permits that — and
+     *       anything outside it is {@code invalid_scope}.</li>
+     *   <li><b>The family predates the column</b> ({@code granted_scopes} null).
+     *       Fall back to the client registration, which is the old behaviour,
+     *       because the alternative is breaking every live session at deploy.
+     *       Metered on {@code sso.oidc.refresh.legacy_scope} so the fallback can
+     *       be retired on evidence: once it reads zero for longer than the
+     *       refresh TTL, no legacy family survives.</li>
+     *   <li><b>No {@code scope} parameter.</b> The granted set is reissued
+     *       unchanged, which is what a client that just wants a fresh token
+     *       expects.</li>
+     * </ol>
+     */
+    private List<String> resolveRefreshScopes(tech.cwvermaak.weldforge.model.RefreshToken row,
+                                              OidcClient client, String requestedScope) {
+        String granted = row.getGrantedScopes();
+        List<String> ceiling;
+        if (granted == null || granted.isBlank()) {
+            meterRegistry.counter("sso.oidc.refresh.legacy_scope",
+                    "client_id", client.getClientId()).increment();
+            ceiling = client.getScopeList();
+        } else {
+            ceiling = Arrays.stream(granted.split("\\s+")).filter(s -> !s.isBlank()).toList();
+        }
+
+        if (requestedScope == null || requestedScope.isBlank()) {
+            return ceiling;
+        }
+
+        List<String> requested = Arrays.stream(requestedScope.split("\\s+"))
+                .filter(s -> !s.isBlank()).toList();
+        for (String s : requested) {
+            if (!ceiling.contains(s)) {
+                throw new OidcAuthorizationException("invalid_scope",
+                        "Scope '" + s + "' was not granted to this refresh token");
+            }
+        }
+        return requested;
+    }
+
+    /**
+     * The authenticated session's RFC 8176 authentication methods, as recorded
+     * on the session token by {@link JwtAuthenticationFilter}. Empty when the
+     * session predates the claim — the grant then carries no {@code amr},
+     * which is the honest reading rather than a guess.
+     */
+    private static List<String> sessionAmr(HttpServletRequest request) {
+        Object attribute = request.getAttribute(JwtAuthenticationFilter.AMR_ATTRIBUTE);
+        if (attribute instanceof List<?> methods) {
+            return methods.stream().map(String::valueOf).toList();
+        }
+        return List.of();
     }
 
     @ExceptionHandler(OidcAuthorizationException.class)
