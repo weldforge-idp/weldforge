@@ -40,6 +40,18 @@ public class WebAuthnConfig {
                 .credentialRepository(credentialRepository)
                 .origins(origins)
                 .allowOriginPort(true)
+                // Required for per-tenant subdomains. `origins` is an EXACT-match
+                // allow-list with no wildcard syntax, and tenant hosts are created
+                // at runtime as https://{slug}.<base>, so they can never be
+                // enumerated in configuration. Without this, WebAuthn registration
+                // succeeds on the apex and fails on every tenant host with an
+                // origin mismatch.
+                //
+                // This widens acceptance to subdomains of the configured origins
+                // only -- not to arbitrary hosts. It is consistent with rp-id,
+                // which is already the registrable base domain and therefore
+                // already scopes credentials across exactly this set of hosts.
+                .allowOriginSubdomain(true)
                 .build();
     }
 }
