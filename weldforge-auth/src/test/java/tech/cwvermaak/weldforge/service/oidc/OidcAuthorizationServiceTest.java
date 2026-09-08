@@ -35,6 +35,7 @@ class OidcAuthorizationServiceTest {
     private OidcClientRepository clientRepo;
     private OAuthAuthorizationCodeRepository codeRepo;
     private AuditService auditService;
+    private tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker familyRevoker;
     private OidcAuthorizationService service;
 
     private Tenant tenant;
@@ -55,8 +56,10 @@ class OidcAuthorizationServiceTest {
                         .enforcement(tech.cwvermaak.weldforge.model.TenantMfaPolicy.Enforcement.OPTIONAL)
                         .defaultStepupMaxAge(0)
                         .build());
+        familyRevoker =
+                mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class);
         service = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
-                mfaFactorRepo, mfaPolicyService);
+                familyRevoker, mfaFactorRepo, mfaPolicyService);
 
         tenant = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         user = User.builder().id(42L).tenant(tenant).email("alice@acme.test").build();

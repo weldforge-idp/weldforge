@@ -119,8 +119,15 @@ public class OidcIntrospectionService {
         return aud != null && aud.contains(callerClientId);
     }
 
-    /** Hashes are produced with the same scheme as the revocation service. */
-    static String hash(String token) {
+    /**
+     * Hashes are produced with the same scheme as the revocation service.
+     *
+     * <p>Public so userinfo can consult the same revocation list (CONF-6.1).
+     * The scheme must stay identical in all three places or a token revoked
+     * through one path stays live on another, which is exactly the bug that
+     * made userinfo outlive a revocation.
+     */
+    public static String hash(String token) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             return Base64.getUrlEncoder().withoutPadding()

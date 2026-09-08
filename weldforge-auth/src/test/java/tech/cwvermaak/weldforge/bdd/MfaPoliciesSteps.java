@@ -149,6 +149,7 @@ public class MfaPoliciesSteps {
         mfaPolicyService = new TenantMfaPolicyService(tenantAccessor, tenantRepository,
                 policyRepo, mfaFactorRepo, userRepo, auditService);
         oidcAuthService = new OidcAuthorizationService(oidcClientRepo, codeRepo, auditService,
+                mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class),
                 mfaFactorRepo, mfaPolicyService);
     }
 

@@ -51,6 +51,8 @@ public class OidcAuthorizationService {
     public static final String OIDC_CODE_ISSUED   = "oidc.code.issued";
     public static final String OIDC_CODE_EXCHANGED = "oidc.code.exchanged";
     public static final String OIDC_CODE_REJECTED = "oidc.code.rejected";
+    /** A code presented twice: it left the client's control (CONF-1.2). */
+    public static final String OIDC_CODE_REPLAY_DETECTED = "oidc.code.replay_detected";
 
     private static final SecureRandom RNG = new SecureRandom();
 
@@ -64,6 +66,7 @@ public class OidcAuthorizationService {
     private final OidcClientRepository clientRepository;
     private final OAuthAuthorizationCodeRepository codeRepository;
     private final AuditService auditService;
+    private final tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker familyRevoker;
     private final tech.cwvermaak.weldforge.repository.MfaFactorRepository mfaFactorRepository;
     private final tech.cwvermaak.weldforge.service.TenantMfaPolicyService mfaPolicyService;
 
@@ -182,7 +185,32 @@ public class OidcAuthorizationService {
             String codeVerifier) {}
 
     public record CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce,
-                                     List<String> amr) {}
+                                     List<String> amr, Long codeId) {
+
+        /** Backwards-compatible constructor for callers that don't record the family. */
+        public CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce,
+                                  List<String> amr) {
+            this(client, user, scopes, nonce, amr, null);
+        }
+    }
+
+    /**
+     * Record which refresh-token family a code exchange produced (CONF-1.2), so
+     * a later replay of that code can revoke it.
+     *
+     * <p>Called after the token endpoint has minted the family, because until
+     * then there is nothing to record. A code whose client holds no
+     * {@code refresh_token} grant never gets here, which is correct: there is no
+     * family, and the replay path handles null.
+     */
+    @Transactional
+    public void recordIssuedFamily(Long codeId, java.util.UUID familyId) {
+        if (codeId == null || familyId == null) return;
+        codeRepository.findById(codeId).ifPresent(row -> {
+            row.setIssuedFamilyId(familyId);
+            codeRepository.save(row);
+        });
+    }
 
     @Transactional
     public CodeExchangeResult exchangeCode(Tenant tenant, CodeExchangeRequest request) {
@@ -199,7 +227,36 @@ public class OidcAuthorizationService {
             throw reject("invalid_grant", "Code was issued to a different client");
         }
         if (row.getUsedAt() != null) {
-            throw reject("invalid_grant", "Authorization code already used");
+            // CONF-1.2 / RFC 6749 §4.1.2. Two parties presented this code, so it
+            // left the legitimate client's control. Rejecting the second attempt
+            // is not enough: whoever exchanged it first is holding live tokens,
+            // and if that was the attacker the victim gets no signal at all --
+            // their login worked. Kill the family the first exchange produced
+            // and make both parties re-authenticate.
+            //
+            // Same reasoning, and the same REQUIRES_NEW revoker, as refresh
+            // reuse detection: the throw below would otherwise roll the
+            // revocation back and leave an audit event asserting a containment
+            // that did not happen.
+            int revoked = 0;
+            if (row.getIssuedFamilyId() != null) {
+                revoked = familyRevoker.revoke(row.getIssuedFamilyId(), "code_replay_detected");
+            }
+            log.warn("Authorization code replay: client_id={} tenant={} family={} revoked={}",
+                    row.getClient().getClientId(), tenant.getSlug(),
+                    row.getIssuedFamilyId(), revoked);
+            auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
+                    .eventType(OIDC_CODE_REPLAY_DETECTED)
+                    .outcome(tech.cwvermaak.weldforge.model.AuditEvent.Outcome.DENIED)
+                    .tenant(tenant)
+                    .actorUser(row.getUser())
+                    .targetType(AuditEventTypes.TARGET_OIDC_CLIENT)
+                    .targetId(row.getClient().getClientId())
+                    .metadata(Map.of(
+                            "family_id", String.valueOf(row.getIssuedFamilyId()),
+                            "revoked_count", revoked,
+                            "first_used_at", String.valueOf(row.getUsedAt()))));
+            throw new OidcAuthorizationException("invalid_grant", "Authorization code already used");
         }
         if (LocalDateTime.now().isAfter(row.getExpiresAt())) {
             throw reject("invalid_grant", "Authorization code expired");
@@ -249,7 +306,8 @@ public class OidcAuthorizationService {
                 row.getUser(),
                 List.of(row.getScopes().split("\\s+")),
                 row.getNonce(),
-                AuthenticationMethods.fromStorage(row.getAmr()));
+                AuthenticationMethods.fromStorage(row.getAmr()),
+                row.getId());
     }
 
     // ---- Token endpoint: client credentials --------------------------

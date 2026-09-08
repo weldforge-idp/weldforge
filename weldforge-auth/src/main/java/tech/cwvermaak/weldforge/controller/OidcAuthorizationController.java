@@ -241,11 +241,17 @@ public class OidcAuthorizationController {
                 if (result.client().getGrantTypeList().contains("refresh_token")) {
                     // CONF-1.1: record what the user actually granted, not what
                     // the client is registered for. Rotation replays this.
-                    body.put("refresh_token", refreshTokenService.issueNewForClient(
+                    RefreshTokenService.Issued issued = refreshTokenService.issueNewForClient(
                             result.user(), result.client(),
                             clientIp(request), userAgent(request),
                             AuthenticationMethods.toStorage(result.amr()),
-                            String.join(" ", result.scopes())).rawToken());
+                            String.join(" ", result.scopes()));
+                    // CONF-1.2: remember which family this code produced, so a
+                    // replay of the code can revoke it rather than merely being
+                    // refused while the tokens stay live.
+                    authorizationService.recordIssuedFamily(
+                            result.codeId(), issued.row().getFamilyId());
+                    body.put("refresh_token", issued.rawToken());
                 }
                 yield ResponseEntity.ok(body);
             }

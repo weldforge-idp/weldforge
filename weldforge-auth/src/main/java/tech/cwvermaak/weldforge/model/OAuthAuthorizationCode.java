@@ -68,6 +68,23 @@ public class OAuthAuthorizationCode {
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
+    /**
+     * The refresh-token family minted when this code was exchanged (CONF-1.2).
+     *
+     * <p>Recorded so that a <em>replay</em> can revoke it. Rejecting a replayed
+     * code is the visible half of RFC 6749 §4.1.2; the other half is that a
+     * replay proves the code leaked, so the tokens the first exchange produced
+     * are suspect too. Without this link the code row cannot say what it
+     * produced, and the victim of a race they won keeps a live session with no
+     * signal that anything happened.
+     *
+     * <p>Null is legitimate: the client may hold no {@code refresh_token}
+     * grant, the code may never have been exchanged, or the row may predate the
+     * column.
+     */
+    @Column(name = "issued_family_id")
+    private java.util.UUID issuedFamilyId;
+
     @Column(name = "used_at")
     private LocalDateTime usedAt;
 
