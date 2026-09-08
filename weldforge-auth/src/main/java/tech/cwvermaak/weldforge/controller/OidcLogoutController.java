@@ -62,6 +62,8 @@ public class OidcLogoutController {
     private final AuthService authService;
     private final PublicHostProperties publicHost;
     private final AuditService auditService;
+    /** Parses the platform session cookie — an HMAC-signed WeldForge JWT, not a tenant key. */
+    private final tech.cwvermaak.weldforge.service.JwtService jwtService;
 
     @GetMapping("/t/{slug}/oauth2/logout")
     public ResponseEntity<Void> logoutGet(@PathVariable String slug,
@@ -186,14 +188,60 @@ public class OidcLogoutController {
         }
     }
 
+    /**
+     * Resolve the user from the session cookie (CONF-6.4).
+     *
+     * <p>Until this was implemented, a logout with no {@code id_token_hint}
+     * resolved no user, so {@code logoutAll} never ran: the browser's cookies
+     * were cleared but every outstanding access and refresh token stayed
+     * valid. "Sign out" on a shared machine did not sign the user out.
+     *
+     * <p>The session cookie is a WeldForge HMAC-signed JWT, not a tenant-signed
+     * one, so it is parsed with {@link tech.cwvermaak.weldforge.service.JwtService}
+     * rather than {@link #parseTenantJwt}. Three checks make it safe to act on:
+     *
+     * <ul>
+     *   <li><b>purpose</b> must be {@code access} — an {@code mfa_challenge} or
+     *       {@code consent_csrf} token is signed by the same key and would
+     *       otherwise be usable to terminate a session mid-authentication.</li>
+     *   <li><b>tenant</b> must match the slug being logged out of, so a session
+     *       in tenant A cannot end a session in tenant B.</li>
+     *   <li><b>the user must exist in that tenant</b> — resolved by tenant slug
+     *       and email, the same lookup every other tenant-scoped path uses.</li>
+     * </ul>
+     *
+     * <p>Any failure returns empty rather than throwing. The endpoint accepts
+     * anonymous calls by design, and an expired cookie still gets its cookies
+     * cleared — it just cannot identify whose tokens to revoke, which is the
+     * honest outcome rather than a guess.
+     */
     private Optional<User> resolveUserFromCookie(Tenant tenant, HttpServletRequest request) {
         if (request.getCookies() == null) return Optional.empty();
         for (Cookie c : request.getCookies()) {
             if (!SESSION_COOKIE.equals(c.getName())) continue;
-            // The session cookie is a WeldForge JWT, not a tenant-signed one.
-            // We don't parse it here — the logout endpoint accepts anonymous
-            // calls too. A follow-up pass can wire in JwtService for this.
-            return Optional.empty();
+            String token = c.getValue();
+            if (token == null || token.isBlank()) return Optional.empty();
+            try {
+                Claims claims = jwtService.parse(token);
+
+                Object purpose = claims.get(tech.cwvermaak.weldforge.service.JwtService.CLAIM_PURPOSE);
+                if (!tech.cwvermaak.weldforge.service.JwtService.PURPOSE_ACCESS
+                        .equals(purpose == null ? null : purpose.toString())) {
+                    return Optional.empty();
+                }
+
+                Object slug = claims.get(tech.cwvermaak.weldforge.service.JwtService.CLAIM_TENANT_SLUG);
+                if (slug == null || !tenant.getSlug().equals(slug.toString())) {
+                    return Optional.empty();
+                }
+
+                String email = claims.getSubject();
+                if (email == null || email.isBlank()) return Optional.empty();
+                return userRepository.findByTenant_SlugAndEmailIgnoreCase(tenant.getSlug(), email);
+            } catch (JwtException | IllegalArgumentException e) {
+                log.debug("OIDC logout: session cookie did not resolve a user: {}", e.getMessage());
+                return Optional.empty();
+            }
         }
         return Optional.empty();
     }
