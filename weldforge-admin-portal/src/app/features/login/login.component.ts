@@ -12,6 +12,7 @@ import { TenantBrandingService } from '../../core/services/tenant-branding.servi
 import { catchError, tap } from 'rxjs/operators';
 import { of } from 'rxjs';
 import { forwardOidcParams, resolvePostAuthTarget } from '../../core/oidc-continuation';
+import { ExternalNavigator } from '../../core/external-navigator';
 
 type Step = 'credentials' | 'mfa';
 
@@ -257,7 +258,8 @@ export class LoginComponent implements OnInit {
   constructor(private authService: AuthService,
               public branding: TenantBrandingService,
               private router: Router,
-              private route: ActivatedRoute) {}
+              private route: ActivatedRoute,
+              private externalNav: ExternalNavigator) {}
 
   ngOnInit(): void {
     const slug = this.branding.slugFromHost();
@@ -362,7 +364,7 @@ export class LoginComponent implements OnInit {
   private goToApp() {
     const target = resolvePostAuthTarget(this.route.snapshot.queryParams);
     if (target.kind === 'external') {
-      window.location.href = target.url;
+      this.externalNav.go(target.url);
       return;
     }
     this.router.navigate([target.route]);
