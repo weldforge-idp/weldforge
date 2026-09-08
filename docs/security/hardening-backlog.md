@@ -50,8 +50,23 @@ single-use**, and (3) **governance documentation**.
 | F22 | **Display-name input validation (B-LEGACY-2)** — `AuthService.validateDisplayName` rejects `<`/`>`/control chars (and over-length) at registration + profile update, closing the input side of stored XSS into SAML/email sinks. Unit-tested. | `service/AuthService.java` |
 | F23 | **Rate-limit recovery + SMS-send (B-AUTH-3)** — `forgot-password`/`reset-password`/`resend-verification`/`mfa/sms/send` share a per-IP `RECOVERY` bucket. Filter routing unit-tested. | `config/security/RateLimitingFilter.java`, `service/security/RateLimitingService.java` |
 | F24 | **Logout id_token_hint by kid (B-JWT-3)** — `OidcLogoutController.parseTenantJwt` resolves the key by the token's `kid` (tenant-scoped), so logout survives a key-rotation window. | `controller/OidcLogoutController.java` |
+| F25 | **WebAuthn tenant-subdomain origins (CONF-3.0)** — `origins` is an exact-match allow-list and tenant hosts are minted at runtime, so registration succeeded on the apex and failed on every tenant host with an origin mismatch. `allowOriginSubdomain(true)` widens acceptance to subdomains *of the configured origins only*, consistent with `rp-id`, which is already the registrable base. **This was live in production.** | `config/mfa/WebAuthnConfig.java` |
+| F26 | **Refresh must not widen scope (CONF-1.1)** — the refresh branch re-derived scope from `client.getScopeList()`, so consenting to `openid email` returned the client's whole registration on the first refresh (RFC 6749 §6). Granted scopes now ride the family like `amr` does, and act as a ceiling a `scope` parameter may narrow. Legacy families fall back and are metered on `sso.oidc.refresh.legacy_scope`. | `V48__refresh_token_granted_scopes.sql`, `model/RefreshToken.java`, `service/security/RefreshTokenService.java`, `controller/OidcAuthorizationController.java` |
+| F27 | **Logout without `id_token_hint` ends the session (CONF-6.4)** — `resolveUserFromCookie` returned empty unconditionally, so `logoutAll` never ran: cookies cleared while every outstanding token stayed valid. Now parses the platform session cookie, gated on `purpose=access` and a matching tenant claim so neither an MFA-challenge token nor another tenant's session can terminate this one. | `controller/OidcLogoutController.java` |
+| F28 | **WebAuthn user verification (CONF-3.2)** — both ceremonies asked `PREFERRED`, which an authenticator may ignore, leaving the "second factor" as mere possession. Enrolment now demands `REQUIRED` and records it per credential; assertions demand it only when *all* of a user's WebAuthn credentials carry it, so grandfathered credentials keep working. Metered on `mfa.webauthn.legacy_uv`. | `V49__webauthn_user_verification.sql`, `model/MfaFactor.java`, `service/mfa/WebAuthnService.java` |
+| F29 | **Authenticator cloning detection (CONF-3.3)** — `AssertionResult.isSignatureCounterValid()` was computed by the library and discarded. A counter regression now refuses the assertion, disables the factor and audits `mfa.webauthn.counter_regression`. It is the only cloning evidence that ever reaches us, and it arrives exactly once. | `service/mfa/WebAuthnService.java`, `service/audit/AuditEventTypes.java` |
 
 ---
+
+
+> **2026-09-08 — conformance programme.** F25–F29 land Sprint 1 of the
+> standards-conformance backlog at
+> [`../product/standards-conformance-backlog.md`](../product/standards-conformance-backlog.md),
+> which reviews the codebase against 55 normative requirements across OAuth 2.0,
+> OIDC, SAML 2.0, SCIM 2.0, JOSE, WebAuthn, NIST SP 800-63B and HTTP. Ten of its
+> sixteen work items are **not** tracked in this document — that backlog was
+> written from a security-review lens, and protocol conformance is a different
+> one. Read the two together.
 
 ## Open items
 
