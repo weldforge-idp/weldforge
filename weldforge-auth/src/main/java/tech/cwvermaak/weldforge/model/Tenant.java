@@ -96,6 +96,19 @@ public class Tenant {
      * Per-tenant access token TTL in milliseconds. Null = use the
      * application default. PRD SSO-03: range 1 min – 30 days.
      */
+    /**
+     * Advertised in this tenant's IdP metadata as
+     * {@code WantAuthnRequestsSigned} (CONF-5.5).
+     *
+     * <p>Enforcement stays per-SP; this is the tenant's stated intent. The
+     * metadata previously hardcoded {@code false} while enforcement was already
+     * per-SP, so a conformant SP read it, concluded it need not sign, and then
+     * broke the moment signing was required of it.
+     */
+    @Column(name = "saml_want_authn_requests_signed", nullable = false)
+    @Builder.Default
+    private Boolean samlWantAuthnRequestsSigned = false;
+
     @Column(name = "access_ttl_ms")
     private Long accessTtlMs;
 

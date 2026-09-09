@@ -57,7 +57,7 @@ public class SamlIdpController {
                                            @RequestParam(value = "RelayState", required = false) String relayState,
                                            Authentication authentication,
                                            HttpServletRequest request) {
-        return handleSso(slug, samlRequest, relayState, authentication);
+        return handleSso(slug, samlRequest, relayState, authentication, request);
     }
 
     /**
@@ -68,8 +68,9 @@ public class SamlIdpController {
     public ResponseEntity<String> ssoRedirect(@PathVariable String slug,
                                                @RequestParam("SAMLRequest") String samlRequest,
                                                @RequestParam(value = "RelayState", required = false) String relayState,
-                                               Authentication authentication) {
-        return handleSso(slug, samlRequest, relayState, authentication);
+                                               Authentication authentication,
+                                               HttpServletRequest request) {
+        return handleSso(slug, samlRequest, relayState, authentication, request);
     }
 
     /**
@@ -177,7 +178,8 @@ public class SamlIdpController {
     }
 
     private ResponseEntity<String> handleSso(String slug, String samlRequest, String relayState,
-                                              Authentication authentication) {
+                                              Authentication authentication,
+                                              HttpServletRequest request) {
         if (authentication == null || !authentication.isAuthenticated()
                 || !(authentication.getPrincipal() instanceof String email)) {
             return ResponseEntity.status(401).body("Authentication required");
@@ -224,13 +226,34 @@ public class SamlIdpController {
             return ResponseEntity.status(400).body("AuthnRequest signature rejected: " + e.getMessage());
         }
 
+        // CONF-5.3: single-use request IDs. Deliberately AFTER the signature
+        // check -- recording an unverified request ID would let anyone burn an
+        // arbitrary id and lock the real request out of its own login.
+        try {
+            samlIdpService.rejectReplayedRequest(tenant, sp, inResponseTo);
+        } catch (SamlMessageException e) {
+            return ResponseEntity.status(400).body("AuthnRequest rejected: " + e.getMessage());
+        }
+
         User user = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)
                 .orElse(null);
         if (user == null) {
             return ResponseEntity.status(403).body("User not found in tenant");
         }
 
-        String samlResponse = samlIdpService.buildSamlResponse(tenant, user, sp, inResponseTo);
+        // CONF-5.1: the session's own authentication methods, read from the
+        // request attribute the JWT filter sets -- never from a parameter,
+        // which the caller controls. Without this the assertion would keep
+        // reporting a password regardless of what the user actually used.
+        java.util.List<String> sessionAmr = java.util.List.of();
+        Object amrAttribute = request.getAttribute(
+                tech.cwvermaak.weldforge.config.JwtAuthenticationFilter.AMR_ATTRIBUTE);
+        if (amrAttribute instanceof java.util.List<?> methods) {
+            sessionAmr = methods.stream().map(String::valueOf).toList();
+        }
+
+        String samlResponse = samlIdpService.buildSamlResponse(
+                tenant, user, sp, inResponseTo, sessionAmr, null);
 
         // Build auto-submit form (POST binding to SP's ACS URL)
         String html = buildAutoSubmitForm(sp.getAcsUrl(), samlResponse, relayState);

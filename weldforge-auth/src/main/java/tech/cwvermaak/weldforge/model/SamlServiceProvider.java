@@ -53,6 +53,32 @@ public class SamlServiceProvider {
      * verifiable against {@link #spCertificate}, and rejects unsigned or
      * badly-signed requests. Default {@code false} for backward compatibility.
      */
+    /**
+     * When set, every assertion to this SP carries this
+     * {@code AuthnContextClassRef} verbatim rather than one derived from the
+     * session (CONF-5.1).
+     *
+     * <p>The escape hatch for an SP configured to accept only the old
+     * hardcoded {@code PasswordProtectedTransport}: such an SP would break the
+     * day one of its users enables MFA, and that failure looks like an IdP
+     * outage rather than a policy mismatch.
+     */
+    @Column(name = "authn_context_override", length = 255)
+    private String authnContextOverride;
+
+    /**
+     * When true the assertion {@code Issuer} is the metadata {@code entityID},
+     * which is what a conformant SP expects (CONF-5.4).
+     *
+     * <p>Defaults false, preserving the legacy {@code {slug}-idp} value. This
+     * is the most breaking change available here: an SP matches inbound
+     * assertions against a configured issuer string, so flipping it before the
+     * SP is reconfigured rejects every assertion.
+     */
+    @Column(name = "use_entity_id_as_issuer", nullable = false)
+    @Builder.Default
+    private Boolean useEntityIdAsIssuer = false;
+
     @Column(name = "want_authn_request_signed", nullable = false)
     @Builder.Default
     private Boolean wantAuthnRequestSigned = false;

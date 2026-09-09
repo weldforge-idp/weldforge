@@ -78,6 +78,8 @@ public final class AuditEventTypes {
     public static final String MFA_STEPUP_REQUIRED      = "mfa.stepup_required";
 
     // SAML IdP
+    /** An AuthnRequest ID presented twice: the request left the SP's control (CONF-5.3). */
+    public static final String SAML_AUTHNREQUEST_REPLAY = "saml.authnrequest.replay";
     public static final String SAML_IDP_ASSERTION_ISSUED = "saml_idp.assertion.issued";
     public static final String SAML_SP_CREATE            = "saml_idp.sp.create";
     public static final String SAML_SP_UPDATE            = "saml_idp.sp.update";

@@ -115,8 +115,21 @@ public class EpicBStep2Steps {
 
         when(scimGroupRepository.findByTenantId(anyLong())).thenReturn(List.of());
 
+
+        // Sprint 5 collaborators. The certificate service is real rather than
+        // mocked: it mints an actual X.509 from the tenant's key, which is what
+        // the assertions about KeyInfo and metadata need to be true of.
+        var replayRepository =
+                mock(tech.cwvermaak.weldforge.repository.SamlRequestReplayRepository.class);
+        var publicHostProperties = new tech.cwvermaak.weldforge.config.tenant.PublicHostProperties();
+        var signingCertificateService =
+                new tech.cwvermaak.weldforge.service.saml.SamlSigningCertificateService(
+                        mock(tech.cwvermaak.weldforge.repository.TenantSigningKeyRepository.class),
+                        signingKeyService);
+
         idpService = new SamlIdpService(tenantAccessor, spRepository, signingKeyService,
-                userRepository, scimGroupRepository, auditService);
+                userRepository, scimGroupRepository, auditService,
+                signingCertificateService, publicHostProperties, replayRepository);
         sloService = new SamlSloService(spRepository, auditService);
     }
 
