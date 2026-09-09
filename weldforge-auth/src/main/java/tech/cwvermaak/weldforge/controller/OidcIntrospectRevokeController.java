@@ -13,6 +13,7 @@ import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.repository.OidcClientRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
+import tech.cwvermaak.weldforge.service.oidc.ClientCredentials;
 import tech.cwvermaak.weldforge.service.oidc.OidcIntrospectionService;
 import tech.cwvermaak.weldforge.service.oidc.OidcRevocationService;
 
@@ -41,11 +42,19 @@ public class OidcIntrospectRevokeController {
                  produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> introspect(@PathVariable String slug,
                                                           @RequestParam("token") String token,
-                                                          @RequestParam("client_id") String clientId,
-                                                          @RequestParam("client_secret") String clientSecret,
+                                                          @RequestParam(value = "client_id", required = false) String clientId,
+                                                          @RequestParam(value = "client_secret", required = false) String clientSecret,
+                                                          @RequestParam(value = "token_type_hint", required = false) String tokenTypeHint,
                                                           HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
+
+        // CONF-4.1: accept HTTP Basic here too. Introspection is called by
+        // resource servers, which are the most likely of all callers to be a
+        // stock library using the spec's preferred method.
+        ClientCredentials credentials = ClientCredentials.resolve(request, clientId, clientSecret);
+        clientId = credentials.clientId();
+        clientSecret = credentials.clientSecret();
 
         // Authenticate the calling client. The introspection spec is
         // explicit: an unauthenticated request must be rejected, but
@@ -78,12 +87,16 @@ public class OidcIntrospectRevokeController {
                  consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public ResponseEntity<Void> revoke(@PathVariable String slug,
                                        @RequestParam("token") String token,
-                                       @RequestParam("client_id") String clientId,
+                                       @RequestParam(value = "client_id", required = false) String clientId,
                                        @RequestParam(value = "client_secret", required = false) String clientSecret,
                                        @RequestParam(value = "token_type_hint", required = false) String tokenTypeHint,
                                        HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
+
+        ClientCredentials credentials = ClientCredentials.resolve(request, clientId, clientSecret);
+        clientId = credentials.clientId();
+        clientSecret = credentials.clientSecret();
 
         OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId).orElse(null);
         if (client == null || !authenticatesAs(client, clientSecret)) {
