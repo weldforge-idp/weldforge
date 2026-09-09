@@ -33,6 +33,28 @@ import java.util.Map;
 @Slf4j
 public class AuditService {
 
+    /**
+     * Dedicated SLF4J logger for security incidents.
+     *
+     * <p>{@code logback-spring.xml} has always declared this logger and
+     * documented its purpose -- "auth-related events are tagged with logger
+     * name security.audit so downstream pipelines can split them from noisy
+     * HTTP access logs" -- but nothing ever wrote to it, so the split it
+     * promises did not exist and audit events lived only in the database.
+     *
+     * <p>Two things follow from that. A SIEM could not see them at all. And
+     * when the database write failed, the event content was lost outright:
+     * the catch below logged that <em>an</em> audit write had failed, without
+     * saying which incident it was. The moment you most need the record --
+     * database trouble, which an attacker can cause -- is the moment it
+     * disappeared.
+     *
+     * <p>Every event now reaches the log stream as well as the table, so the
+     * two fail independently.
+     */
+    private static final org.slf4j.Logger AUDIT =
+            org.slf4j.LoggerFactory.getLogger("security.audit");
+
     private final AuditEventRepository repository;
     private final TenantRepository tenantRepository;
     // ObjectProvider avoids a circular dependency: WebhookPublisher
@@ -53,10 +75,69 @@ public class AuditService {
         try {
             event = buildWithContext(builder);
             repository.save(event);
+            emit(event, true);
         } catch (Exception e) {
-            log.error("Failed to write audit event: {}", e.getMessage(), e);
+            // The event still has to be recorded somewhere. Emitting it here --
+            // with its full content, not just the exception -- is what stops an
+            // incident vanishing because the database was the thing failing.
+            if (event != null) {
+                emit(event, false);
+            }
+            log.error("Failed to persist audit event {}: {}",
+                    event == null ? "(unbuilt)" : event.getEventType(), e.getMessage(), e);
         }
         if (event != null) publishWebhook(event);
+    }
+
+    /**
+     * Emit an audit event to the {@code security.audit} logger.
+     *
+     * <p>Fields go out as structured arguments, so the JSON encoder used on the
+     * {@code prod} profile renders them as real fields a SIEM can filter on,
+     * while the dev console pattern still shows them as readable key=value
+     * pairs. The message text is deliberately short: the fields carry the
+     * detail, and a SIEM query should not have to parse prose.
+     *
+     * <p>Level encodes severity so an operator can alert on one line:
+     * {@code DENIED} and {@code FAILURE} are the incidents worth waking up for
+     * and go out at WARN; a successful action is INFO. {@code persisted=false}
+     * is always WARN regardless of outcome -- an event that reached only the
+     * log is itself a problem, because the audit table is now incomplete.
+     *
+     * <p>Never throws. Logging an audit event must not be able to break the
+     * operation being audited, and this method is on the failure path of the
+     * one thing that was already going wrong.
+     */
+    private void emit(AuditEvent event, boolean persisted) {
+        try {
+            Object[] fields = {
+                    kv("event_type", event.getEventType()),
+                    kv("outcome", event.getOutcome() == null ? null : event.getOutcome().name()),
+                    kv("actor_email", event.getActorEmail()),
+                    kv("tenant", event.getTenant() == null ? null : event.getTenant().getSlug()),
+                    kv("target_type", event.getTargetType()),
+                    kv("target_id", event.getTargetId()),
+                    kv("ip_address", event.getIpAddress()),
+                    kv("metadata", event.getMetadata()),
+                    kv("persisted", persisted),
+            };
+            boolean incident = !persisted
+                    || event.getOutcome() == AuditEvent.Outcome.DENIED
+                    || event.getOutcome() == AuditEvent.Outcome.FAILURE;
+            if (incident) {
+                AUDIT.warn("audit", fields);
+            } else {
+                AUDIT.info("audit", fields);
+            }
+        } catch (Exception e) {
+            // Swallowed on purpose: see the javadoc. A failure to log must not
+            // escalate into a failure of the audited operation.
+            log.warn("Failed to emit audit event to the security.audit logger: {}", e.getMessage());
+        }
+    }
+
+    private static Object kv(String key, Object value) {
+        return net.logstash.logback.argument.StructuredArguments.keyValue(key, value);
     }
 
     /**
