@@ -154,6 +154,28 @@ class AuditIncidentLoggingTest {
     }
 
     @Test
+    @DisplayName("The rendered line carries the detail, not just the arguments")
+    void rendered_line_is_readable() {
+        // Regression guard. The first version logged a bare "audit" message,
+        // and SLF4J only renders arguments a placeholder consumes -- so on the
+        // console pattern the line read "audit" and nothing else. Both staging
+        // and production run that pattern (neither sets SPRING_PROFILES_ACTIVE),
+        // so every audit line was detail-free where it mattered.
+        //
+        // Asserting on getFormattedMessage rather than the argument array is
+        // the point: the arguments were always present, and the line was still
+        // useless.
+        auditService.log(event("auth.login.failed", AuditEvent.Outcome.FAILURE));
+
+        String rendered = emitted().get(0).getFormattedMessage();
+        assertThat(rendered)
+                .contains("event_type=auth.login.failed")
+                .contains("outcome=FAILURE")
+                .contains("actor_email=alice@leap.test")
+                .contains("persisted=true");
+    }
+
+    @Test
     @DisplayName("A logging failure never escalates into a failure of the audited operation")
     void logging_failure_is_contained() {
         // An event with no tenant and no outcome: the emitter must cope rather
