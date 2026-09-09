@@ -47,14 +47,30 @@ public class OidcDiscoveryController {
         doc.put("introspection_endpoint", issuer + "/oauth2/introspect");
         doc.put("revocation_endpoint",    issuer + "/oauth2/revoke");
         doc.put("end_session_endpoint",   issuer + "/oauth2/logout");
+        // CONF-4.2: the point of discovery is capability detection, so the
+        // document has to describe what the server actually does. It listed
+        // neither the refresh_token grant nor the registration endpoint, both
+        // of which are implemented and reachable -- a client that trusted the
+        // document concluded neither existed.
+        doc.put("registration_endpoint",  issuer + "/oauth2/register");
         doc.put("response_types_supported",  List.of("code"));
-        doc.put("grant_types_supported",     List.of("authorization_code", "client_credentials"));
+        doc.put("response_modes_supported",  List.of("query"));
+        doc.put("grant_types_supported",
+                List.of("authorization_code", "refresh_token", "client_credentials"));
         doc.put("subject_types_supported",   List.of("public"));
         doc.put("id_token_signing_alg_values_supported", List.of("RS256"));
-        doc.put("token_endpoint_auth_methods_supported", List.of("client_secret_post", "none"));
+        doc.put("token_endpoint_auth_methods_supported",
+                List.of("client_secret_basic", "client_secret_post", "none"));
         doc.put("scopes_supported", List.of("openid", "profile", "email"));
         doc.put("code_challenge_methods_supported", List.of("S256"));
-        doc.put("claims_supported", List.of("sub", "iss", "aud", "exp", "iat", "email", "name", "nonce"));
+        // Claims the issuer actually mints, rather than a subset of them.
+        doc.put("claims_supported", List.of(
+                "sub", "iss", "aud", "exp", "iat", "email", "name", "picture",
+                "nonce", "amr", "roles"));
+        // CONF-1.4 / RFC 9207: advertised so a client knows it can rely on the
+        // parameter being present, which is what lets it treat a response
+        // WITHOUT one as suspicious.
+        doc.put("authorization_response_iss_parameter_supported", true);
         return ResponseEntity.ok(doc);
     }
 

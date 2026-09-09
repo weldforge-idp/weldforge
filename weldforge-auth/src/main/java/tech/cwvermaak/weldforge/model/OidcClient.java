@@ -39,6 +39,21 @@ public class OidcClient {
     @Column(name = "client_secret_enc", nullable = false, columnDefinition = "TEXT")
     private String clientSecret;
 
+    /**
+     * SHA-256 of this client's RFC 7592 registration access token (CONF-4.3).
+     *
+     * <p>Hashed for the same reason refresh tokens are: it is a bearer
+     * credential that grants control of a client registration, so a database
+     * dump should not be enough to take one over. The raw value is shown once,
+     * in the registration response.
+     *
+     * <p>Null for clients created through the admin API — those are managed by
+     * an authenticated admin through a different surface, and a null here means
+     * "not self-manageable" rather than "token not yet issued".
+     */
+    @Column(name = "registration_access_token_hash", length = 64)
+    private String registrationAccessTokenHash;
+
     private String name;
 
     /** CSV — see {@link #getRedirectUriList()}. */

@@ -86,7 +86,12 @@ public class OidcClientService {
                 .maxAuthenticationAgeSeconds(dto.getMaxAuthenticationAgeSeconds() != null
                         ? dto.getMaxAuthenticationAgeSeconds() : 0)
                 .publicClient(isPublic)
-                .tokenEndpointAuthMethod(isPublic ? "none" : "client_secret_post")
+                // CONF-4.1/4.3: client_secret_basic is RFC 7591's default and what
+                // most libraries reach for. The token endpoint now accepts it,
+                // so registration can finally report it truthfully -- until
+                // this it advertised Basic and the server could only parse a
+                // form body, which is the mismatch CONF-4.3 was raised for.
+                .tokenEndpointAuthMethod(isPublic ? "none" : "client_secret_basic")
                 .build();
         OidcClient saved = repository.save(client);
 
@@ -229,5 +234,54 @@ public class OidcClientService {
 
     private static void require(List<String> v, String field) {
         if (v == null || v.isEmpty()) throw new IllegalArgumentException(field + " is required");
+    }
+
+    // ---- RFC 7592 registration access tokens (CONF-4.3) ---------------
+
+    /**
+     * Mint and store a registration access token for a dynamically-registered
+     * client, returning the raw value for the registration response.
+     *
+     * <p>Only the hash is persisted, for the same reason refresh tokens are
+     * hashed: this is a bearer credential that can delete a working client
+     * registration, so a database dump must not be enough to take one over.
+     * The raw value is shown exactly once and cannot be recovered afterwards.
+     */
+    @Transactional
+    public String issueRegistrationAccessToken(Long tenantId, String clientId) {
+        byte[] buf = new byte[32];
+        RNG.nextBytes(buf);
+        String raw = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
+
+        OidcClient client = repository.findByTenantIdAndClientId(tenantId, clientId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Client vanished between creation and token issue: " + clientId));
+        client.setRegistrationAccessTokenHash(hashRegistrationToken(raw));
+        repository.save(client);
+        return raw;
+    }
+
+    /** Delete a client by primary key. Used by the RFC 7592 delete endpoint. */
+    @Transactional
+    public void deleteById(Long id) {
+        repository.deleteById(id);
+    }
+
+    /**
+     * Hash a registration access token for storage or comparison.
+     *
+     * <p>Plain SHA-256 rather than BCrypt, matching how refresh tokens and
+     * authorization codes are stored here. These are 256-bit random values, not
+     * passwords: there is no dictionary to attack, so a slow KDF would buy
+     * nothing and cost latency on every management call.
+     */
+    public static String hashRegistrationToken(String raw) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            return java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(md.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 }

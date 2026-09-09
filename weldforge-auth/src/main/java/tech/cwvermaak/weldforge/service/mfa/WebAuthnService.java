@@ -17,38 +17,47 @@ import tech.cwvermaak.weldforge.repository.MfaFactorRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 
+import tech.cwvermaak.weldforge.model.WebAuthnCeremony;
+import tech.cwvermaak.weldforge.repository.WebAuthnCeremonyRepository;
+
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
- * WebAuthn/FIDO2 registration and authentication ceremonies. The ceremony
- * state (the random challenge + bound user/credential ids) lives in an
- * in-memory map keyed by the challenge token we return to the client.
+ * WebAuthn/FIDO2 registration and authentication ceremonies.
  *
- * In a multi-instance deployment this store should be swapped for Redis or
- * the DB — it is fine for single-node dev and staging, and the rest of the
- * auth pipeline is stateless.
+ * <p>Ceremony state — the random challenge plus the bound user and credential
+ * ids — is persisted in {@code webauthn_ceremony}, keyed by the challenge token
+ * returned to the client (CONF-3.1). It used to live in two
+ * {@code ConcurrentHashMap}s on whichever instance served the first request,
+ * which failed across a rolling update (two pods exist during every deploy) and
+ * was the only piece of in-process state preventing a second replica.
+ *
+ * <p>Ceremonies are <b>single-use and time-bounded</b>. The finish step deletes
+ * the row before verifying, so a replayed response finds nothing, and an
+ * abandoned ceremony expires rather than leaking — closing the tab at the
+ * browser's prompt is normal behaviour, and the maps never evicted those.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class WebAuthnService {
 
+    /** How long a started ceremony stays redeemable. Matches the MFA challenge TTL. */
+    private static final long CEREMONY_TTL_SECONDS = 300;
+
     private final RelyingParty relyingParty;
     private final MfaFactorRepository mfaFactorRepository;
     private final AuditService auditService;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final WebAuthnCeremonyRepository ceremonyRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    private final ConcurrentMap<String, PublicKeyCredentialCreationOptions> pendingRegistrations = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, AssertionRequest>                    pendingAssertions   = new ConcurrentHashMap<>();
 
     // ---- Registration ------------------------------------------------
 
     /** Start a WebAuthn registration ceremony for an authenticated user. */
+    @Transactional
     public String startRegistration(User user, String challengeToken) {
         UserIdentity userIdentity = UserIdentity.builder()
                 .name(user.getEmail())
@@ -69,8 +78,11 @@ public class WebAuthnService {
                 .build();
 
         PublicKeyCredentialCreationOptions creation = relyingParty.startRegistration(opts);
-        pendingRegistrations.put(challengeToken, creation);
         try {
+            // The library's own JSON is stored verbatim rather than rebuilt from
+            // parsed fields: a semantic difference between what was issued and
+            // what is verified is exactly what a challenge exists to prevent.
+            persistCeremony(user, challengeToken, WebAuthnCeremony.Type.REGISTRATION, creation.toJson());
             return creation.toCredentialsCreateJson();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to serialise registration options", e);
@@ -81,7 +93,15 @@ public class WebAuthnService {
     @Transactional
     public MfaFactor finishRegistration(User user, String challengeToken, String publicKeyCredentialJson, String label)
             throws RegistrationFailedException, IOException {
-        PublicKeyCredentialCreationOptions request = pendingRegistrations.remove(challengeToken);
+        PublicKeyCredentialCreationOptions request = consume(
+                challengeToken, user, WebAuthnCeremony.Type.REGISTRATION,
+                json -> {
+                    try {
+                        return PublicKeyCredentialCreationOptions.fromJson(json);
+                    } catch (IOException e) {
+                        throw new IllegalStateException("Corrupt WebAuthn registration ceremony", e);
+                    }
+                });
         if (request == null) {
             throw new IllegalStateException("Unknown or expired WebAuthn registration challenge");
         }
@@ -115,6 +135,7 @@ public class WebAuthnService {
 
     // ---- Assertion (login) ------------------------------------------
 
+    @Transactional
     public String startAssertion(User user, String challengeToken) {
         // CONF-3.2: demand user verification only when every one of this user's
         // credentials was enrolled under it. Asking REQUIRED of a credential
@@ -126,8 +147,8 @@ public class WebAuthnService {
                 .username(user.getEmail())
                 .userVerification(uv)
                 .build());
-        pendingAssertions.put(challengeToken, request);
         try {
+            persistCeremony(user, challengeToken, WebAuthnCeremony.Type.ASSERTION, request.toJson());
             return request.toCredentialsGetJson();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to serialise assertion options", e);
@@ -137,7 +158,15 @@ public class WebAuthnService {
     @Transactional
     public boolean finishAssertion(User user, String challengeToken, String publicKeyCredentialJson)
             throws AssertionFailedException, IOException {
-        AssertionRequest request = pendingAssertions.remove(challengeToken);
+        AssertionRequest request = consume(
+                challengeToken, user, WebAuthnCeremony.Type.ASSERTION,
+                json -> {
+                    try {
+                        return AssertionRequest.fromJson(json);
+                    } catch (IOException e) {
+                        throw new IllegalStateException("Corrupt WebAuthn assertion ceremony", e);
+                    }
+                });
         if (request == null) return false;
 
         PublicKeyCredential<AuthenticatorAssertionResponse, ClientAssertionExtensionOutputs> pkc =
@@ -211,5 +240,73 @@ public class WebAuthnService {
         }
         meterRegistry.counter("mfa.webauthn.legacy_uv").increment();
         return UserVerificationRequirement.PREFERRED;
+    }
+
+    // ---- Ceremony persistence (CONF-3.1) ------------------------------
+
+    /**
+     * Persist a started ceremony so any replica can complete it.
+     *
+     * <p>Deliberately NOT annotated {@code @Transactional}: it is called from
+     * {@code startRegistration} / {@code startAssertion} on this same bean, and
+     * a self-invocation bypasses the Spring proxy, so the annotation would be
+     * silently ignored -- the trap already documented on
+     * {@code RefreshTokenFamilyRevoker}. The transaction is declared on the
+     * public entry points instead, where the proxy can see it.
+     */
+    private void persistCeremony(User user, String challengeToken,
+                                 WebAuthnCeremony.Type type, String optionsJson) {
+        ceremonyRepository.save(WebAuthnCeremony.builder()
+                .challengeToken(challengeToken)
+                .userId(user.getId())
+                .ceremonyType(type)
+                .optionsJson(optionsJson)
+                .createdAt(LocalDateTime.now())
+                .expiresAt(LocalDateTime.now().plusSeconds(CEREMONY_TTL_SECONDS))
+                .build());
+    }
+
+    /**
+     * Take a started ceremony, or return null when there is nothing valid to take.
+     *
+     * <p>Deletes before returning, so the ceremony is single-use: a replayed
+     * response finds nothing, exactly as the removing {@code map.remove} it
+     * replaces did.
+     *
+     * <p>Three things make a row unusable, and all three return null rather than
+     * throwing, because the caller's "unknown or expired challenge" is the
+     * honest answer to every one of them:
+     * <ul>
+     *   <li><b>Expired</b> — a ceremony older than its TTL. The row is dropped
+     *       on the way past so it does not wait for the prune job.</li>
+     *   <li><b>Wrong user</b> — a challenge token cannot be redeemed against a
+     *       different account, even by someone who legitimately holds it.</li>
+     *   <li><b>Wrong type</b> — an assertion token cannot finish a registration.
+     *       They share a table, so nothing else stops the confusion.</li>
+     * </ul>
+     */
+    private <T> T consume(String challengeToken, User user, WebAuthnCeremony.Type expectedType,
+                          java.util.function.Function<String, T> parser) {
+        if (challengeToken == null || challengeToken.isBlank()) return null;
+
+        Optional<WebAuthnCeremony> found = ceremonyRepository.findById(challengeToken);
+        if (found.isEmpty()) return null;
+        WebAuthnCeremony row = found.get();
+
+        // Delete first: the ceremony is spent by the attempt, not by its success.
+        ceremonyRepository.delete(row);
+
+        if (row.getExpiresAt().isBefore(LocalDateTime.now())) return null;
+        if (!row.getUserId().equals(user.getId())) {
+            log.warn("WebAuthn ceremony redeemed by the wrong user: started_for={} presented_by={}",
+                    row.getUserId(), user.getId());
+            return null;
+        }
+        if (row.getCeremonyType() != expectedType) {
+            log.warn("WebAuthn ceremony type mismatch: stored={} expected={}",
+                    row.getCeremonyType(), expectedType);
+            return null;
+        }
+        return parser.apply(row.getOptionsJson());
     }
 }

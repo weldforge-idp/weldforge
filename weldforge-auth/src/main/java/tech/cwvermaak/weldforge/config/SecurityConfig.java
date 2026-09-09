@@ -133,6 +133,12 @@ public class SecurityConfig {
                                 "/t/*/oauth2/authorize/decide",
                                 // SAML IdP metadata — public like OIDC discovery
                                 "/t/*/oauth2/register",
+                                // RFC 7592 client configuration (CONF-4.3).
+                                // Authenticated by the registration access
+                                // token the client was issued, checked in the
+                                // controller -- the Spring chain has no notion
+                                // of that credential, so it passes through.
+                                "/t/*/oauth2/register/*",
                                 "/t/*/saml2/idp/metadata",
                                 // PKI public endpoints — CRL, CA cert, OCSP responder (PRD X50-02/05)
                                 "/t/*/pki/ca.pem",

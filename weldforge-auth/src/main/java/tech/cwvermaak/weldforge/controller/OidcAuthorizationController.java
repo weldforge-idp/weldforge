@@ -17,6 +17,7 @@ import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.OidcClientRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
+import tech.cwvermaak.weldforge.service.oidc.ClientCredentials;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationException;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService.AuthorizeRequest;
@@ -203,7 +204,14 @@ public class OidcAuthorizationController {
                 sessionAmr(request));
         String code = authorizationService.issueAuthorizationCode(tenant, user, req);
 
-        String url = appendQuery(redirectUri, "code", code, "state", state);
+        // CONF-1.4 / RFC 9207: name the issuer that produced this response.
+        // Every tenant is a distinct issuer behind one hostname, which is
+        // exactly the deployment shape the mix-up attack targets -- a client
+        // integrated with several tenants otherwise cannot tell which one
+        // answered, and a response from a hostile tenant looks identical to a
+        // response from the intended one.
+        String url = appendQuery(redirectUri, "code", code, "state", state,
+                "iss", OidcDiscoveryControllerHelper.tenantIssuer(request, slug));
         return ResponseEntity.status(302).location(URI.create(url)).build();
     }
 
@@ -226,6 +234,13 @@ public class OidcAuthorizationController {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
         String issuer = OidcDiscoveryControllerHelper.tenantIssuer(request, tenant.getSlug());
+
+        // CONF-4.1 / RFC 6749 §2.3.1: HTTP Basic is the method the spec says a
+        // server MUST support and most client libraries default to. Resolved
+        // once here so all three grants see the same credentials.
+        ClientCredentials credentials = ClientCredentials.resolve(request, clientId, clientSecret);
+        clientId = credentials.clientId();
+        clientSecret = credentials.clientSecret();
 
         return switch (grantType) {
             case "authorization_code" -> {

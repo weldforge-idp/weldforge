@@ -47,7 +47,8 @@ class WebAuthnUserVerificationTest {
         // resolveUserVerification never touches it -- the requirement is decided
         // from the stored factors, before any ceremony starts.
         service = new WebAuthnService(
-                null, repository, mock(AuditService.class), meterRegistry);
+                null, repository, mock(AuditService.class), meterRegistry,
+                mock(tech.cwvermaak.weldforge.repository.WebAuthnCeremonyRepository.class));
 
         alice = new User();
         alice.setId(7L);
