@@ -1,0 +1,17 @@
+{
+  "@timestamp": {
+    "$resolver": "timestamp",
+    "pattern": { "format": "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "timeZone": "UTC" }
+  },
+  "level": { "$resolver": "level", "field": "name" },
+  "logger_name": { "$resolver": "logger", "field": "name" },
+  "thread_name": { "$resolver": "thread", "field": "name" },
+  "message": { "$resolver": "message", "stringified": true },
+  "app": "${json:main:appName:-weldforge-auth}",
+  "stack_trace": {
+    "$resolver": "exception",
+    "field": "stackTrace",
+    "stackTrace": { "stringified": true }
+  },
+  "": { "$resolver": "mdc", "flatten": true }
+}

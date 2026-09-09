@@ -34,6 +34,20 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+            <!--
+              Log4j 2 replaces Logback as the SLF4J binding. Spring Boot ships
+              Logback through spring-boot-starter-logging, which arrives
+              transitively via every starter, so excluding it HERE is not
+              enough on its own; the exclusion is repeated on each starter that
+              pulls it. Two bindings on the classpath is not a warning, it is
+              silently undefined logging.
+            -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-logging</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -210,11 +224,24 @@
             <artifactId>bucket4j-core</artifactId>
             <version>8.10.1</version>
         </dependency>
-        <!-- Structured JSON logging -->
+        <!--
+          Log4j 2, replacing Logback. SLF4J stays the facade: every call site
+          uses @Slf4j and org.slf4j.Logger, and none of them changed.
+        -->
         <dependency>
-            <groupId>net.logstash.logback</groupId>
-            <artifactId>logstash-logback-encoder</artifactId>
-            <version>${logstash-encoder.version}</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-log4j2</artifactId>
+        </dependency>
+        <!--
+          Structured JSON logging for the prod profile. JsonTemplateLayout is
+          Log4j 2's equivalent of the logstash-logback-encoder this replaces;
+          it is a separate artifact from the starter. Version is managed by the
+          Spring Boot parent's log4j2 BOM; do not pin it here, or an upgrade of
+          the starter will silently disagree with the layout.
+        -->
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-layout-template-json</artifactId>
         </dependency>
         <!-- Prometheus metrics export -->
         <dependency>

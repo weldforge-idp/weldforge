@@ -2,6 +2,7 @@ package tech.cwvermaak.weldforge.service.audit;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -92,11 +93,12 @@ public class AuditService {
     /**
      * Emit an audit event to the {@code security.audit} logger.
      *
-     * <p>Fields go out as structured arguments, so the JSON encoder used on the
-     * {@code prod} profile renders them as real fields a SIEM can filter on,
-     * while the dev console pattern still shows them as readable key=value
-     * pairs. The message text is deliberately short: the fields carry the
-     * detail, and a SIEM query should not have to parse prose.
+     * <p>Fields go out through the MDC, so the {@code prod} JSON template
+     * flattens them into real fields a SIEM can filter on, while the dev
+     * console still shows a readable summary. Using the MDC rather than a
+     * logging-implementation-specific structured argument keeps this class on
+     * the SLF4J facade: it survived the Logback to Log4j 2 migration without
+     * a change to what it asserts.
      *
      * <p>Level encodes severity so an operator can alert on one line:
      * {@code DENIED} and {@code FAILURE} are the incidents worth waking up for
@@ -109,40 +111,50 @@ public class AuditService {
      * one thing that was already going wrong.
      */
     private void emit(AuditEvent event, boolean persisted) {
+        Map<String, String> fields = new HashMap<>();
         try {
-            Object[] fields = {
-                    kv("event_type", event.getEventType()),
-                    kv("outcome", event.getOutcome() == null ? null : event.getOutcome().name()),
-                    kv("actor_email", event.getActorEmail()),
-                    kv("tenant", event.getTenant() == null ? null : event.getTenant().getSlug()),
-                    kv("target_type", event.getTargetType()),
-                    kv("target_id", event.getTargetId()),
-                    kv("ip_address", event.getIpAddress()),
-                    kv("metadata", event.getMetadata()),
-                    kv("persisted", persisted),
-            };
+            put(fields, "audit.event_type", event.getEventType());
+            put(fields, "audit.outcome", event.getOutcome() == null ? null : event.getOutcome().name());
+            put(fields, "audit.actor_email", event.getActorEmail());
+            put(fields, "audit.tenant", event.getTenant() == null ? null : event.getTenant().getSlug());
+            put(fields, "audit.target_type", event.getTargetType());
+            put(fields, "audit.target_id", event.getTargetId());
+            put(fields, "audit.ip_address", event.getIpAddress());
+            put(fields, "audit.metadata", event.getMetadata() == null ? null : event.getMetadata().toString());
+            put(fields, "audit.persisted", Boolean.toString(persisted));
+
+            fields.forEach(MDC::put);
+
             boolean incident = !persisted
                     || event.getOutcome() == AuditEvent.Outcome.DENIED
                     || event.getOutcome() == AuditEvent.Outcome.FAILURE;
+            String summary = event.getEventType() + " outcome="
+                    + (event.getOutcome() == null ? "UNKNOWN" : event.getOutcome().name())
+                    + " persisted=" + persisted;
             if (incident) {
-                AUDIT.warn("audit", fields);
+                AUDIT.warn(summary);
             } else {
-                AUDIT.info("audit", fields);
+                AUDIT.info(summary);
             }
         } catch (Exception e) {
             // Swallowed on purpose: see the javadoc. A failure to log must not
             // escalate into a failure of the audited operation.
             log.warn("Failed to emit audit event to the security.audit logger: {}", e.getMessage());
+        } finally {
+            // Scoped to this one line. MdcEnrichmentFilter owns request_id,
+            // tenant and actor for the whole request; leaving audit.* behind
+            // would stamp them onto every unrelated log line that followed.
+            fields.keySet().forEach(MDC::remove);
         }
     }
 
-    private static Object kv(String key, Object value) {
-        return net.logstash.logback.argument.StructuredArguments.keyValue(key, value);
+    private static void put(Map<String, String> fields, String key, String value) {
+        if (value != null) fields.put(key, value);
     }
 
     /**
      * Fan the audit event out to any matching webhook subscriptions
-     * (PRD API-05). Publish failures are swallowed — webhook delivery is
+     * (PRD API-05). Publish failures are swallowed - webhook delivery is
      * a side-effect of the primary operation and must never break it.
      */
     private void publishWebhook(AuditEvent event) {
