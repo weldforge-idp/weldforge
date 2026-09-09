@@ -73,6 +73,17 @@ public class OidcIssuerSteps {
     private List<String> lastScopes;
     private String lastNonce;
 
+    // Conformance-programme state. The refresh store is a real in-memory
+    // implementation rather than a stub: the behaviour under test IS the
+    // storage (which family a token belongs to, whether it is revoked), so a
+    // stub that always answered would assert nothing.
+    private tech.cwvermaak.weldforge.repository.RefreshTokenRepository refreshRepo;
+    private tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker familyRevoker;
+    private tech.cwvermaak.weldforge.service.security.RefreshTokenService refreshTokenService;
+    private final Map<String, tech.cwvermaak.weldforge.model.RefreshToken> refreshStore = new HashMap<>();
+    private String rawRefreshToken;
+    private java.util.UUID firstFamilyId;
+
     public OidcIssuerSteps(TestWorld world) {
         this.world = world;
     }
@@ -126,6 +137,15 @@ public class OidcIssuerSteps {
         });
         when(codeRepo.findByCodeHash(any())).thenAnswer(inv ->
                 Optional.ofNullable(codeStore.get((String) inv.getArgument(0))));
+        // recordIssuedFamily looks codes up by primary key, not by hash. Without
+        // this the family link is silently never recorded and a code replay
+        // revokes nothing -- which is the whole behaviour under test.
+        when(codeRepo.findById(any())).thenAnswer(inv -> {
+            Long wanted = inv.getArgument(0);
+            return codeStore.values().stream()
+                    .filter(row -> wanted.equals(row.getId()))
+                    .findFirst();
+        });
 
         signingKeyService = new TenantSigningKeyService(signingKeyRepo);
         var mfaFactorRepo = mock(tech.cwvermaak.weldforge.repository.MfaFactorRepository.class);
@@ -136,8 +156,32 @@ public class OidcIssuerSteps {
                         .enforcement(tech.cwvermaak.weldforge.model.TenantMfaPolicy.Enforcement.OPTIONAL)
                         .defaultStepupMaxAge(0)
                         .build());
+        refreshRepo = mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class);
+        when(refreshRepo.save(any(tech.cwvermaak.weldforge.model.RefreshToken.class))).thenAnswer(inv -> {
+            tech.cwvermaak.weldforge.model.RefreshToken row = inv.getArgument(0);
+            if (row.getId() == null) row.setId(idSeq.getAndIncrement());
+            refreshStore.put(row.getTokenHash(), row);
+            return row;
+        });
+        when(refreshRepo.findByTokenHash(any())).thenAnswer(inv ->
+                Optional.ofNullable(refreshStore.get((String) inv.getArgument(0))));
+        // Revoking a family marks every row carrying that family id, which is
+        // what the assertions read back.
+        familyRevoker = mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class);
+        when(familyRevoker.revoke(any(), any())).thenAnswer(inv -> {
+            java.util.UUID family = inv.getArgument(0);
+            int count = 0;
+            for (var row : refreshStore.values()) {
+                if (family.equals(row.getFamilyId()) && row.getRevokedAt() == null) {
+                    row.setRevokedAt(java.time.LocalDateTime.now());
+                    count++;
+                }
+            }
+            return count;
+        });
+
         authorizationService = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
-                mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class),
+                familyRevoker,
                 mfaFactorRepo, mfaPolicyService);
         tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
         // Set @Value-injected lifetimes since we constructed the bean by hand.
@@ -145,8 +189,11 @@ public class OidcIssuerSteps {
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
         introspectionService = new OidcIntrospectionService(signingKeyService, revocationRepo);
         revocationService = new OidcRevocationService(signingKeyService, revocationRepo, auditService,
-                mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
-                mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class));
+                refreshRepo, familyRevoker);
+
+        var refreshProperties = new tech.cwvermaak.weldforge.service.security.RefreshTokenProperties();
+        refreshTokenService = new tech.cwvermaak.weldforge.service.security.RefreshTokenService(
+                refreshRepo, familyRevoker, refreshProperties, auditService);
     }
 
     private Map<String, Object> lastIntrospection;
@@ -210,8 +257,11 @@ public class OidcIssuerSteps {
 
     @Given("tenant {string} has registered an OIDC client {string} with redirect {string} and PKCE required")
     public void tenantHasClient(String slug, String clientId, String redirect) {
+        // Distinct ids: a shared id would make every client-binding check pass
+        // by accident, which is exactly what the cross-client revocation
+        // scenario is supposed to catch.
         acmeApp = OidcClient.builder()
-                .id(10L)
+                .id(idSeq.getAndIncrement())
                 .tenant(acme)
                 .clientId(clientId)
                 .clientSecret("super-secret")
@@ -234,18 +284,27 @@ public class OidcIssuerSteps {
 
     @When("I fetch the discovery document for tenant {string}")
     public void fetchDiscovery(String slug) {
-        // Build the doc the same way the controller does — pure data, no HTTP.
-        String issuer = "https://weldforge.test/t/" + slug;
-        Map<String, Object> doc = new java.util.LinkedHashMap<>();
-        doc.put("issuer", issuer);
-        doc.put("jwks_uri", issuer + "/oauth2/jwks");
-        doc.put("authorization_endpoint", issuer + "/oauth2/authorize");
-        doc.put("token_endpoint", issuer + "/oauth2/token");
-        doc.put("id_token_signing_alg_values_supported", List.of("RS256"));
-        doc.put("response_types_supported", List.of("code"));
-        doc.put("code_challenge_methods_supported", List.of("S256"));
-        // JWKS comes from the service, exactly like the live endpoint
-        doc.put("jwks", signingKeyService.jwks(acme));
+        // Drives the REAL controller rather than rebuilding the document here.
+        // A hand-rolled copy would assert only that the test agrees with itself
+        // -- and drift between the document and the server is precisely the
+        // defect CONF-4.2 exists to prevent.
+        var tenantRepo = mock(tech.cwvermaak.weldforge.repository.TenantRepository.class);
+        when(tenantRepo.findBySlug(slug)).thenReturn(Optional.of(
+                "globex".equals(slug) ? globex : acme));
+        var controller = new tech.cwvermaak.weldforge.controller.OidcDiscoveryController(
+                tenantRepo, signingKeyService);
+
+        var request = new org.springframework.mock.web.MockHttpServletRequest(
+                "GET", "/t/" + slug + "/.well-known/openid-configuration");
+        request.setScheme("https");
+        request.setServerName("weldforge.test");
+        request.setServerPort(443);
+
+        Map<String, Object> doc = new java.util.LinkedHashMap<>(
+                controller.discovery(slug, request).getBody());
+        // The JWKS is served from its own endpoint; fetch it through the same
+        // controller so the existing key assertions still describe live output.
+        doc.put("jwks", controller.jwks(slug).getBody());
         lastDiscovery = doc;
     }
 
@@ -279,8 +338,12 @@ public class OidcIssuerSteps {
         challenge = OidcAuthorizationService.base64UrlSha256(verifier);
     }
 
+    /** The client the most recent authorization was issued to. */
+    private String authorizedClientId = "acme-app";
+
     @When("alice authorizes {string} for scope {string}")
     public void aliceAuthorizes(String clientId, String scope) {
+        authorizedClientId = clientId;
         AuthorizeRequest req = new AuthorizeRequest(
                 clientId,
                 "https://app.acme.test/callback",
@@ -307,13 +370,23 @@ public class OidcIssuerSteps {
     private void exchangeWith(String verifierToUse, Tenant tenantToExchangeAt) {
         try {
             CodeExchangeResult result = authorizationService.exchangeCode(tenantToExchangeAt,
-                    new CodeExchangeRequest(issuedCode, "acme-app", "super-secret",
+                    new CodeExchangeRequest(issuedCode, authorizedClientId, "super-secret",
                             "https://app.acme.test/callback", verifierToUse));
             lastScopes = result.scopes();
             lastNonce = result.nonce();
             lastIssued = tokenService.issueForCodeExchange(
                     tenantToExchangeAt, result.client(), result.user(),
                     lastScopes, lastNonce, "https://weldforge.test/t/" + tenantToExchangeAt.getSlug());
+
+            // Mint the refresh family the same way the token endpoint does, and
+            // record it on the code -- that link is what lets a later replay
+            // revoke what the first exchange produced (CONF-1.2).
+            var issuedRefresh = refreshTokenService.issueNewForClient(
+                    result.user(), result.client(), null, null, null,
+                    String.join(" ", lastScopes));
+            rawRefreshToken = issuedRefresh.rawToken();
+            if (firstFamilyId == null) firstFamilyId = issuedRefresh.row().getFamilyId();
+            authorizationService.recordIssuedFamily(result.codeId(), issuedRefresh.row().getFamilyId());
             world.lastError = null;
         } catch (OidcAuthorizationException e) {
             world.lastError = e;
@@ -375,5 +448,113 @@ public class OidcIssuerSteps {
     public void rejectedWithCode(String errorCode) {
         assertThat(world.lastError).isInstanceOf(OidcAuthorizationException.class);
         assertThat(((OidcAuthorizationException) world.lastError).getErrorCode()).isEqualTo(errorCode);
+    }
+
+    // ---- Standards-conformance programme steps ------------------------
+
+    @Given("client {string} is registered for scopes {string}")
+    public void clientRegisteredForScopes(String clientId, String scopes) {
+        OidcClient client = clientRepo.findByTenantIdAndClientId(acme.getId(), clientId).orElseThrow();
+        client.setScopes(scopes);
+    }
+
+    @When("the resulting refresh token is exchanged")
+    public void refreshExchanged() {
+        refreshExchangedRequesting(null);
+    }
+
+    @When("the refresh token is exchanged requesting scope {string}")
+    public void refreshExchangedRequesting(String requestedScope) {
+        try {
+            OidcClient client = refreshStore.get(
+                    tech.cwvermaak.weldforge.service.security.RefreshTokenService.hash(rawRefreshToken))
+                    .getClient();
+            var rotated = refreshTokenService.rotateForClient(rawRefreshToken, client, null, null);
+            rawRefreshToken = rotated.rawToken();
+
+            // Mirrors OidcAuthorizationController.resolveRefreshScopes: the
+            // family's recorded grant is the ceiling, and a requested scope may
+            // narrow it but never widen past it.
+            String granted = rotated.row().getGrantedScopes();
+            List<String> ceiling = granted == null || granted.isBlank()
+                    ? client.getScopeList()
+                    : java.util.Arrays.stream(granted.split("\\s+")).filter(x -> !x.isBlank()).toList();
+            if (requestedScope == null) {
+                lastScopes = ceiling;
+            } else {
+                List<String> requested = java.util.Arrays.stream(requestedScope.split("\\s+"))
+                        .filter(x -> !x.isBlank()).toList();
+                for (String one : requested) {
+                    if (!ceiling.contains(one)) {
+                        throw new OidcAuthorizationException("invalid_scope",
+                                "Scope '" + one + "' was not granted to this refresh token");
+                    }
+                }
+                lastScopes = requested;
+            }
+            world.lastError = null;
+        } catch (OidcAuthorizationException e) {
+            world.lastError = e;
+        }
+    }
+
+    @Then("the issued scopes are {string}")
+    public void issuedScopesAre(String expected) {
+        assertThat(world.lastError).isNull();
+        assertThat(lastScopes)
+                .containsExactlyInAnyOrderElementsOf(java.util.Arrays.asList(expected.split("\\s+")));
+    }
+
+    @When("the same code is exchanged a second time")
+    public void sameCodeExchangedTwice() {
+        exchangeWith(verifier, acme);
+    }
+
+    @Then("the refresh token family from the first exchange is revoked")
+    public void familyIsRevoked() {
+        assertThat(firstFamilyId).as("no refresh family was recorded").isNotNull();
+        assertThat(refreshStore.values())
+                .filteredOn(row -> firstFamilyId.equals(row.getFamilyId()))
+                .isNotEmpty()
+                .allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
+    }
+
+    @Then("the refresh token family from the first exchange is still active")
+    public void familyIsActive() {
+        assertThat(firstFamilyId).isNotNull();
+        assertThat(refreshStore.values())
+                .filteredOn(row -> firstFamilyId.equals(row.getFamilyId()))
+                .isNotEmpty()
+                .allSatisfy(row -> assertThat(row.getRevokedAt()).isNull());
+    }
+
+    @When("the refresh token is revoked by client {string}")
+    public void refreshRevokedByClient(String clientId) {
+        OidcClient caller = clientRepo.findByTenantIdAndClientId(acme.getId(), clientId).orElseThrow();
+        revocationService.revoke(rawRefreshToken, acme, caller,
+                "https://weldforge.test/t/" + acme.getSlug());
+    }
+
+    @Then("the discovery document advertises issuer identification")
+    public void discoveryAdvertisesIss() {
+        assertThat(lastDiscovery.get("authorization_response_iss_parameter_supported")).isEqualTo(true);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Then("the discovery document lists grant type {string}")
+    public void discoveryListsGrant(String grant) {
+        assertThat((List<String>) lastDiscovery.get("grant_types_supported")).contains(grant);
+    }
+
+    @Then("the discovery document advertises a registration endpoint")
+    public void discoveryHasRegistration() {
+        assertThat((String) lastDiscovery.get("registration_endpoint")).endsWith("/oauth2/register");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Then("the discovery document lists auth method {string}")
+    public void discoveryListsAuthMethod(String method) {
+        assertThat((List<String>) lastDiscovery.get("token_endpoint_auth_methods_supported"))
+                .contains(method);
     }
 }
