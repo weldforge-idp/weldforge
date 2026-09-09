@@ -24,9 +24,19 @@ import org.springframework.stereotype.Service;
  *   SPRING_MAIL_HOST, SPRING_MAIL_PORT,
  *   SPRING_MAIL_USERNAME, SPRING_MAIL_PASSWORD,
  *   SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH=true,
- *   SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE=true,
  *   APP_MAIL_FROM=no-reply&#64;your-domain
  * </pre>
+ *
+ * <p>The TLS setting depends on the port and the two are not interchangeable:
+ * <ul>
+ *   <li><b>465</b> — implicit SSL, TLS from the first byte:
+ *       {@code ...MAIL_SMTP_SSL_ENABLE=true}, STARTTLS <b>false</b>.</li>
+ *   <li><b>587</b> — starts in the clear and upgrades:
+ *       {@code ...MAIL_SMTP_STARTTLS_ENABLE=true}, SSL <b>false</b>.</li>
+ * </ul>
+ * Asking for STARTTLS on 465 does not fall back — the handshake fails or the
+ * connection hangs until timeout, and the error names nothing useful. The Helm
+ * chart derives both flags from the port so this cannot be set inconsistently.
  */
 @Service
 @Primary

@@ -52,6 +52,17 @@ public class TenantSigningKey {
     @Builder.Default
     private Boolean active = true;
 
+    /**
+     * Self-signed X.509 certificate wrapping this key, for SAML signature
+     * {@code KeyInfo} and published metadata (CONF-5.4).
+     *
+     * <p>Null until first minted. Derived from a key that already exists, so it
+     * is generated lazily rather than backfilled, and a rotated key simply has
+     * none yet.
+     */
+    @Column(name = "certificate_pem", columnDefinition = "TEXT")
+    private String certificatePem;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

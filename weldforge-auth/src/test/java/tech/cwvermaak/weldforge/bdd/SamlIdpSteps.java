@@ -134,8 +134,21 @@ public class SamlIdpSteps {
             return null;
         }).when(auditService).recordAdmin(anyString(), any(), anyString(), anyString(), any());
 
+
+        // Sprint 5 collaborators. The certificate service is real rather than
+        // mocked: it mints an actual X.509 from the tenant's key, which is what
+        // the assertions about KeyInfo and metadata need to be true of.
+        var replayRepository =
+                mock(tech.cwvermaak.weldforge.repository.SamlRequestReplayRepository.class);
+        var publicHostProperties = new tech.cwvermaak.weldforge.config.tenant.PublicHostProperties();
+        var signingCertificateService =
+                new tech.cwvermaak.weldforge.service.saml.SamlSigningCertificateService(
+                        mock(tech.cwvermaak.weldforge.repository.TenantSigningKeyRepository.class),
+                        signingKeyService);
+
         samlIdpService = new SamlIdpService(tenantAccessor, spRepository, signingKeyService,
-                userRepository, scimGroupRepository, auditService);
+                userRepository, scimGroupRepository, auditService,
+                signingCertificateService, publicHostProperties, replayRepository);
     }
 
     private Tenant createTenant(String slug) {
@@ -395,5 +408,81 @@ public class SamlIdpSteps {
                 .filter(d -> entityId.equals(d.getEntityId()))
                 .findFirst().orElseThrow();
         assertThat(dto.getWantAuthnRequestSigned()).isTrue();
+    }
+
+    // ---- Sprint 5: assertion fidelity ---------------------------------
+
+    private SamlServiceProvider spByEntityId(String spEntityId) {
+        Tenant t = tenantsBySlug.get("acme");
+        return spsByTenant.get(t.getId()).stream()
+                .filter(sp -> spEntityId.equals(sp.getEntityId()))
+                .findFirst().orElseThrow();
+    }
+
+    private String decodedResponse() {
+        return new String(Base64.getDecoder().decode(lastSamlResponse), StandardCharsets.UTF_8);
+    }
+
+    @Given("SP {string} pins its authentication context to the password class")
+    public void spPinsContext(String spEntityId) {
+        spByEntityId(spEntityId).setAuthnContextOverride(
+                tech.cwvermaak.weldforge.service.saml.SamlIdpService.AUTHN_CTX_PASSWORD_PROTECTED);
+    }
+
+    @Given("SP {string} opts in to the entityID issuer")
+    public void spOptsInToEntityIdIssuer(String spEntityId) {
+        spByEntityId(spEntityId).setUseEntityIdAsIssuer(true);
+    }
+
+    @When("a SAML Response is built for {string} to SP {string} with factors {string}")
+    public void buildResponseWithFactors(String email, String spEntityId, String factors) {
+        Tenant t = tenantsBySlug.get("acme");
+        User user = userStore.stream()
+                .filter(u -> email.equalsIgnoreCase(u.getEmail()) && u.getTenant().getId().equals(t.getId()))
+                .findFirst().orElseThrow();
+        lastSamlResponse = samlIdpService.buildSamlResponse(
+                t, user, spByEntityId(spEntityId), "_req123",
+                java.util.Arrays.stream(factors.split("\s+")).toList(), null);
+    }
+
+    @Then("the assertion's authentication context is the two-factor class")
+    public void contextIsTwoFactor() {
+        assertThat(decodedResponse())
+                .contains(tech.cwvermaak.weldforge.service.saml.SamlIdpService.AUTHN_CTX_MOBILE_TWO_FACTOR);
+    }
+
+    @Then("the assertion's authentication context is the password class")
+    public void contextIsPassword() {
+        assertThat(decodedResponse())
+                .contains(tech.cwvermaak.weldforge.service.saml.SamlIdpService.AUTHN_CTX_PASSWORD_PROTECTED);
+    }
+
+    @Then("the assertion carries a session index")
+    public void assertionCarriesSessionIndex() {
+        assertThat(decodedResponse()).containsPattern("SessionIndex=\"[^\"]+\"");
+    }
+
+    @Then("the signature KeyInfo contains an X509 certificate")
+    public void keyInfoHasCertificate() {
+        assertThat(decodedResponse()).contains("X509Certificate");
+    }
+
+    @Then("the signature KeyInfo contains no bare KeyValue")
+    public void keyInfoHasNoKeyValue() {
+        // A verifier resolving the key from KeyInfo expects X509Data; a raw
+        // modulus and exponent leaves it nothing to match against the
+        // certificate published in metadata.
+        assertThat(decodedResponse()).doesNotContain("KeyValue");
+    }
+
+    @Then("the assertion issuer is {string}")
+    public void assertionIssuerIs(String expected) {
+        assertThat(decodedResponse()).contains("<saml:Issuer>" + expected + "</saml:Issuer>");
+    }
+
+    @Then("the assertion issuer is the tenant's metadata entityID")
+    public void assertionIssuerIsEntityId() {
+        String entityId = samlIdpService.metadataEntityId(tenantsBySlug.get("acme"));
+        assertThat(decodedResponse()).contains("<saml:Issuer>" + entityId + "</saml:Issuer>");
     }
 }

@@ -66,6 +66,11 @@ public class SamlIdpService {
     private final UserRepository userRepository;
     private final ScimGroupRepository scimGroupRepository;
     private final AuditService auditService;
+    /** Mints and caches the X.509 certificate published in metadata (CONF-5.4). */
+    private final SamlSigningCertificateService signingCertificateService;
+    private final tech.cwvermaak.weldforge.config.tenant.PublicHostProperties publicHost;
+    /** AuthnRequest IDs already spent, so a captured request cannot be replayed (CONF-5.3). */
+    private final tech.cwvermaak.weldforge.repository.SamlRequestReplayRepository replayRepository;
 
     // ---- CRUD for SP registrations ----------------------------------
 
@@ -165,15 +170,24 @@ public class SamlIdpService {
         xml.append("<md:EntityDescriptor xmlns:md=\"urn:oasis:names:tc:SAML:2.0:metadata\"");
         xml.append(" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"");
         xml.append(" entityID=\"").append(escapeXml(entityId)).append("\">\n");
-        xml.append("  <md:IDPSSODescriptor WantAuthnRequestsSigned=\"false\"");
+        // CONF-5.5: state the tenant's intent rather than a hardcoded false.
+        // A conformant SP reads this, concludes it need not sign, and then
+        // breaks the moment want_authn_request_signed is enabled for it --
+        // so the metadata has to say so BEFORE enforcement starts.
+        boolean wantSigned = Boolean.TRUE.equals(tenant.getSamlWantAuthnRequestsSigned());
+        xml.append("  <md:IDPSSODescriptor WantAuthnRequestsSigned=\"")
+           .append(wantSigned).append("\"");
         xml.append(" protocolSupportEnumeration=\"urn:oasis:names:tc:SAML:2.0:protocol\">\n");
 
         // Signing key
         xml.append("    <md:KeyDescriptor use=\"signing\">\n");
         xml.append("      <ds:KeyInfo>\n");
         xml.append("        <ds:X509Data>\n");
+        // CONF-5.4: a real X.509 certificate. This element previously carried
+        // a raw SubjectPublicKeyInfo, so an SP that base64-decodes it and parses
+        // it as X.509 -- which is what the element name promises -- failed.
         xml.append("          <ds:X509Certificate>");
-        xml.append(base64EncodedPublicKey(publicKey));
+        xml.append(signingCertificateService.base64Certificate(tenant, key, entityId));
         xml.append("</ds:X509Certificate>\n");
         xml.append("        </ds:X509Data>\n");
         xml.append("      </ds:KeyInfo>\n");
@@ -205,13 +219,33 @@ public class SamlIdpService {
      */
     public String buildSamlResponse(Tenant tenant, User user, SamlServiceProvider sp,
                                      String inResponseTo) {
+        return buildSamlResponse(tenant, user, sp, inResponseTo, null, null);
+    }
+
+    /**
+     * As above, reporting how the user actually authenticated (CONF-5.1) and
+     * tagging the assertion with a session index (CONF-5.2).
+     *
+     * @param amr          RFC 8176 methods from the session, or null when unknown
+     * @param sessionIndex the session this assertion belongs to, or null to mint one
+     */
+    public String buildSamlResponse(Tenant tenant, User user, SamlServiceProvider sp,
+                                     String inResponseTo, java.util.List<String> amr,
+                                     String sessionIndex) {
         ensureOpenSaml();
 
         TenantSigningKey key = signingKeyService.getOrCreateActive(tenant);
         RSAPrivateKey privateKey = signingKeyService.loadPrivateKey(key);
         RSAPublicKey publicKey = signingKeyService.loadPublicKey(key);
 
-        String issuer = tenant.getSlug() + "-idp";
+        // CONF-5.4: the metadata entityID is what a conformant SP expects to
+        // see as Issuer. Opt-in per SP, because an SP matches assertions
+        // against a configured issuer string and flipping it before the SP is
+        // reconfigured rejects every assertion.
+        String entityId = metadataEntityId(tenant);
+        String issuer = Boolean.TRUE.equals(sp.getUseEntityIdAsIssuer())
+                ? entityId
+                : tenant.getSlug() + "-idp";
         Instant now = Instant.now();
         String responseId = "_" + UUID.randomUUID();
         String assertionId = "_" + UUID.randomUUID();
@@ -223,12 +257,18 @@ public class SamlIdpService {
         try {
             // Build the response XML manually for reliability across OpenSAML versions
             String nameId = resolveNameId(user, sp.getNameIdFormat());
+            String authnContext = resolveAuthnContext(sp, amr);
+            String effectiveSessionIndex = sessionIndex != null && !sessionIndex.isBlank()
+                    ? sessionIndex
+                    : "_" + UUID.randomUUID();
             String xml = buildResponseXml(responseId, assertionId, issuer, sp.getEntityId(),
                     sp.getAcsUrl(), inResponseTo, nameId, sp.getNameIdFormat(),
-                    user, groupNames, roleName, sp.getAttributeMappings(), now);
+                    user, groupNames, roleName, sp.getAttributeMappings(), now,
+                    authnContext, effectiveSessionIndex);
 
             // Sign the response
-            String signedXml = signXml(xml, assertionId, privateKey, publicKey);
+            String signedXml = signXml(xml, assertionId, privateKey,
+                    signingCertificateService.certificate(tenant, key, entityId));
 
             // PRD SAM-04: optionally encrypt the signed assertion
             // (AES-256-CBC + RSA-OAEP key wrap under the SP's public cert).
@@ -243,6 +283,7 @@ public class SamlIdpService {
                     AuditEventTypes.TARGET_SAML_SP, String.valueOf(sp.getId()),
                     AuditService.meta("sp_entity_id", sp.getEntityId(),
                             "assertion_id", assertionId,
+                            "authn_context", resolveAuthnContext(sp, amr),
                             "encrypted", encrypted));
 
             return Base64.getEncoder().encodeToString(signedXml.getBytes(StandardCharsets.UTF_8));
@@ -265,6 +306,52 @@ public class SamlIdpService {
                 .filter(SamlServiceProvider::getEnabled)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Unregistered or disabled SP: " + issuer));
+    }
+
+    /**
+     * Refuse an AuthnRequest ID that has already been used (CONF-5.3).
+     *
+     * <p>A captured AuthnRequest could otherwise be replayed to mint a second
+     * assertion. The mitigations that existed were real but incidental -- an
+     * authenticated browser session is still required, and ACS and Audience
+     * come from stored SP configuration rather than the request -- and none of
+     * them is the control.
+     *
+     * <p>A request with no ID is not rejected: the ID attribute is required by
+     * the schema, but an SP that omits it is broken rather than hostile, and
+     * refusing here would turn a conformance bug in someone else's software
+     * into an outage. It simply cannot be replay-checked, which is recorded.
+     *
+     * @throws SamlMessageException when this request ID has been seen before
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public void rejectReplayedRequest(Tenant tenant, SamlServiceProvider sp, String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            log.warn("AuthnRequest carries no ID and cannot be replay-checked: sp={} tenant={}",
+                    sp == null ? "(unknown)" : sp.getEntityId(), tenant.getSlug());
+            return;
+        }
+        if (replayRepository.existsById(requestId)) {
+            log.warn("AuthnRequest replay refused: request_id={} sp={} tenant={}",
+                    requestId, sp == null ? "(unknown)" : sp.getEntityId(), tenant.getSlug());
+            auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
+                    .eventType(AuditEventTypes.SAML_AUTHNREQUEST_REPLAY)
+                    .outcome(tech.cwvermaak.weldforge.model.AuditEvent.Outcome.DENIED)
+                    .tenant(tenant)
+                    .targetType(AuditEventTypes.TARGET_SAML_SP)
+                    .targetId(sp == null ? null : sp.getEntityId())
+                    .metadata(Map.of("request_id", requestId)));
+            throw new SamlMessageException("AuthnRequest has already been processed");
+        }
+        replayRepository.save(tech.cwvermaak.weldforge.model.SamlRequestReplay.builder()
+                .requestId(requestId)
+                .tenantId(tenant.getId())
+                .spEntityId(sp == null ? null : sp.getEntityId())
+                .seenAt(java.time.LocalDateTime.now())
+                // Outlives any plausible in-flight request; the prune job
+                // reclaims the row afterwards.
+                .expiresAt(java.time.LocalDateTime.now().plusHours(1))
+                .build());
     }
 
     /**
@@ -335,11 +422,69 @@ public class SamlIdpService {
         return user.getEmail();
     }
 
+    /**
+     * The {@code AuthnContextClassRef} for this assertion (CONF-5.1).
+     *
+     * <p>This was a hardcoded {@code PasswordProtectedTransport} on every
+     * assertion, so a user who authenticated with a security key was described
+     * to the SP as having typed a password. The failure under-reported rather
+     * than over-reported, which is why it was silent: nobody is alerted when
+     * assurance is understated.
+     *
+     * <p>Derived from the session's RFC 8176 methods, the same source the OIDC
+     * side already uses for {@code amr}. Strongest wins: a session with both a
+     * password and a security key is described by the key.
+     *
+     * <p>An SP may pin a value, and an unknown session falls back to the legacy
+     * literal rather than asserting something weaker or stronger than the truth.
+     */
+    String resolveAuthnContext(SamlServiceProvider sp, java.util.List<String> amr) {
+        if (sp != null && sp.getAuthnContextOverride() != null
+                && !sp.getAuthnContextOverride().isBlank()) {
+            return sp.getAuthnContextOverride();
+        }
+        if (amr == null || amr.isEmpty()) {
+            return AUTHN_CTX_PASSWORD_PROTECTED;
+        }
+        if (amr.contains("hwk") || amr.contains("swk")) {
+            return AUTHN_CTX_MOBILE_TWO_FACTOR;
+        }
+        if (amr.contains("otp") || amr.contains("sms") || amr.contains("mfa")) {
+            return AUTHN_CTX_TIME_SYNC_TOKEN;
+        }
+        return AUTHN_CTX_PASSWORD_PROTECTED;
+    }
+
+    /**
+     * This tenant's IdP metadata entityID (CONF-5.4).
+     *
+     * <p>Built from the configured public host rather than a request, because
+     * an assertion is minted on a path that has no metadata request in hand --
+     * and the value MUST be byte-identical to the entityID
+     * {@link #generateMetadata} publishes, or an SP matching Issuer against
+     * entityID rejects the assertion it was meant to accept.
+     */
+    public String metadataEntityId(Tenant tenant) {
+        return publicHost.getScheme() + "://" + publicHost.getBaseDomainHost()
+                + "/t/" + tenant.getSlug() + "/saml2/idp/metadata";
+    }
+
+    /** Password over a protected transport. The legacy value, and the fallback. */
+    public static final String AUTHN_CTX_PASSWORD_PROTECTED =
+            "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport";
+    /** A one-time code: TOTP or SMS. */
+    public static final String AUTHN_CTX_TIME_SYNC_TOKEN =
+            "urn:oasis:names:tc:SAML:2.0:ac:classes:TimeSyncToken";
+    /** A hardware or software key -- the phishing-resistant case. */
+    public static final String AUTHN_CTX_MOBILE_TWO_FACTOR =
+            "urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract";
+
     private String buildResponseXml(String responseId, String assertionId, String issuer,
                                      String audience, String acsUrl, String inResponseTo,
                                      String nameId, String nameIdFormat,
                                      User user, List<String> groups, String roleName,
-                                     Map<String, Object> attrMappings, Instant now) {
+                                     Map<String, Object> attrMappings, Instant now,
+                                     String authnContext, String sessionIndex) {
         String notBefore = now.minusSeconds(60).toString();
         String notOnOrAfter = now.plusSeconds(300).toString();
         String issueInstant = now.toString();
@@ -398,9 +543,17 @@ public class SamlIdpService {
         xml.append("    </saml:Conditions>\n");
 
         // AuthnStatement
-        xml.append("    <saml:AuthnStatement AuthnInstant=\"").append(issueInstant).append("\">\n");
+        xml.append("    <saml:AuthnStatement AuthnInstant=\"").append(issueInstant).append("\"");
+        // CONF-5.2: without a SessionIndex an SP cannot target a single session
+        // at logout, so SLO can only ever mean "log out of everything".
+        if (sessionIndex != null && !sessionIndex.isBlank()) {
+            xml.append(" SessionIndex=\"").append(escapeXml(sessionIndex)).append("\"");
+        }
+        xml.append(">\n");
         xml.append("      <saml:AuthnContext>\n");
-        xml.append("        <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef>\n");
+        xml.append("        <saml:AuthnContextClassRef>")
+           .append(escapeXml(authnContext))
+           .append("</saml:AuthnContextClassRef>\n");
         xml.append("      </saml:AuthnContext>\n");
         xml.append("    </saml:AuthnStatement>\n");
 
@@ -473,7 +626,8 @@ public class SamlIdpService {
     }
 
     private String signXml(String xml, String assertionId,
-                           RSAPrivateKey privateKey, RSAPublicKey publicKey) throws Exception {
+                           RSAPrivateKey privateKey,
+                           java.security.cert.X509Certificate certificate) throws Exception {
         // For the initial implementation, we embed the XML-DSig signature
         // using Java's built-in XML signature API.
         javax.xml.parsers.DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
@@ -510,10 +664,14 @@ public class SamlIdpService {
                 fac.newSignatureMethod("http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", null),
                 List.of(ref));
 
-        java.security.KeyPair kp = new java.security.KeyPair(publicKey, privateKey);
+        // CONF-5.4: carry the certificate, not a bare KeyValue. A verifier
+        // resolving the signing key from KeyInfo expects X509Data; a raw
+        // modulus and exponent leaves it with nothing to match against the
+        // certificate published in metadata.
         javax.xml.crypto.dsig.keyinfo.KeyInfoFactory kif = fac.getKeyInfoFactory();
-        javax.xml.crypto.dsig.keyinfo.KeyValue kv = kif.newKeyValue(publicKey);
-        javax.xml.crypto.dsig.keyinfo.KeyInfo ki = kif.newKeyInfo(List.of(kv));
+        javax.xml.crypto.dsig.keyinfo.X509Data x509Data =
+                kif.newX509Data(List.of(certificate));
+        javax.xml.crypto.dsig.keyinfo.KeyInfo ki = kif.newKeyInfo(List.of(x509Data));
 
         javax.xml.crypto.dsig.XMLSignature signature = fac.newXMLSignature(si, ki);
 

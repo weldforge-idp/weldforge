@@ -55,3 +55,58 @@ Feature: SAML IdP mode
   Scenario: Signed-AuthnRequest enforcement is configurable through the admin API
     When an SP "https://api.acme.test/saml" is registered requiring signed AuthnRequests
     Then the registered SP "https://api.acme.test/saml" requires signed AuthnRequests
+
+  # --- Sprint 5: assertion fidelity -------------------------------------
+  # What the IdP asserts about itself and about the user should be true.
+  # Two of these failures were silent by construction: the authentication
+  # context UNDER-reported assurance, and nobody is alerted when assurance is
+  # understated.
+
+  Scenario: An assertion reports the factors the user actually used
+    Given tenant "acme" is configured for SAML IdP with SP "https://sp.acme.test"
+    And user "alice@acme.test" exists for SAML IdP in tenant "acme"
+    When a SAML Response is built for "alice@acme.test" to SP "https://sp.acme.test" with factors "pwd hwk"
+    Then the assertion's authentication context is the two-factor class
+
+  Scenario: A password-only session is still reported as password-protected
+    Given tenant "acme" is configured for SAML IdP with SP "https://sp.acme.test"
+    And user "alice@acme.test" exists for SAML IdP in tenant "acme"
+    When a SAML Response is built for "alice@acme.test" to SP "https://sp.acme.test" with factors "pwd"
+    Then the assertion's authentication context is the password class
+
+  Scenario: An SP may pin the context it already expects
+    # Without this, an SP matching on the old fixed value breaks the day one of
+    # its users enables MFA -- and that looks like an IdP outage.
+    Given tenant "acme" is configured for SAML IdP with SP "https://sp.acme.test"
+    And SP "https://sp.acme.test" pins its authentication context to the password class
+    And user "alice@acme.test" exists for SAML IdP in tenant "acme"
+    When a SAML Response is built for "alice@acme.test" to SP "https://sp.acme.test" with factors "pwd hwk"
+    Then the assertion's authentication context is the password class
+
+  Scenario: An assertion carries a session index so logout can target it
+    # Without a SessionIndex an SP cannot scope logout to one session, so SLO
+    # can only ever mean "log out of everything".
+    Given tenant "acme" is configured for SAML IdP with SP "https://sp.acme.test"
+    And user "alice@acme.test" exists for SAML IdP in tenant "acme"
+    When a SAML Response is built for "alice@acme.test" to SP "https://sp.acme.test"
+    Then the assertion carries a session index
+
+  Scenario: The signature carries a real certificate, not a bare key value
+    Given tenant "acme" is configured for SAML IdP with SP "https://sp.acme.test"
+    And user "alice@acme.test" exists for SAML IdP in tenant "acme"
+    When a SAML Response is built for "alice@acme.test" to SP "https://sp.acme.test"
+    Then the signature KeyInfo contains an X509 certificate
+    And the signature KeyInfo contains no bare KeyValue
+
+  Scenario: An SP keeps the legacy issuer until it opts in
+    Given tenant "acme" is configured for SAML IdP with SP "https://sp.acme.test"
+    And user "alice@acme.test" exists for SAML IdP in tenant "acme"
+    When a SAML Response is built for "alice@acme.test" to SP "https://sp.acme.test"
+    Then the assertion issuer is "acme-idp"
+
+  Scenario: An SP that opts in receives the metadata entityID as issuer
+    Given tenant "acme" is configured for SAML IdP with SP "https://sp.acme.test"
+    And SP "https://sp.acme.test" opts in to the entityID issuer
+    And user "alice@acme.test" exists for SAML IdP in tenant "acme"
+    When a SAML Response is built for "alice@acme.test" to SP "https://sp.acme.test"
+    Then the assertion issuer is the tenant's metadata entityID
