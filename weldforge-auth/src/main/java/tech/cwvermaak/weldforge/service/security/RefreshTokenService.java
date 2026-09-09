@@ -68,7 +68,7 @@ public class RefreshTokenService {
     public Issued issueNew(User user, String ipAddress, String userAgent, String amr) {
         // A password login is not an OIDC grant -- there is no consented scope
         // set to carry, so this stays null rather than inventing one.
-        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent, amr, null);
+        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent, amr, null, null);
     }
 
     /**
@@ -85,7 +85,7 @@ public class RefreshTokenService {
     @Transactional
     public Issued issueNewForClient(User user, OidcClient client,
                                     String ipAddress, String userAgent, String amr) {
-        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr, null);
+        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr, null, null);
     }
 
     /**
@@ -103,7 +103,21 @@ public class RefreshTokenService {
     public Issued issueNewForClient(User user, OidcClient client,
                                     String ipAddress, String userAgent, String amr,
                                     String grantedScopes) {
-        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr, grantedScopes);
+        return issueNewForClient(user, client, ipAddress, userAgent, amr, grantedScopes, null);
+    }
+
+    /**
+     * As above, also recording when the user authenticated (CONF-2.2), so a
+     * refreshed ID token reports the original authentication rather than the
+     * refresh. Without this a long-lived family would keep asserting a fresh
+     * login that never happened.
+     */
+    @Transactional
+    public Issued issueNewForClient(User user, OidcClient client,
+                                    String ipAddress, String userAgent, String amr,
+                                    String grantedScopes, java.time.Instant authTime) {
+        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr,
+                grantedScopes, authTime);
     }
 
     /**
@@ -206,7 +220,9 @@ public class RefreshTokenService {
         // the same consent. Neither the methods used nor the scopes granted can
         // change without the user being present, which on this path they are not.
         Issued successor = persist(row.getUser(), row.getFamilyId(), row.getClient(),
-                ipAddress, userAgent, row.getAmr(), row.getGrantedScopes());
+                ipAddress, userAgent, row.getAmr(), row.getGrantedScopes(),
+                row.getAuthTime() == null ? null
+                        : row.getAuthTime().atZone(java.time.ZoneId.systemDefault()).toInstant());
         row.setReplacedBy(successor.row.getId());
 
         auditService.recordUserAction(AUDIT_REFRESH_ROTATE, row.getUser(),
@@ -230,7 +246,7 @@ public class RefreshTokenService {
 
     private Issued persist(User user, UUID familyId, OidcClient client,
                            String ipAddress, String userAgent, String amr,
-                           String grantedScopes) {
+                           String grantedScopes, java.time.Instant authTime) {
         String raw = randomToken();
         // PRD SSO-03: per-tenant refresh TTL overrides the application default.
         LocalDateTime expiresAt;
@@ -252,6 +268,8 @@ public class RefreshTokenService {
                 .userAgent(userAgent)
                 .amr(amr)
                 .grantedScopes(grantedScopes)
+                .authTime(authTime == null ? null
+                        : LocalDateTime.ofInstant(authTime, java.time.ZoneId.systemDefault()))
                 .build();
         repository.save(row);
         return new Issued(raw, row);

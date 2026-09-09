@@ -66,6 +66,7 @@ public class OidcAuthorizationService {
     private final OidcClientRepository clientRepository;
     private final OAuthAuthorizationCodeRepository codeRepository;
     private final AuditService auditService;
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
     private final tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker familyRevoker;
     private final tech.cwvermaak.weldforge.repository.MfaFactorRepository mfaFactorRepository;
     private final tech.cwvermaak.weldforge.service.TenantMfaPolicyService mfaPolicyService;
@@ -152,8 +153,9 @@ public class OidcAuthorizationService {
             }
         }
 
+        boolean challengePresent = request.codeChallenge() != null && !request.codeChallenge().isBlank();
         if (Boolean.TRUE.equals(client.getRequirePkce())) {
-            if (request.codeChallenge() == null || request.codeChallenge().isBlank()) {
+            if (!challengePresent) {
                 throw new OidcAuthorizationException("invalid_request",
                         "code_challenge is required for this client");
             }
@@ -161,6 +163,20 @@ public class OidcAuthorizationService {
                 throw new OidcAuthorizationException("invalid_request",
                         "Only S256 code_challenge_method is supported");
             }
+        } else if (!challengePresent) {
+            // CONF-1.3 / RFC 9700 §2.1.1 wants PKCE on EVERY code-flow client,
+            // not only public ones. New clients already default to requiring
+            // it; the gap is the ones registered before that, which can still
+            // run a bare code flow.
+            //
+            // Counted rather than refused. Flipping the flag on a live client
+            // that does not send a challenge breaks its login, and there is no
+            // way to know from here which those are -- so the backfill waits on
+            // this meter reading zero for longer than a code TTL, at which
+            // point no client is relying on the exemption.
+            meterRegistry.counter("sso.oidc.pkce.missing",
+                    "client_id", client.getClientId(),
+                    "tenant", tenant.getSlug()).increment();
         }
 
         // PRD MFA-04 / SSO-05: step-up check. If the client requires MFA

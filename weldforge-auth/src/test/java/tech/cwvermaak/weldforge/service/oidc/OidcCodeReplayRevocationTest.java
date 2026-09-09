@@ -59,6 +59,7 @@ class OidcCodeReplayRevocationTest {
                 mock(OidcClientRepository.class),
                 codeRepository,
                 mock(AuditService.class),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
                 familyRevoker,
                 mock(MfaFactorRepository.class),
                 mock(TenantMfaPolicyService.class));

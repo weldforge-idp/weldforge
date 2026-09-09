@@ -130,3 +130,64 @@ Feature: OIDC issuer
     And the discovery document advertises a registration endpoint
     And the discovery document lists auth method "client_secret_basic"
     And the discovery document lists auth method "client_secret_post"
+
+  # --- Sprint 4: OIDC Core request parameters --------------------------
+
+  Scenario: An ID token reports when the user actually authenticated
+    # CONF-2.2 / OIDC Core §2. iat says when the TOKEN was minted and moves
+    # forward on every refresh; auth_time says when the PERSON proved who they
+    # are, which is what a relying party gates a sensitive operation on.
+    Given alice authenticated 10 minutes ago
+    And alice generates a PKCE verifier and challenge
+    When alice authorizes "acme-app" for scope "openid email"
+    And alice exchanges the resulting code with the matching verifier
+    Then the ID token reports the authentication from 10 minutes ago
+    And the ID token's auth_time is earlier than its iat
+
+  Scenario: A grant with no recorded authentication time omits the claim
+    # Defaulting it to "now" would assert a fresh login that never happened.
+    Given alice's authentication time is unknown
+    And alice generates a PKCE verifier and challenge
+    When alice authorizes "acme-app" for scope "openid email"
+    And alice exchanges the resulting code with the matching verifier
+    Then the ID token has no auth_time claim
+
+  Scenario: The ID token is bound to the access token issued with it
+    # CONF-2.4. Lets a relying party detect a substituted access token.
+    Given alice generates a PKCE verifier and challenge
+    When alice authorizes "acme-app" for scope "openid email"
+    And alice exchanges the resulting code with the matching verifier
+    Then the ID token's at_hash matches the issued access token
+
+  Scenario: A standing consent is remembered, so the user is not asked twice
+    # CONF-2.3. Re-prompting on every login trains people to click through the
+    # one screen that asks them to think.
+    Given alice has already consented to "acme-app" for scope "openid email"
+    When alice's consent for "acme-app" covering "openid email" is checked
+    Then the standing consent applies
+
+  Scenario: Consent does not stretch to scopes the user never agreed to
+    Given alice has already consented to "acme-app" for scope "openid email"
+    When alice's consent for "acme-app" covering "openid email admin:write" is checked
+    Then the standing consent does not apply
+
+  Scenario: A narrower request is covered by a wider standing consent
+    Given alice has already consented to "acme-app" for scope "openid email profile"
+    When alice's consent for "acme-app" covering "openid" is checked
+    Then the standing consent applies
+
+  Scenario: max_age forces a fresh factor when the last one is stale
+    # CONF-2.1. The step-up machinery existed but nothing on the wire could
+    # reach it: /authorize never bound max_age and passed a literal null.
+    Given "acme-app" requires MFA
+    And alice has a verified factor last used 40 minutes ago
+    And alice generates a PKCE verifier and challenge
+    When alice authorizes "acme-app" for scope "openid email" with max_age 600
+    Then a step-up challenge is required
+
+  Scenario: A recent factor satisfies max_age without re-prompting
+    Given "acme-app" requires MFA
+    And alice has a verified factor last used 2 minutes ago
+    And alice generates a PKCE verifier and challenge
+    When alice authorizes "acme-app" for scope "openid email" with max_age 600
+    Then an authorization code is issued without a step-up challenge

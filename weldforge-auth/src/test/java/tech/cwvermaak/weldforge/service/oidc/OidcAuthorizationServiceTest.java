@@ -59,7 +59,7 @@ class OidcAuthorizationServiceTest {
         familyRevoker =
                 mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class);
         service = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
-                familyRevoker, mfaFactorRepo, mfaPolicyService);
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), familyRevoker, mfaFactorRepo, mfaPolicyService);
 
         tenant = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         user = User.builder().id(42L).tenant(tenant).email("alice@acme.test").build();

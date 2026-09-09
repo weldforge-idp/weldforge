@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /**
  * CONF-1.1 — a refresh must not widen scope (RFC 6749 §6).
@@ -37,7 +38,8 @@ class OidcRefreshScopeTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         controller = new OidcAuthorizationController(
-                null, null, null, null, null, null, null, null, meterRegistry);
+                null, null, null, null, null, null, null, null, meterRegistry,
+                mock(tech.cwvermaak.weldforge.repository.OidcConsentGrantRepository.class));
 
         client = new OidcClient();
         client.setClientId("portal");
