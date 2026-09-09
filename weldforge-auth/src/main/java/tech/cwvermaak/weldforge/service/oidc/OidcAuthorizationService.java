@@ -83,6 +83,14 @@ public class OidcAuthorizationService {
             /** OIDC max_age param — overrides client.max_authentication_age_s when smaller. */
             Integer maxAge,
             /**
+             * When the authorising session was established (CONF-2.2). Recorded
+             * on the code so the token endpoint, which sees no session, can emit
+             * {@code auth_time}. Null when unknown — the claim is then omitted
+             * rather than guessed, because a wrong authentication time is worse
+             * than an absent one.
+             */
+            java.time.Instant authTime,
+            /**
              * RFC 8176 authentication methods of the session authorising this
              * request, taken from the session token. Recorded on the code so
              * the token endpoint — which sees no session — can stamp them onto
@@ -90,13 +98,22 @@ public class OidcAuthorizationService {
              */
             List<String> amr) {
 
+        /** Backwards-compatible constructor for callers that don't record auth_time. */
+        public AuthorizeRequest(String clientId, String redirectUri, List<String> scopes,
+                                String state, String nonce,
+                                String codeChallenge, String codeChallengeMethod,
+                                Integer maxAge, List<String> amr) {
+            this(clientId, redirectUri, scopes, state, nonce,
+                    codeChallenge, codeChallengeMethod, maxAge, null, amr);
+        }
+
         /** Backwards-compatible constructor for callers that don't know about amr. */
         public AuthorizeRequest(String clientId, String redirectUri, List<String> scopes,
                                 String state, String nonce,
                                 String codeChallenge, String codeChallengeMethod,
                                 Integer maxAge) {
             this(clientId, redirectUri, scopes, state, nonce,
-                    codeChallenge, codeChallengeMethod, maxAge, null);
+                    codeChallenge, codeChallengeMethod, maxAge, null, null);
         }
 
         // Backwards-compatible constructor for callers that don't know about max_age.
@@ -104,7 +121,7 @@ public class OidcAuthorizationService {
                                 String state, String nonce,
                                 String codeChallenge, String codeChallengeMethod) {
             this(clientId, redirectUri, scopes, state, nonce,
-                    codeChallenge, codeChallengeMethod, null, null);
+                    codeChallenge, codeChallengeMethod, null, null, null);
         }
     }
 
@@ -165,6 +182,8 @@ public class OidcAuthorizationService {
                 .codeChallenge(request.codeChallenge())
                 .codeChallengeMethod(request.codeChallengeMethod())
                 .amr(AuthenticationMethods.toStorage(request.amr()))
+                .authTime(request.authTime() == null ? null
+                        : LocalDateTime.ofInstant(request.authTime(), java.time.ZoneId.systemDefault()))
                 .expiresAt(LocalDateTime.now().plusSeconds(CODE_TTL_SECONDS))
                 .build();
         codeRepository.save(row);
@@ -185,12 +204,13 @@ public class OidcAuthorizationService {
             String codeVerifier) {}
 
     public record CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce,
-                                     List<String> amr, Long codeId) {
+                                     List<String> amr, Long codeId,
+                                     java.time.Instant authTime) {
 
         /** Backwards-compatible constructor for callers that don't record the family. */
         public CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce,
                                   List<String> amr) {
-            this(client, user, scopes, nonce, amr, null);
+            this(client, user, scopes, nonce, amr, null, null);
         }
     }
 
@@ -307,7 +327,9 @@ public class OidcAuthorizationService {
                 List.of(row.getScopes().split("\\s+")),
                 row.getNonce(),
                 AuthenticationMethods.fromStorage(row.getAmr()),
-                row.getId());
+                row.getId(),
+                row.getAuthTime() == null ? null
+                        : row.getAuthTime().atZone(java.time.ZoneId.systemDefault()).toInstant());
     }
 
     // ---- Token endpoint: client credentials --------------------------
