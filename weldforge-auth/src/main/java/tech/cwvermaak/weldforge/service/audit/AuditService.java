@@ -110,24 +110,36 @@ public class AuditService {
      */
     private void emit(AuditEvent event, boolean persisted) {
         try {
+            // Order is load-bearing: the first four are the ones the message
+            // placeholders render, so they are the fields an operator reads on
+            // a console line -- what happened, how it ended, to whom, and
+            // whether it was durably recorded.
             Object[] fields = {
                     kv("event_type", event.getEventType()),
                     kv("outcome", event.getOutcome() == null ? null : event.getOutcome().name()),
                     kv("actor_email", event.getActorEmail()),
+                    kv("persisted", persisted),
                     kv("tenant", event.getTenant() == null ? null : event.getTenant().getSlug()),
                     kv("target_type", event.getTargetType()),
                     kv("target_id", event.getTargetId()),
                     kv("ip_address", event.getIpAddress()),
                     kv("metadata", event.getMetadata()),
-                    kv("persisted", persisted),
             };
             boolean incident = !persisted
                     || event.getOutcome() == AuditEvent.Outcome.DENIED
                     || event.getOutcome() == AuditEvent.Outcome.FAILURE;
+            // The placeholders matter. SLF4J only renders arguments that a
+            // placeholder consumes, so logging a bare "audit" message emitted a
+            // line carrying NO detail under the console pattern -- which is what
+            // both staging and production actually run, neither having
+            // SPRING_PROFILES_ACTIVE set. StructuredArguments render as
+            // key=value through toString, so the four that matter most read
+            // cleanly on the console; the rest are still picked up by the JSON
+            // encoder as fields, placeholder or not.
             if (incident) {
-                AUDIT.warn("audit", fields);
+                AUDIT.warn("audit {} {} {} {}", fields);
             } else {
-                AUDIT.info("audit", fields);
+                AUDIT.info("audit {} {} {} {}", fields);
             }
         } catch (Exception e) {
             // Swallowed on purpose: see the javadoc. A failure to log must not
