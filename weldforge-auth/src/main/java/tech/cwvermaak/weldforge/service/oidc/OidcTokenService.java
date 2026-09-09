@@ -65,6 +65,23 @@ public class OidcTokenService {
     public IssuedTokens issueForCodeExchange(Tenant tenant, OidcClient client, User user,
                                              List<String> scopes, String nonce, String issuer,
                                              List<String> amr) {
+        return issueForCodeExchange(tenant, client, user, scopes, nonce, issuer, amr, null);
+    }
+
+    /**
+     * As above, additionally reporting when the user authenticated (CONF-2.2).
+     *
+     * <p>OIDC Core §2 makes {@code auth_time} REQUIRED when the request carried
+     * {@code max_age} and RECOMMENDED otherwise. It is passed in rather than
+     * read here because only the grant knows it: at this point the session that
+     * established it is long gone, and {@code iat} answers a different question
+     * — when this token was minted, which a refresh moves forward indefinitely.
+     *
+     * @param authTime the login instant, or null to omit the claim
+     */
+    public IssuedTokens issueForCodeExchange(Tenant tenant, OidcClient client, User user,
+                                             List<String> scopes, String nonce, String issuer,
+                                             List<String> amr, Instant authTime) {
         TenantSigningKey key = signingKeyService.getOrCreateActive(tenant);
         RSAPrivateKey privateKey = signingKeyService.loadPrivateKey(key);
         Instant now = Instant.now();
@@ -73,8 +90,11 @@ public class OidcTokenService {
         Map<String, Object> tenantClaims = tenant.getCustomClaims();
         String accessToken = buildAccessToken(client, user, scopes, issuer, key.getKid(), privateKey, now,
                 tenantTtlSeconds, tenantClaims, amr);
+        // at_hash binds the ID token to the access token issued alongside it
+        // (CONF-2.4), so a substituted access token is detectable. It can only
+        // be computed once the access token exists, hence the ordering.
         String idToken     = buildIdToken(client, user, nonce, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenantClaims, amr);
+                tenantTtlSeconds, tenantClaims, amr, authTime, accessToken);
 
         meterRegistry.counter("sso.token.issued", "grant_type", "authorization_code",
                 "tenant", tenant.getSlug()).increment();
@@ -152,7 +172,7 @@ public class OidcTokenService {
     private String buildIdToken(OidcClient client, User user, String nonce,
                                 String issuer, String kid, RSAPrivateKey privateKey, Instant now,
                                 long ttlSeconds, Map<String, Object> tenantCustomClaims,
-                                List<String> amr) {
+                                List<String> amr, Instant authTime, String accessToken) {
         Map<String, Object> claims = new LinkedHashMap<>();
         if (tenantCustomClaims != null) {
             for (Map.Entry<String, Object> e : tenantCustomClaims.entrySet()) {
@@ -169,6 +189,15 @@ public class OidcTokenService {
         claims.put("roles", rolesFor(user));
         if (nonce != null && !nonce.isBlank()) claims.put("nonce", nonce);
         putAmr(claims, amr);
+        // Seconds since the epoch, per OIDC Core §2. Omitted rather than
+        // defaulted when unknown: a guessed authentication time would be acted
+        // on by a relying party as though it were evidence.
+        if (authTime != null) {
+            claims.put("auth_time", authTime.getEpochSecond());
+        }
+        if (accessToken != null) {
+            claims.put("at_hash", atHash(accessToken));
+        }
         return Jwts.builder()
                 .header().keyId(kid).and()
                 .claims(claims)
@@ -190,9 +219,33 @@ public class OidcTokenService {
         }
     }
 
+    /**
+     * The {@code at_hash} of an access token (CONF-2.4, OIDC Core §3.1.3.6):
+     * base64url of the left-most half of its SHA-256.
+     *
+     * <p>"Left-most half" is relative to the ID token's signing algorithm —
+     * RS256 means SHA-256, so 32 bytes hashed and the first 16 encoded. Pinning
+     * to RS256 is safe here because {@code buildIdToken} signs with it
+     * unconditionally; a second signing algorithm would have to revisit this.
+     */
+    private static String atHash(String accessToken) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(accessToken.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            byte[] half = java.util.Arrays.copyOf(digest, digest.length / 2);
+            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(half);
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
     private static boolean isReservedOidcClaim(String name) {
         return switch (name) {
             case "iss", "aud", "sub", "exp", "iat", "nbf", "jti",
+                 // A tenant custom claim must not be able to assert when the
+                 // user authenticated, or bind the token to an access token of
+                 // its choosing -- both are things a relying party acts on.
+                 "auth_time", "at_hash",
                  "client_id", "scope", "token_type", "email", "name", "nonce", "roles",
                  // A tenant custom claim must never be able to assert an
                  // authentication method: a relying party gating on a

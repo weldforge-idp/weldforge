@@ -103,6 +103,14 @@ public class RefreshToken {
      * <p>Null for families issued before the column existed; the token endpoint
      * falls back to the client registration for those and meters it.
      */
+    /**
+     * When the user authenticated for the login that created this family
+     * (CONF-2.2), so a refreshed ID token reports the original authentication
+     * rather than the refresh. Null for families predating the column.
+     */
+    @Column(name = "auth_time")
+    private LocalDateTime authTime;
+
     @Column(name = "granted_scopes", columnDefinition = "TEXT")
     private String grantedScopes;
 

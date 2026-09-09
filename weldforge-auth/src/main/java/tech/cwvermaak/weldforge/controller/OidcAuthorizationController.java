@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.model.OidcClient;
+import tech.cwvermaak.weldforge.model.OidcConsentGrant;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.OidcClientRepository;
@@ -64,6 +65,7 @@ public class OidcAuthorizationController {
     private final RefreshTokenService refreshTokenService;
     /** Meters the CONF-1.1 legacy-scope fallback so it can be retired on evidence. */
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final tech.cwvermaak.weldforge.repository.OidcConsentGrantRepository consentGrantRepository;
 
     @GetMapping("/t/{slug}/oauth2/authorize")
     public ResponseEntity<?> authorize(@PathVariable String slug,
@@ -75,6 +77,8 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "nonce", required = false) String nonce,
                                        @RequestParam(value = "code_challenge", required = false) String codeChallenge,
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
+                                       @RequestParam(value = "max_age", required = false) Integer maxAge,
+                                       @RequestParam(value = "prompt", required = false) String prompt,
                                        @AuthenticationPrincipal String email,
                                        HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
@@ -107,6 +111,17 @@ public class OidcAuthorizationController {
         // "anonymousUser" for unauthenticated requests (see
         // AnonymousAuthenticationToken), so a null/blank check alone
         // misses the common case of an unauthenticated browser.
+        // CONF-2.3 / OIDC Core §3.1.2.1. prompt=none means "do not interact
+        // with the user under any circumstances" -- it is how a relying party
+        // does a silent session check, usually in a hidden iframe. Redirecting
+        // to a login page there hijacks the user's browser to render a form
+        // nobody can see, which is the exact behaviour the parameter forbids.
+        boolean promptNone = "none".equals(prompt);
+        if (promptNone && (email == null || email.isBlank() || "anonymousUser".equals(email))) {
+            throw new OidcAuthorizationException("login_required",
+                    "No active session and prompt=none forbids interaction", redirectUri, state);
+        }
+
         if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
             String returnTo = currentUrl(request);
             String encoded = Base64.getUrlEncoder().withoutPadding()
@@ -124,13 +139,46 @@ public class OidcAuthorizationController {
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(slug, email)
                 .orElseThrow(() -> new EntityNotFoundException("User not in tenant"));
 
-        // ---- Step 4: render consent ---------------------------------
+        // ---- Step 4: consent ----------------------------------------
+        // A standing grant covering the requested scopes means the user has
+        // already answered this question. Re-asking on every login trains
+        // people to click through the one screen that asks them to think.
+        // prompt=consent overrides that and always asks, per §3.1.2.1.
+        List<String> requestedScopes = Arrays.stream(scope.split("\\s+"))
+                .filter(sc -> !sc.isBlank()).toList();
+        boolean alreadyConsented = consentGrantRepository
+                .findByUserIdAndClientId(user.getId(), client.getId())
+                .map(grant -> grant.covers(requestedScopes))
+                .orElse(false);
+
+        if ("consent".equals(prompt)) {
+            alreadyConsented = false;
+        }
+
+        if (promptNone && !alreadyConsented) {
+            // A session exists but this client has no standing grant for these
+            // scopes. Interaction is required and forbidden, so say so rather
+            // than rendering a form into an invisible iframe.
+            throw new OidcAuthorizationException("consent_required",
+                    "No standing consent for the requested scopes", redirectUri, state);
+        }
+
+        if (alreadyConsented) {
+            String code = authorizationService.issueAuthorizationCode(tenant, user,
+                    new AuthorizeRequest(clientId, redirectUri, requestedScopes, state, nonce,
+                            codeChallenge, codeChallengeMethod, maxAge,
+                            sessionAuthTime(request), sessionAmr(request)));
+            String url = appendQuery(redirectUri, "code", code, "state", state,
+                    "iss", OidcDiscoveryControllerHelper.tenantIssuer(request, slug));
+            return ResponseEntity.status(302).location(URI.create(url)).build();
+        }
+
         // Anti-CSRF token bound to this authenticated user + tenant. The
         // decide endpoint requires it back and checks the binding, so a
         // cross-site auto-submit of the consent form is rejected.
         String csrfToken = jwtService.generateConsentCsrfToken(email, tenant.getId(), slug);
         String html = renderConsent(slug, user, client, redirectUri, scope, state, nonce,
-                codeChallenge, codeChallengeMethod, csrfToken);
+                codeChallenge, codeChallengeMethod, maxAge, csrfToken);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
                 .body(html);
@@ -152,6 +200,7 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "nonce", required = false) String nonce,
                                        @RequestParam(value = "code_challenge", required = false) String codeChallenge,
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
+                                       @RequestParam(value = "max_age", required = false) Integer maxAge,
                                        @RequestParam(value = "csrf_token", required = false) String csrfToken,
                                        @AuthenticationPrincipal String email,
                                        HttpServletRequest request) {
@@ -193,10 +242,33 @@ public class OidcAuthorizationController {
             return ResponseEntity.status(302).location(URI.create(url)).build();
         }
 
+        List<String> grantedScopes = Arrays.stream(scope.split("\\s+"))
+                .filter(s -> !s.isBlank()).toList();
+
+        // CONF-2.3: record the decision so prompt=none can be answered and the
+        // user is not asked again. Scope is part of the key, not an attribute:
+        // consenting to "openid email" must not authorise a later request for
+        // "openid email admin:write", so a wider request prompts afresh.
+        consentGrantRepository.findByUserIdAndClientId(user.getId(), client.getId())
+                .ifPresentOrElse(
+                        existing -> {
+                            existing.setScopes(OidcConsentGrant.normalise(grantedScopes));
+                            existing.setGrantedAt(java.time.LocalDateTime.now());
+                            consentGrantRepository.save(existing);
+                        },
+                        () -> consentGrantRepository.save(OidcConsentGrant.builder()
+                                .tenantId(tenant.getId())
+                                .userId(user.getId())
+                                .clientId(client.getId())
+                                .scopes(OidcConsentGrant.normalise(grantedScopes))
+                                .grantedAt(java.time.LocalDateTime.now())
+                                .build()));
+
         AuthorizeRequest req = new AuthorizeRequest(
                 clientId, redirectUri,
-                Arrays.stream(scope.split("\\s+")).filter(s -> !s.isBlank()).toList(),
-                state, nonce, codeChallenge, codeChallengeMethod, null,
+                grantedScopes,
+                state, nonce, codeChallenge, codeChallengeMethod, maxAge,
+                sessionAuthTime(request),
                 // How the user authenticated for this session, so the token
                 // endpoint can report it. Read from the request attribute the
                 // JWT filter sets on the session it accepted — never from a
@@ -248,7 +320,8 @@ public class OidcAuthorizationController {
                         new CodeExchangeRequest(code, clientId, clientSecret, redirectUri, codeVerifier));
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
                         tenant, result.client(), result.user(),
-                        result.scopes(), result.nonce(), issuer, result.amr());
+                        result.scopes(), result.nonce(), issuer, result.amr(),
+                        result.authTime());
                 Map<String, Object> body = buildResponse(tokens, result.scopes());
                 // Only clients registered for the grant get one. Handing a
                 // refresh token to a client that never asked for it widens
@@ -260,7 +333,8 @@ public class OidcAuthorizationController {
                             result.user(), result.client(),
                             clientIp(request), userAgent(request),
                             AuthenticationMethods.toStorage(result.amr()),
-                            String.join(" ", result.scopes()));
+                            String.join(" ", result.scopes()),
+                            result.authTime());
                     // CONF-1.2: remember which family this code produced, so a
                     // replay of the code can revoke it rather than merely being
                     // refused while the tokens stay live.
@@ -300,7 +374,13 @@ public class OidcAuthorizationController {
                 List<String> issuedScopes = resolveRefreshScopes(rotated.row(), client, scope);
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
                         tenant, client, user, issuedScopes, null, issuer,
-                        AuthenticationMethods.fromStorage(rotated.row().getAmr()));
+                        AuthenticationMethods.fromStorage(rotated.row().getAmr()),
+                        // The original authentication, not this refresh: a
+                        // refreshed ID token must not claim the user proved
+                        // themselves again when they did not.
+                        rotated.row().getAuthTime() == null ? null
+                                : rotated.row().getAuthTime()
+                                        .atZone(java.time.ZoneId.systemDefault()).toInstant());
                 Map<String, Object> body = buildResponse(tokens, issuedScopes);
                 body.put("refresh_token", rotated.rawToken());
                 yield ResponseEntity.ok(body);
@@ -381,6 +461,20 @@ public class OidcAuthorizationController {
      * session predates the claim — the grant then carries no {@code amr},
      * which is the honest reading rather than a guess.
      */
+    /**
+     * When the authorising session was established (CONF-2.2), recorded on the
+     * session token by {@link JwtAuthenticationFilter}.
+     *
+     * <p>Null when the session predates the attribute. The claim is then
+     * omitted rather than defaulted to "now" — a relying party acts on
+     * {@code auth_time} as evidence, and inventing one is worse than admitting
+     * we do not know.
+     */
+    private static java.time.Instant sessionAuthTime(HttpServletRequest request) {
+        Object attribute = request.getAttribute(JwtAuthenticationFilter.AUTH_TIME_ATTRIBUTE);
+        return attribute instanceof java.time.Instant instant ? instant : null;
+    }
+
     private static List<String> sessionAmr(HttpServletRequest request) {
         Object attribute = request.getAttribute(JwtAuthenticationFilter.AMR_ATTRIBUTE);
         if (attribute instanceof List<?> methods) {
@@ -492,7 +586,7 @@ public class OidcAuthorizationController {
     private static String renderConsent(String slug, User user, OidcClient client, String redirectUri,
                                         String scope, String state, String nonce,
                                         String codeChallenge, String codeChallengeMethod,
-                                        String csrfToken) {
+                                        Integer maxAge, String csrfToken) {
         String appName = client.getName() != null && !client.getName().isBlank()
                 ? client.getName() : client.getClientId();
         String scopesHtml = Arrays.stream(scope.split("\\s+"))
@@ -531,6 +625,9 @@ public class OidcAuthorizationController {
                 + hidden("nonce", nonce)
                 + hidden("code_challenge", codeChallenge)
                 + hidden("code_challenge_method", codeChallengeMethod)
+                // Carried through the round-trip, or the freshness requirement
+                // the relying party asked for is silently dropped at consent.
+                + hidden("max_age", maxAge == null ? null : String.valueOf(maxAge))
                 + hidden("csrf_token", csrfToken)
                 + "<div class=\"actions\">"
                 + "<button class=\"deny\" type=\"submit\" name=\"decision\" value=\"deny\">Deny</button>"

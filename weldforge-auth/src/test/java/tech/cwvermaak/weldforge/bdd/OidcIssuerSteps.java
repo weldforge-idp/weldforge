@@ -83,6 +83,12 @@ public class OidcIssuerSteps {
     private final Map<String, tech.cwvermaak.weldforge.model.RefreshToken> refreshStore = new HashMap<>();
     private String rawRefreshToken;
     private java.util.UUID firstFamilyId;
+    private java.time.Instant authTime;
+    private tech.cwvermaak.weldforge.repository.MfaFactorRepository mfaFactorRepo;
+    private tech.cwvermaak.weldforge.repository.OidcConsentGrantRepository consentRepo;
+    private final Map<String, tech.cwvermaak.weldforge.model.OidcConsentGrant> consentStore = new HashMap<>();
+    private Boolean standingConsentApplies;
+    private boolean stepUpRequired;
 
     public OidcIssuerSteps(TestWorld world) {
         this.world = world;
@@ -148,7 +154,10 @@ public class OidcIssuerSteps {
         });
 
         signingKeyService = new TenantSigningKeyService(signingKeyRepo);
-        var mfaFactorRepo = mock(tech.cwvermaak.weldforge.repository.MfaFactorRepository.class);
+        mfaFactorRepo = mock(tech.cwvermaak.weldforge.repository.MfaFactorRepository.class);
+        consentRepo = mock(tech.cwvermaak.weldforge.repository.OidcConsentGrantRepository.class);
+        when(consentRepo.findByUserIdAndClientId(any(), any())).thenAnswer(inv ->
+                Optional.ofNullable(consentStore.get(inv.getArgument(0) + ":" + inv.getArgument(1))));
         var mfaPolicyService = mock(tech.cwvermaak.weldforge.service.TenantMfaPolicyService.class);
         // Default: no policy, no verified factors — step-up only fires if require_mfa is set.
         when(mfaPolicyService.effectivePolicy(anyLong())).thenReturn(
@@ -181,7 +190,7 @@ public class OidcIssuerSteps {
         });
 
         authorizationService = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
-                familyRevoker,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), familyRevoker,
                 mfaFactorRepo, mfaPolicyService);
         tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
         // Set @Value-injected lifetimes since we constructed the bean by hand.
@@ -348,7 +357,8 @@ public class OidcIssuerSteps {
                 clientId,
                 "https://app.acme.test/callback",
                 java.util.Arrays.stream(scope.split("\\s+")).toList(),
-                "state", "nonce-123", challenge, "S256");
+                "state", "nonce-123", challenge, "S256",
+                null, authTime, null);
         issuedCode = authorizationService.issueAuthorizationCode(acme, alice, req);
     }
 
@@ -376,7 +386,8 @@ public class OidcIssuerSteps {
             lastNonce = result.nonce();
             lastIssued = tokenService.issueForCodeExchange(
                     tenantToExchangeAt, result.client(), result.user(),
-                    lastScopes, lastNonce, "https://weldforge.test/t/" + tenantToExchangeAt.getSlug());
+                    lastScopes, lastNonce, "https://weldforge.test/t/" + tenantToExchangeAt.getSlug(),
+                    result.amr(), result.authTime());
 
             // Mint the refresh family the same way the token endpoint does, and
             // record it on the code -- that link is what lets a later replay
@@ -556,5 +567,138 @@ public class OidcIssuerSteps {
     public void discoveryListsAuthMethod(String method) {
         assertThat((List<String>) lastDiscovery.get("token_endpoint_auth_methods_supported"))
                 .contains(method);
+    }
+
+    // ---- Sprint 4: OIDC Core request parameters -----------------------
+
+    @Given("alice authenticated {int} minutes ago")
+    public void aliceAuthenticatedMinutesAgo(int minutes) {
+        authTime = java.time.Instant.now().minusSeconds(minutes * 60L);
+    }
+
+    @Given("alice's authentication time is unknown")
+    public void aliceAuthTimeUnknown() {
+        authTime = null;
+    }
+
+    private Claims idTokenClaims() {
+        TenantSigningKey key = signingKeyService.getOrCreateActive(acme);
+        RSAPublicKey pub = signingKeyService.loadPublicKey(key);
+        return Jwts.parser().verifyWith(pub).build()
+                .parseSignedClaims(lastIssued.idToken()).getPayload();
+    }
+
+    @Then("the ID token reports the authentication from {int} minutes ago")
+    public void idTokenReportsAuthTime(int minutes) {
+        long expected = java.time.Instant.now().minusSeconds(minutes * 60L).getEpochSecond();
+        Number actual = idTokenClaims().get("auth_time", Number.class);
+        assertThat(actual).isNotNull();
+        // A couple of seconds of slack: the step and the assertion each read the
+        // clock, and the claim is second-granular.
+        assertThat(Math.abs(actual.longValue() - expected)).isLessThanOrEqualTo(5L);
+    }
+
+    @Then("the ID token's auth_time is earlier than its iat")
+    public void authTimeBeforeIat() {
+        Claims claims = idTokenClaims();
+        assertThat(claims.get("auth_time", Number.class).longValue())
+                .isLessThan(claims.getIssuedAt().toInstant().getEpochSecond());
+    }
+
+    @Then("the ID token has no auth_time claim")
+    public void noAuthTimeClaim() {
+        assertThat(idTokenClaims().get("auth_time")).isNull();
+    }
+
+    @Then("the ID token's at_hash matches the issued access token")
+    public void atHashMatches() throws Exception {
+        byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(lastIssued.accessToken().getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        String expected = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(java.util.Arrays.copyOf(digest, digest.length / 2));
+        assertThat(idTokenClaims().get("at_hash")).isEqualTo(expected);
+    }
+
+    @Given("alice has already consented to {string} for scope {string}")
+    public void aliceHasConsented(String clientId, String scope) {
+        OidcClient client = clientRepo.findByTenantIdAndClientId(acme.getId(), clientId).orElseThrow();
+        var grant = tech.cwvermaak.weldforge.model.OidcConsentGrant.builder()
+                .tenantId(acme.getId())
+                .userId(alice.getId())
+                .clientId(client.getId())
+                .scopes(tech.cwvermaak.weldforge.model.OidcConsentGrant.normalise(
+                        java.util.Arrays.stream(scope.split("\\s+")).toList()))
+                .grantedAt(java.time.LocalDateTime.now())
+                .build();
+        consentStore.put(alice.getId() + ":" + client.getId(), grant);
+    }
+
+    @When("alice's consent for {string} covering {string} is checked")
+    public void consentIsChecked(String clientId, String scope) {
+        OidcClient client = clientRepo.findByTenantIdAndClientId(acme.getId(), clientId).orElseThrow();
+        standingConsentApplies = consentRepo
+                .findByUserIdAndClientId(alice.getId(), client.getId())
+                .map(g -> g.covers(java.util.Arrays.stream(scope.split("\\s+")).toList()))
+                .orElse(false);
+    }
+
+    @Then("the standing consent applies")
+    public void consentApplies() {
+        assertThat(standingConsentApplies).isTrue();
+    }
+
+    @Then("the standing consent does not apply")
+    public void consentDoesNotApply() {
+        assertThat(standingConsentApplies).isFalse();
+    }
+
+    @Given("{string} requires MFA")
+    public void clientRequiresMfa(String clientId) {
+        clientRepo.findByTenantIdAndClientId(acme.getId(), clientId)
+                .orElseThrow().setRequireMfa(true);
+    }
+
+    @Given("alice has a verified factor last used {int} minutes ago")
+    public void aliceHasFactorLastUsed(int minutes) {
+        var factor = tech.cwvermaak.weldforge.model.MfaFactor.builder()
+                .user(alice)
+                .type(tech.cwvermaak.weldforge.model.MfaFactorType.TOTP)
+                .enabled(true)
+                .verified(true)
+                .lastUsedAt(java.time.LocalDateTime.now().minusMinutes(minutes))
+                .build();
+        when(mfaFactorRepo.findByUserIdAndEnabledTrueAndVerifiedTrue(alice.getId()))
+                .thenReturn(List.of(factor));
+    }
+
+    @When("alice authorizes {string} for scope {string} with max_age {int}")
+    public void aliceAuthorizesWithMaxAge(String clientId, String scope, int maxAge) {
+        authorizedClientId = clientId;
+        stepUpRequired = false;
+        try {
+            AuthorizeRequest req = new AuthorizeRequest(
+                    clientId, "https://app.acme.test/callback",
+                    java.util.Arrays.stream(scope.split("\\s+")).toList(),
+                    "state", "nonce-123", challenge, "S256",
+                    maxAge, authTime, null);
+            issuedCode = authorizationService.issueAuthorizationCode(acme, alice, req);
+            world.lastError = null;
+        } catch (tech.cwvermaak.weldforge.service.oidc.StepUpRequiredException e) {
+            stepUpRequired = true;
+            issuedCode = null;
+        }
+    }
+
+    @Then("a step-up challenge is required")
+    public void stepUpIsRequired() {
+        assertThat(stepUpRequired)
+                .as("max_age was requested with a stale factor, so a fresh challenge is due")
+                .isTrue();
+    }
+
+    @Then("an authorization code is issued without a step-up challenge")
+    public void codeIssuedWithoutStepUp() {
+        assertThat(stepUpRequired).isFalse();
+        assertThat(issuedCode).isNotBlank();
     }
 }

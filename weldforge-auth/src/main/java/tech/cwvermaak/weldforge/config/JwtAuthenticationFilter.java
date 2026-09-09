@@ -38,6 +38,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * is reading the methods of an authenticated session.
      */
     public static final String AMR_ATTRIBUTE = "weldforge.amr";
+    /**
+     * When the user authenticated for this session, exposed for the OIDC
+     * authorize flow (CONF-2.2). Taken from the session token's {@code iat},
+     * which is the login instant -- {@code iat} on a later access token moves
+     * forward on every refresh and would misreport it.
+     */
+    public static final String AUTH_TIME_ATTRIBUTE = "weldforge.auth_time";
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
@@ -193,6 +200,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         Object amrClaim = claims.get(JwtService.CLAIM_AMR);
         if (amrClaim instanceof List<?> amrList && !amrList.isEmpty()) {
             request.setAttribute(AMR_ATTRIBUTE, amrList.stream().map(String::valueOf).toList());
+        }
+
+        // Likewise the login instant, for the OIDC auth_time claim. The session
+        // token is minted at login and not re-issued until the next one, so its
+        // iat IS the authentication time -- which is the question auth_time
+        // answers and iat on a refreshed token does not.
+        if (claims.getIssuedAt() != null) {
+            request.setAttribute(AUTH_TIME_ATTRIBUTE, claims.getIssuedAt().toInstant());
         }
 
         UsernamePasswordAuthenticationToken authToken =

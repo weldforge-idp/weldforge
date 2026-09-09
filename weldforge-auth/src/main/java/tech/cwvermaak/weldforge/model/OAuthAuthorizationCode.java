@@ -82,6 +82,19 @@ public class OAuthAuthorizationCode {
      * grant, the code may never have been exchanged, or the row may predate the
      * column.
      */
+    /**
+     * When the user authenticated for the session that authorised this code
+     * (CONF-2.2). Emitted as the OIDC {@code auth_time} claim.
+     *
+     * <p>Distinct from {@code iat}, which says when the token was minted and
+     * moves forward on every refresh. A relying party gating on how recently
+     * the person proved who they are needs the former and would be misled by
+     * the latter. Null for codes predating the column; the claim is then
+     * omitted rather than guessed.
+     */
+    @Column(name = "auth_time")
+    private LocalDateTime authTime;
+
     @Column(name = "issued_family_id")
     private java.util.UUID issuedFamilyId;
 
