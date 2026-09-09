@@ -86,6 +86,9 @@ public class OidcRevocationService {
             // Not a tenant-signed JWT. Before CONF-6.3 that ended here with a
             // 200 and nothing revoked. An opaque refresh token looks exactly
             // like this, so try that interpretation before giving up.
+            // Debug is right here: this is the NORMAL path for an opaque
+            // refresh token, not a fault. The interesting outcomes are logged
+            // by revokeRefreshToken below.
             log.debug("Revoke: not a tenant JWT, trying refresh token: {}", e.getMessage());
             revokeRefreshToken(token, tenant, client);
             return;
@@ -157,16 +160,30 @@ public class OidcRevocationService {
         Optional<RefreshToken> found =
                 refreshTokenRepository.findByTokenHash(RefreshTokenService.hash(token));
         if (found.isEmpty()) {
+            // RFC 7009 §2.2 requires a 200 for an unknown token, so the caller
+            // learns nothing -- but WE should. A client that believes it
+            // revoked a session and did not is a live incident, and the 200
+            // guarantees nobody will report it.
+            log.warn("Revocation matched no token: the caller was told it succeeded "
+                    + "(client_id={} tenant={})", client.getClientId(), tenant.getSlug());
             return;
         }
         RefreshToken row = found.get();
 
         if (row.getTenant() == null || !row.getTenant().getId().equals(tenant.getId())) {
-            log.warn("Revoke refused: refresh token belongs to a different tenant");
+            log.warn("Revoke refused, cross-tenant: presented_by_tenant={} token_tenant={} client_id={}",
+                    tenant.getSlug(),
+                    row.getTenant() == null ? "(none)" : row.getTenant().getSlug(),
+                    client.getClientId());
             return;
         }
         if (row.getClient() == null || !row.getClient().getId().equals(client.getId())) {
-            log.warn("Revoke refused: refresh token was issued to a different client");
+            // Someone holding a token hash they were not issued. Worth naming
+            // both sides: this is either a broken integration or a probe.
+            log.warn("Revoke refused, wrong client: presented_by={} issued_to={} tenant={}",
+                    client.getClientId(),
+                    row.getClient() == null ? "(none)" : row.getClient().getClientId(),
+                    tenant.getSlug());
             return;
         }
 
