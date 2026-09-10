@@ -216,14 +216,36 @@ public class AuthController {
      */
     @GetMapping(value = "/tenants/verify-contact-page",
                 produces = org.springframework.http.MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> verifyContactPage(@RequestParam("token") String token) {
+    public ResponseEntity<String> verifyContactPage(@RequestParam("token") String token,
+                                                    jakarta.servlet.http.HttpServletRequest request) {
+        String html = verifyContactHtml(token,
+                tech.cwvermaak.weldforge.config.security.ContentSecurityPolicy.nonce(request));
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-store")
+                .header("X-Robots-Tag", "noindex, nofollow")
+                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE,
+                        "text/html; charset=UTF-8")
+                .body(html);
+    }
+
+    /**
+     * The verification page. Both inline blocks carry the response's CSP nonce
+     * (CONF-7.2).
+     *
+     * <p>The template goes through {@link String#formatted}, so a literal
+     * percent in the CSS must be written {@code %%}. A bare {@code 100%;} threw
+     * {@code UnknownFormatConversionException}, and every emailed verification
+     * link answered {@code 400 "Conversion = ';'"} instead of this page.
+     */
+    static String verifyContactHtml(String token, String cspNonce) {
         String safeToken = htmlEscape(token);
-        String html = """
+        String nonce = htmlEscape(cspNonce);
+        return """
             <!doctype html><html lang="en"><head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width,initial-scale=1">
             <title>Verify tenant ownership — WeldForge</title>
-            <style>
+            <style nonce="%1$s">
               body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
                      background: #0b1020; color: #e6ebf5;
                      display: flex; align-items: center; justify-content: center;
@@ -236,7 +258,7 @@ public class AuthController {
               button { background: #4A8FF5; color: #fff; border: 0;
                        padding: 12px 20px; border-radius: 6px;
                        font: inherit; font-size: 14px; font-weight: 600;
-                       cursor: pointer; width: 100%; }
+                       cursor: pointer; width: 100%%; }
               button:hover { background: #5e9eff; }
               button:disabled { opacity: 0.5; cursor: progress; }
               .msg { margin-top: 16px; font-size: 13px; }
@@ -252,8 +274,8 @@ public class AuthController {
               <button id="go" type="button">Confirm verification</button>
               <div class="msg" id="msg"></div>
             </div>
-            <script>
-              const token = %s;
+            <script nonce="%1$s">
+              const token = %2$s;
               const btn = document.getElementById('go');
               const msg = document.getElementById('msg');
               btn.addEventListener('click', async () => {
@@ -272,7 +294,7 @@ public class AuthController {
                     msg.className = 'msg ok';
                     btn.style.display = 'none';
                   } else {
-                    msg.textContent = 'Could not verify: ' + (data.message || 'invalid or expired token');
+                    msg.textContent = 'Could not verify: ' + (data.detail || data.message || 'invalid or expired token');
                     msg.className = 'msg err';
                     btn.disabled = false;
                   }
@@ -284,13 +306,7 @@ public class AuthController {
               });
             </script>
             </body></html>
-            """.formatted("\"" + safeToken + "\"");
-        return ResponseEntity.ok()
-                .header("Cache-Control", "no-store")
-                .header("X-Robots-Tag", "noindex, nofollow")
-                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE,
-                        "text/html; charset=UTF-8")
-                .body(html);
+            """.formatted(nonce, "\"" + safeToken + "\"");
     }
 
     private static String htmlEscape(String s) {

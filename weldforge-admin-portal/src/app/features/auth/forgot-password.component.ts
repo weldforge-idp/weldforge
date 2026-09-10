@@ -8,6 +8,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { catchError, of, tap } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { AuthShellComponent } from './auth-shell.component';
+import { apiErrorMessage } from '../../core/api-error';
 
 @Component({
   selector: 'app-forgot-password',
@@ -97,7 +98,7 @@ export class ForgotPasswordComponent {
         if (err?.status === 404) {
           this.error.set('Password recovery is not available for this organization. Please contact your administrator.');
         } else {
-          this.error.set(err?.error?.message || 'Something went wrong. Please try again.');
+          this.error.set(apiErrorMessage(err, 'Something went wrong. Please try again.'));
         }
         this.loading.set(false);
         return of(null);

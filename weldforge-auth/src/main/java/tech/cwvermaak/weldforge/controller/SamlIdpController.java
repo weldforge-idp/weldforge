@@ -342,13 +342,21 @@ public class SamlIdpController {
                 tenant, user, sp, inResponseTo, sessionAmr, sessionIndex);
 
         // Build auto-submit form (POST binding to SP's ACS URL)
-        String html = buildAutoSubmitForm(sp.getAcsUrl(), samlResponse, relayState);
+        String html = buildAutoSubmitForm(sp.getAcsUrl(), samlResponse, relayState,
+                tech.cwvermaak.weldforge.config.security.ContentSecurityPolicy.nonce(request));
         return ResponseEntity.ok(html);
     }
 
-    private static String buildAutoSubmitForm(String acsUrl, String samlResponse, String relayState) {
+    /**
+     * The HTTP-POST binding's self-submitting form. The submit runs from a
+     * nonce-carrying script rather than {@code <body onload>}: the CSP
+     * (CONF-7.2) forbids inline event handlers outright, and a nonce cannot
+     * be attached to one. {@code <noscript>} keeps a manual button.
+     */
+    static String buildAutoSubmitForm(String acsUrl, String samlResponse, String relayState,
+                                      String cspNonce) {
         StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><body onload=\"document.forms[0].submit()\">");
+        html.append("<!DOCTYPE html><html><body>");
         html.append("<form method=\"POST\" action=\"").append(escapeHtml(acsUrl)).append("\">");
         html.append("<input type=\"hidden\" name=\"SAMLResponse\" value=\"")
                 .append(samlResponse).append("\"/>");
@@ -357,7 +365,10 @@ public class SamlIdpController {
                     .append(escapeHtml(relayState)).append("\"/>");
         }
         html.append("<noscript><input type=\"submit\" value=\"Continue\"/></noscript>");
-        html.append("</form></body></html>");
+        html.append("</form>");
+        html.append("<script nonce=\"").append(escapeHtml(cspNonce)).append("\">")
+            .append("document.forms[0].submit();</script>");
+        html.append("</body></html>");
         return html.toString();
     }
 

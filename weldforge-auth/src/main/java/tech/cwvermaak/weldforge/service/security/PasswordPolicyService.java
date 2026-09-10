@@ -1,6 +1,5 @@
 package tech.cwvermaak.weldforge.service.security;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -9,18 +8,31 @@ import java.util.List;
 
 /**
  * Validates a submitted password against the deployment's
- * {@link PasswordPolicyProperties}. Called from the registration flow and
- * from any future "change password" flow.
+ * {@link PasswordPolicyProperties}. Called from registration, the
+ * self-service password change and password reset.
  *
- * The service is pure: no DB, no side effects, no audit — it throws a
- * {@link PasswordPolicyViolation} on failure and callers decide how to
- * record the attempt.
+ * <p>No DB, no audit -- it throws a {@link PasswordPolicyViolation} on failure
+ * and callers decide how to record the attempt. The one side effect is the
+ * breached-password lookup (CONF-7.1), which sends a five-character hash
+ * prefix and never the password; see {@link PwnedPasswordsScreen}.
  */
 @Service
-@RequiredArgsConstructor
 public class PasswordPolicyService {
 
+    /**
+     * Says why, not just that: a user told only "invalid password" retries a
+     * variation of the same breached password.
+     */
+    public static final String BREACHED_REASON =
+            "must not appear in a known data breach, and this one does; choose a different password";
+
     private final PasswordPolicyProperties properties;
+    private final BreachedPasswordScreen breachScreen;
+
+    public PasswordPolicyService(PasswordPolicyProperties properties, BreachedPasswordScreen breachScreen) {
+        this.properties = properties;
+        this.breachScreen = breachScreen;
+    }
 
     public void validate(String password) {
         List<String> reasons = new ArrayList<>();
@@ -41,6 +53,8 @@ public class PasswordPolicyService {
             reasons.add("at most " + properties.getMaxLength() + " bytes");
         }
 
+        // Off by default (NIST SP 800-63B §5.1.1.2); a deployment may still
+        // turn any of them back on.
         if (properties.isRequireUppercase() && !containsUppercase(password)) {
             reasons.add("at least one uppercase letter");
         }
@@ -52,6 +66,14 @@ public class PasswordPolicyService {
         }
         if (properties.isRequireSymbol() && !containsSymbol(password)) {
             reasons.add("at least one symbol (non-alphanumeric character)");
+        }
+
+        // Screened last, and only once everything local passes: a password
+        // refused anyway need not cost a round-trip to the corpus. UNAVAILABLE
+        // is accepted -- the screen has already logged and counted it.
+        if (reasons.isEmpty()
+                && breachScreen.check(password) == BreachedPasswordScreen.Result.BREACHED) {
+            reasons.add(BREACHED_REASON);
         }
 
         if (!reasons.isEmpty()) {

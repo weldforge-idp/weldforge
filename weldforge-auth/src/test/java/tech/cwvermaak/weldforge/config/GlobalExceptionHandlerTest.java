@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.multipart.MultipartException;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyViolation;
@@ -88,6 +89,62 @@ class GlobalExceptionHandlerTest {
                 new MultipartException("Failed to parse multipart servlet request"), request);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(resp.getBody()).containsEntry("error", "malformed_request");
+    }
+
+    // ---- CONF-7.3: RFC 9457 on /api/**, legacy elsewhere -------------
+
+    @Test
+    void apiErrorIsAProblemDocumentThatKeepsTheLegacyMembers() {
+        ResponseEntity<Map<String, Object>> resp = handler.handleValidation(
+                validationFailure(), request);
+
+        assertThat(resp.getHeaders().getContentType())
+                .isEqualTo(org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(resp.getBody())
+                .containsEntry("type", "tag:weldforge.org,2026:problem:validation_error")
+                .containsEntry("title", "Bad Request")
+                .containsEntry("status", 400)
+                .containsEntry("instance", "/api/auth/login")
+                .containsKey("detail")
+                // The admin portal and the Tech Metropolis proxies read these.
+                .containsEntry("error", "validation_error")
+                .containsKey("message");
+        assertThat(resp.getBody().get("detail")).isEqualTo(resp.getBody().get("message"));
+    }
+
+    @Test
+    void protocolEndpointErrorsKeepTheirLegacyShape() {
+        MockHttpServletRequest oauth = new MockHttpServletRequest("GET", "/t/acme/oauth2/authorize");
+
+        ResponseEntity<Map<String, Object>> resp = handler.handleBadRequest(
+                new IllegalArgumentException("bad"), oauth);
+
+        assertThat(resp.getHeaders().getContentType()).isNull();
+        assertThat(resp.getBody()).containsEntry("error", "bad_request")
+                .doesNotContainKeys("type", "title", "status", "detail");
+    }
+
+    @Test
+    void passwordPolicyProblemCarriesReasonsAsAnExtension() {
+        ResponseEntity<Map<String, Object>> resp = handler.handlePasswordPolicy(
+                new PasswordPolicyViolation(List.of("at least 12 characters")), request);
+
+        assertThat(resp.getBody())
+                .containsEntry("type", "tag:weldforge.org,2026:problem:password_policy")
+                .containsEntry("reasons", List.of("at least 12 characters"));
+    }
+
+    private static MethodArgumentNotValidException validationFailure() {
+        var target = new Object();
+        var binding = new org.springframework.validation.BeanPropertyBindingResult(target, "body");
+        binding.addError(new org.springframework.validation.FieldError("body", "email", "must not be blank"));
+        try {
+            var method = GlobalExceptionHandlerTest.class.getDeclaredMethod("validationFailure");
+            return new MethodArgumentNotValidException(
+                    new org.springframework.core.MethodParameter(method, -1), binding);
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Test

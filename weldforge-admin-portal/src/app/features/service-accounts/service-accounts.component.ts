@@ -27,6 +27,7 @@ import {
 } from '../../core/services/service-account.service';
 import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
 import { TenantPickerService } from '../../core/services/tenant-picker.service';
+import { apiErrorMessage } from '../../core/api-error';
 
 @Component({
   selector: 'app-service-accounts',
@@ -365,7 +366,7 @@ export class ServiceAccountsComponent {
       this.draft = { name: '', description: '', adminRole: 'TENANT_ADMIN' };
       this.queryClient.invalidateQueries({ queryKey: ['service-accounts'] });
     },
-    onError: (err: any) => this.toast(err?.error?.message || 'Failed to create service account'),
+    onError: (err: any) => this.toast(apiErrorMessage(err, 'Failed to create service account')),
   }));
 
   protected create() {
@@ -390,7 +391,7 @@ export class ServiceAccountsComponent {
         this.revealed.set(rotated);
         this.queryClient.invalidateQueries({ queryKey: ['service-accounts'] });
       },
-      error: err => this.toast(err?.error?.message || 'Failed to rotate token'),
+      error: err => this.toast(apiErrorMessage(err, 'Failed to rotate token')),
     });
   }
 
@@ -398,7 +399,7 @@ export class ServiceAccountsComponent {
     this.api.update(s.id, { enabled }).subscribe({
       next: () => this.queryClient.invalidateQueries({ queryKey: ['service-accounts'] }),
       error: err => {
-        this.toast(err?.error?.message || `Failed to ${enabled ? 'enable' : 'disable'} token`);
+        this.toast(apiErrorMessage(err, `Failed to ${enabled ? 'enable' : 'disable'} token`));
         this.queryClient.invalidateQueries({ queryKey: ['service-accounts'] });
       },
     });
@@ -415,7 +416,7 @@ export class ServiceAccountsComponent {
         this.toast(`Deleted "${s.name}"`);
         this.queryClient.invalidateQueries({ queryKey: ['service-accounts'] });
       },
-      error: err => this.toast(err?.error?.message || 'Failed to delete service account'),
+      error: err => this.toast(apiErrorMessage(err, 'Failed to delete service account')),
     });
   }
 
@@ -433,18 +434,18 @@ export class ServiceAccountsComponent {
   /**
    * Render a one-line human-readable summary for the load-error panel.
    * Covers the three shapes the listQuery can fail with: a real
-   * HttpErrorResponse from the backend (status + error.message), the
+   * HttpErrorResponse from the backend (status + problem detail), the
    * "Http failure during parsing" case that fires when the response is
    * HTML rather than JSON (which is what 401 redirect-to-login produced
    * before the backend 401 entry point shipped), and unknown shapes.
    */
   protected errorSummary(err: unknown): string {
-    const e = err as { status?: number; statusText?: string; message?: string; error?: { message?: string } };
+    const e = err as { status?: number; statusText?: string; message?: string };
     if (typeof e?.status === 'number') {
       if (e.status === 0) return 'Network error — the server did not respond.';
       if (e.status === 401) return 'Session expired. Reload the page to log in again.';
       if (e.status === 403) return 'You do not have permission to view service accounts in this tenant.';
-      const upstream = e.error?.message || e.statusText;
+      const upstream = apiErrorMessage(err, e.statusText ?? '');
       return `HTTP ${e.status}${upstream ? ' — ' + upstream : ''}`;
     }
     return e?.message ?? 'Unknown error.';

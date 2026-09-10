@@ -60,11 +60,13 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             long retryAfterSeconds = Math.max(1, probe.getNanosToWaitForRefill() / 1_000_000_000L);
             log.warn("Rate limit exceeded endpoint={} ip={} retry_after_s={}",
                     endpoint, key, retryAfterSeconds);
-            response.setStatus(429);
             response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
-            response.setContentType("application/json");
-            response.getWriter().write(
-                    "{\"error\":\"too_many_requests\",\"retryAfterSeconds\":" + retryAfterSeconds + "}");
+            // RFC 9457 (CONF-7.3), keeping retryAfterSeconds as an extension.
+            java.util.Map<String, Object> problem = tech.cwvermaak.weldforge.config.ApiProblem.body(
+                    org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "too_many_requests",
+                    "Too many requests; retry after " + retryAfterSeconds + " seconds", request);
+            problem.put("retryAfterSeconds", retryAfterSeconds);
+            tech.cwvermaak.weldforge.config.ApiProblem.write(response, problem);
             return;
         }
 

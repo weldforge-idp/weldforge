@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.*;
+import tech.cwvermaak.weldforge.config.security.ContentSecurityPolicy;
 import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.Tenant;
@@ -16,6 +17,8 @@ import tech.cwvermaak.weldforge.model.dto.LoginRequestDto;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.service.AuthService;
 import tech.cwvermaak.weldforge.service.PasswordResetService;
+import tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties;
+import tech.cwvermaak.weldforge.service.security.PasswordPolicyViolation;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -60,6 +63,8 @@ public class LoginController {
     private final TenantRepository tenantRepository;
     private final PasswordResetService passwordResetService;
     private final PublicHostProperties publicHost;
+    /** Read for the reset page's hint, so it states the rule the server enforces. */
+    private final PasswordPolicyProperties passwordPolicy;
 
     // ────────────────────────────── /login/ ──────────────────────────────
 
@@ -153,14 +158,18 @@ public class LoginController {
     public ResponseEntity<?> resetSubmit(@RequestParam("token") String token,
                                           @RequestParam("newPassword") String newPassword,
                                           @RequestParam("confirmPassword") String confirmPassword) {
-        if (newPassword == null || newPassword.length() < 8) {
-            return rerenderReset(token, "Password must be at least 8 characters.");
-        }
-        if (!newPassword.equals(confirmPassword)) {
+        // Length and every other rule are the policy service's to judge. This
+        // page used to pre-check "at least 8 characters" itself -- a rule the
+        // server had already outgrown -- and then reported any policy
+        // failure, a breached password included, as an expired link.
+        if (newPassword == null || !newPassword.equals(confirmPassword)) {
             return rerenderReset(token, "Passwords do not match.");
         }
         try {
             passwordResetService.resetPassword(token, newPassword);
+        } catch (PasswordPolicyViolation e) {
+            return rerenderReset(token, "Choose a different password: "
+                    + String.join("; ", e.getReasons()) + ".");
         } catch (RuntimeException e) {
             return rerenderReset(token,
                     "Reset link is invalid or has expired. Request a new one.");
@@ -298,6 +307,7 @@ public class LoginController {
     }
 
     private String renderResetForm(Tenant tenant, String token, String error) {
+        int minLength = passwordPolicy.getMinLength();
         String safeLabel = escape(brandName(tenant));
         String safeToken = escape(token);
         String errBlock = error == null || error.isBlank() ? ""
@@ -305,14 +315,18 @@ public class LoginController {
         return chrome(tenant, "Choose a new password — " + safeLabel,
             "<section class='wf-card'>"
           + "<h1>Choose a new password</h1>"
-          + "<p class='wf-sub'>At least 8 characters. Use something you don't use anywhere else.</p>"
+          + "<p class='wf-sub'>At least " + minLength + " characters. A few unrelated words make a "
+          + "strong password that is easy to remember. Passwords that have appeared in known data "
+          + "breaches are refused.</p>"
           + errBlock
           + "<form method='post' action='/login/reset' autocomplete='on'>"
           + "  <input type='hidden' name='token' value='" + safeToken + "'>"
           + "  <label><span>New password</span>"
-          + "    <input type='password' name='newPassword' minlength='8' autocomplete='new-password' required autofocus></label>"
+          + "    <input type='password' name='newPassword' minlength='" + minLength
+          + "' maxlength='" + passwordPolicy.getMaxLength() + "' autocomplete='new-password' required autofocus></label>"
           + "  <label><span>Confirm password</span>"
-          + "    <input type='password' name='confirmPassword' minlength='8' autocomplete='new-password' required></label>"
+          + "    <input type='password' name='confirmPassword' minlength='" + minLength
+          + "' autocomplete='new-password' required></label>"
           + "  <button type='submit'>Set new password</button>"
           + "</form>"
           + "</section>");
@@ -330,7 +344,10 @@ public class LoginController {
             + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             + "<title>" + title + "</title>"
             + (look.syne() ? FONT_LINK : "")
-            + "<style>:root{" + look.rootCss() + "}" + BASE_CSS + "</style>"
+            // CONF-7.2: the only inline block on these pages; it carries the
+            // response's CSP nonce.
+            + "<style" + ContentSecurityPolicy.nonceAttribute() + ">:root{" + look.rootCss() + "}"
+            + BASE_CSS + "</style>"
             + "</head><body>"
             + "<div class='wf-logo'>" + look.logoHtml() + "</div>"
             + inner

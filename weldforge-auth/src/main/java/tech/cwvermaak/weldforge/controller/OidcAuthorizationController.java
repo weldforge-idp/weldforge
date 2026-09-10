@@ -178,7 +178,8 @@ public class OidcAuthorizationController {
         // cross-site auto-submit of the consent form is rejected.
         String csrfToken = jwtService.generateConsentCsrfToken(email, tenant.getId(), slug);
         String html = renderConsent(slug, user, client, redirectUri, scope, state, nonce,
-                codeChallenge, codeChallengeMethod, maxAge, csrfToken);
+                codeChallenge, codeChallengeMethod, maxAge, csrfToken,
+                tech.cwvermaak.weldforge.config.security.ContentSecurityPolicy.nonce(request));
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
                 .body(html);
@@ -582,11 +583,15 @@ public class OidcAuthorizationController {
      * hidden form field — the consent decision endpoint reconstructs the
      * full request from those fields, so the server keeps no per-user
      * state in between.
+     *
+     * @param cspNonce this response's CSP nonce (CONF-7.2); the stylesheet
+     *                 carries it, so an injected {@code <style>} or
+     *                 {@code <script>} without it does not run
      */
-    private static String renderConsent(String slug, User user, OidcClient client, String redirectUri,
-                                        String scope, String state, String nonce,
-                                        String codeChallenge, String codeChallengeMethod,
-                                        Integer maxAge, String csrfToken) {
+    static String renderConsent(String slug, User user, OidcClient client, String redirectUri,
+                                String scope, String state, String nonce,
+                                String codeChallenge, String codeChallengeMethod,
+                                Integer maxAge, String csrfToken, String cspNonce) {
         String appName = client.getName() != null && !client.getName().isBlank()
                 ? client.getName() : client.getClientId();
         String scopesHtml = Arrays.stream(scope.split("\\s+"))
@@ -596,7 +601,7 @@ public class OidcAuthorizationController {
 
         return "<!doctype html><html><head><meta charset=\"UTF-8\">"
                 + "<title>Authorize " + escape(appName) + "</title>"
-                + "<style>"
+                + "<style nonce=\"" + escape(cspNonce) + "\">"
                 + "body{margin:0;font-family:'DM Sans',sans-serif;background:#070B17;color:#EEF2FF;display:flex;align-items:center;justify-content:center;min-height:100vh;}"
                 + ".card{background:#0C1020;border:1px solid #1C2646;border-radius:4px;padding:32px 36px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.4);}"
                 + "h1{font-family:'Syne',sans-serif;font-size:22px;margin:0 0 6px;}"

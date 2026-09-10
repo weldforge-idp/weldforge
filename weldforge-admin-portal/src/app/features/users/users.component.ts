@@ -11,6 +11,7 @@ import { injectQuery, injectQueryClient } from '@tanstack/angular-query-experime
 import { AdminService, User } from '../../core/services/admin.service';
 import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
 import { TenantPickerService } from '../../core/services/tenant-picker.service';
+import { apiErrorMessage } from '../../core/api-error';
 
 @Component({
   selector: 'app-users',
@@ -136,7 +137,7 @@ export class UsersComponent {
       error: err => {
         console.error(err);
         this.snack.open(
-          err?.error?.message || 'Failed to reset MFA',
+          apiErrorMessage(err, 'Failed to reset MFA'),
           'Dismiss',
           { duration: 5000 }
         );

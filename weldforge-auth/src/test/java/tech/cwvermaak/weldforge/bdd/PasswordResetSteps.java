@@ -87,7 +87,8 @@ public class PasswordResetSteps {
         props.setRequireLowercase(true);
         props.setRequireDigit(true);
         props.setRequireSymbol(true);
-        PasswordPolicyService passwordPolicyService = new PasswordPolicyService(props);
+        PasswordPolicyService passwordPolicyService = new PasswordPolicyService(props,
+                tech.cwvermaak.weldforge.service.security.BreachedPasswordScreen.DISABLED);
 
         when(tenantRepository.findBySlug(anyString())).thenAnswer(inv -> {
             String slug = inv.getArgument(0);
