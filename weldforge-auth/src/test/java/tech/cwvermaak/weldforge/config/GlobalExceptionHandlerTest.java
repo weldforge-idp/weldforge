@@ -134,6 +134,48 @@ class GlobalExceptionHandlerTest {
                 .containsEntry("reasons", List.of("at least 12 characters"));
     }
 
+    @Test
+    void seatLimitProblemKeepsLimitAndCurrentAsExtensions() {
+        ResponseEntity<Map<String, Object>> resp = handler.handleSeatLimit(
+                new tech.cwvermaak.weldforge.service.SeatLimitExceededException("acme", 10, 10L), request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(resp.getHeaders().getContentType())
+                .isEqualTo(org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(resp.getBody())
+                .containsEntry("type", "tag:weldforge.org,2026:problem:seat_limit_exceeded")
+                .containsEntry("status", 409)
+                .containsEntry("limit", 10)
+                .containsEntry("current", 10L);
+    }
+
+    @Test
+    void catchAllProblemLeaksNothing() {
+        ResponseEntity<Map<String, Object>> resp = handler.handleAll(
+                new RuntimeException("SELECT * FROM users -- secret detail"), request);
+
+        assertThat(resp.getHeaders().getContentType())
+                .isEqualTo(org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON);
+        assertThat(resp.getBody())
+                .containsEntry("status", 500)
+                .containsEntry("detail", "An unexpected error occurred");
+        assertThat(resp.getBody().toString()).doesNotContain("secret detail");
+    }
+
+    @Test
+    void legacyShapeStillCarriesExtrasOffTheApiSurface() {
+        MockHttpServletRequest page = new MockHttpServletRequest("POST", "/login/reset");
+
+        ResponseEntity<Map<String, Object>> resp = handler.handlePasswordPolicy(
+                new PasswordPolicyViolation(List.of("at least 12 characters")), page);
+
+        assertThat(resp.getHeaders().getContentType()).isNull();
+        assertThat(resp.getBody())
+                .containsEntry("error", "password_policy")
+                .containsEntry("reasons", List.of("at least 12 characters"))
+                .doesNotContainKeys("type", "detail");
+    }
+
     private static MethodArgumentNotValidException validationFailure() {
         var target = new Object();
         var binding = new org.springframework.validation.BeanPropertyBindingResult(target, "body");

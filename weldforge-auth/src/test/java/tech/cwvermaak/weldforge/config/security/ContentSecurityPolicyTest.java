@@ -67,6 +67,38 @@ class ContentSecurityPolicyTest {
     }
 
     @Test
+    @DisplayName("Outside a request there is no nonce, and no attribute is emitted")
+    void no_request_context() {
+        org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+
+        assertThat(ContentSecurityPolicy.nonce()).isNull();
+        assertThat(ContentSecurityPolicy.nonceAttribute()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Inside a request, the context accessor returns the request's own nonce")
+    void request_context_nonce() {
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(req));
+        try {
+            assertThat(ContentSecurityPolicy.nonce()).isEqualTo(ContentSecurityPolicy.nonce(req));
+            assertThat(ContentSecurityPolicy.nonceAttribute())
+                    .isEqualTo(" nonce=\"" + ContentSecurityPolicy.nonce(req) + "\"");
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    @DisplayName("The nonce carries 144 bits of randomness, base64-encoded")
+    void nonce_strength() {
+        String nonce = ContentSecurityPolicy.nonce(new MockHttpServletRequest());
+
+        assertThat(java.util.Base64.getDecoder().decode(nonce)).hasSize(18);
+    }
+
+    @Test
     @DisplayName("Only Swagger UI is allowed inline styles")
     void swagger_relaxation_is_scoped() {
         assertThat(ContentSecurityPolicy.policy("/swagger-ui/index.html", "n"))

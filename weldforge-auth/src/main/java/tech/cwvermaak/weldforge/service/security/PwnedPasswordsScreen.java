@@ -110,6 +110,17 @@ public class PwnedPasswordsScreen implements BreachedPasswordScreen {
     }
 
     private static Function<String, String> httpFetcher(String rangeUrl, Duration timeout) {
+        return httpFetcher(rangeUrl, timeout, EgressGuard::validate);
+    }
+
+    /**
+     * @param guard validates the full request URL before anything is sent. Always
+     *              {@link EgressGuard#validate} in production; a test substitutes
+     *              a permissive one so it can observe the wire against a loopback
+     *              server, which the real guard rightly refuses.
+     */
+    static Function<String, String> httpFetcher(String rangeUrl, Duration timeout,
+                                                Function<String, URI> guard) {
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(timeout)
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -117,7 +128,7 @@ public class PwnedPasswordsScreen implements BreachedPasswordScreen {
         return prefix -> {
             // Validated per call, not at boot: DNS may be unavailable when the
             // pod starts, and a refused URL must fail open like any outage.
-            URI uri = EgressGuard.validate(rangeUrl + prefix);
+            URI uri = guard.apply(rangeUrl + prefix);
             HttpRequest request = HttpRequest.newBuilder(uri)
                     .timeout(timeout)
                     .header("Add-Padding", "true")

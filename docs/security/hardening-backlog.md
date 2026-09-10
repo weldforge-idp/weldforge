@@ -325,6 +325,15 @@ strings remain in the tree/history. Redact the literals (history rewrite is sepa
 role-gating in `SecurityConfig` for defense-in-depth. Also `server_tokens off;` and remove
 deprecated `X-XSS-Protection` header in the nginx configmap.
 
+**B-API-2 · Medium · Bean validation is not enforced anywhere.** Found 2026-09-10 while
+writing the Sprint 6 tests. The build has `jakarta.validation-api` but no provider
+(`hibernate-validator` / `spring-boot-starter-validation`), so every `@Valid` is silently
+a no-op. The DTOs on `PaymentGatewayAdminController` are accepted unvalidated, and
+`GlobalExceptionHandler.handleValidation` never runs in production. Add
+`spring-boot-starter-validation`, then audit each `@Valid` DTO's constraints: turning
+validation on may start refusing requests that are accepted today, so treat it as an
+outward-facing change.
+
 ### Governance / documentation (delivered alongside this backlog)
 
 - ✅ [threat-model.md](../threat-model.md) — consolidated STRIDE threat model.

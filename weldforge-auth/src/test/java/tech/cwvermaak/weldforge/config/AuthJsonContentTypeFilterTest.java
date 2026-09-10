@@ -64,6 +64,12 @@ class AuthJsonContentTypeFilterTest {
         verify(chain, never()).doFilter(req, res);
         assertThat(res.getStatus()).isEqualTo(415);
         assertThat(res.getContentAsString()).contains("unsupported_media_type");
+        // CONF-7.3: a problem document like every other /api/** error.
+        assertThat(res.getContentType()).startsWith("application/problem+json");
+        assertThat(res.getContentAsString())
+                .contains("\"type\":\"tag:weldforge.org,2026:problem:unsupported_media_type\"")
+                .contains("\"status\":415")
+                .contains("\"detail\":\"/api/auth/** requires Content-Type: application/json\"");
     }
 
     @Test

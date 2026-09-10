@@ -1340,10 +1340,26 @@ became the cached certificate's subject too.
 
 ### Sprint 6 — built 2026-09-10, not yet deployed
 
-On `feat/conf-sprint-6`, stacked on `fix/conf-sprint-5-gaps`. 665 → 695 tests,
-185 → 187 BDD scenarios, plus a Testcontainers suite that drives the headers
-and error formats through the real filter chain. Portal: 74 tests. Recorded as
-F49–F53.
+On `feat/conf-sprint-6`, stacked on `fix/conf-sprint-5-gaps`. 665 → 747 tests,
+185 → 196 BDD scenarios (`password_policy.feature`, `security_baseline.feature`,
+`password_reset.feature`), plus a Testcontainers suite that drives the headers,
+the consent / verification / sign-in pages and the error formats through the
+real filter chain. Portal: 70 → 86 tests. Recorded as F49–F53.
+
+**Test map** — every change, and where it is proven:
+
+| Change | Unit | BDD | Full chain |
+|---|---|---|---|
+| 800-63B defaults, YAML binding | `PasswordPolicyServiceTest`, `BreachedPasswordScreenConfigTest` | `password_policy.feature` | — |
+| Breach screen: matching, wire format, fail-open (non-200, redirect, timeout, unreachable, egress refusal) | `PwnedPasswordsScreenTest`, `PwnedPasswordsScreenHttpTest` | `password_policy.feature` | — |
+| Hosted reset: reasons shown, configured rule, token survives | `LoginControllerResetAndCspTest` | `password_reset.feature` | — |
+| CSP header, nonce per response | `ContentSecurityPolicyTest` | `security_baseline.feature` | `SecurityHeadersAndProblemsIntegrationTest` |
+| Page nonces: consent, SAML form, verification page, hosted pages | `ServerRenderedPagesCspTest`, `SamlIdpControllerCspTest`, `LoginControllerResetAndCspTest` | `security_baseline.feature` | consent, verification, `/login` end to end |
+| Verification page 400 in production | `ServerRenderedPagesCspTest` | — | end to end, 200 |
+| Problem Details: handler, entry point, 403/415/429 filters | `ApiProblemTest`, `GlobalExceptionHandlerTest`, `ApiAuthenticationEntryPointTest`, `AppAuthorizationFilterProblemTest`, `AuthJsonContentTypeFilterTest`, `RateLimitingFilterTest` | `security_baseline.feature` | `/api/**` 400 and 401 |
+| OAuth and SCIM formats unchanged | — | `security_baseline.feature` | token and SCIM failures |
+| Discovery `auth_time` | `OidcDiscoveryCompletenessTest` | — | — |
+| Portal reads `detail`; password hints | `api-error.spec`, `login.component.spec`, `password-forms.spec`, `service-accounts.component.spec` | — | — |
 
 | Story | What changed |
 |---|---|
@@ -1372,6 +1388,13 @@ F49–F53.
 has no MFA factor, `/authorize` answers `400 {"error":"mfa_required"}` in the
 browser instead of re-authenticating. `prompt=login` is ignored. Both change
 auth-flow behaviour, so they need a story of their own rather than a ride-along.
+
+**Found while writing the tests, not fixed:** the build has
+`jakarta.validation-api` but no validation provider (no Hibernate Validator), so
+`@Valid` is enforced nowhere. The `@Valid` DTOs on
+`PaymentGatewayAdminController` are not validated, and the exception handler's
+`MethodArgumentNotValidException` branch never runs in production. Tracked as
+`B-API-2`.
 
 **Process (CONF-8.1).** Regenerate the conformance statement at the close of
 every sprint that changes protocol behaviour, from the code and the live `leap`

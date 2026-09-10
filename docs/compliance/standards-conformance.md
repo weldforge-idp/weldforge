@@ -220,9 +220,11 @@ optional feature. Deactivation is `active=false`.
 
 ## Evidence
 
-- Tests: `./mvnw -B -ntp verify -Dtests.integration=true` — 695 tests, including
-  187 BDD scenarios (`weldforge-auth/src/test/resources/features/`) and a
-  Testcontainers run that applies every migration to a fresh database.
+- Tests: `./mvnw -B -ntp verify -Dtests.integration=true` — 747 tests, including
+  196 BDD scenarios (`weldforge-auth/src/test/resources/features/`) and a
+  Testcontainers run that applies every migration to a fresh database and
+  drives headers, server-rendered pages and error formats through the real
+  filter chain.
 - Live metadata: `https://sso.weldforge.org/t/leap/.well-known/openid-configuration`,
   `/t/leap/oauth2/jwks` and `/t/leap/saml2/idp/metadata`.
 - Engineering register: [`../security/hardening-backlog.md`](../security/hardening-backlog.md).

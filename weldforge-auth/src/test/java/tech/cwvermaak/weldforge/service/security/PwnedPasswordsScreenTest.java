@@ -71,6 +71,52 @@ class PwnedPasswordsScreenTest {
     }
 
     @Test
+    @DisplayName("Suffix matching ignores case and surrounding whitespace")
+    void suffix_match_is_lenient_about_format() {
+        assertThat(PwnedPasswordsScreen.containsSuffix(" " + SUFFIX.toLowerCase() + " : 7 \n", SUFFIX))
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("A matching suffix with an unreadable count is still treated as a breach")
+    void unreadable_count_is_a_breach() {
+        assertThat(PwnedPasswordsScreen.containsSuffix(SUFFIX + ":lots\r\n", SUFFIX)).isTrue();
+    }
+
+    @Test
+    @DisplayName("Lines without a colon are skipped, not mistaken for matches")
+    void malformed_lines_skipped() {
+        assertThat(PwnedPasswordsScreen.containsSuffix(SUFFIX + "\r\ngarbage\r\n", SUFFIX)).isFalse();
+    }
+
+    @Test
+    @DisplayName("An empty (null) range body fails open")
+    void null_body_fails_open() {
+        PwnedPasswordsScreen screen = new PwnedPasswordsScreen("https://corpus.test/range/",
+                prefix -> null, meters);
+
+        assertThat(screen.check(PASSWORD)).isEqualTo(BreachedPasswordScreen.Result.UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("The hash is SHA-1 of the UTF-8 bytes, upper-case hex -- the corpus's index format")
+    void hash_format() {
+        assertThat(PwnedPasswordsScreen.sha1Hex(PASSWORD)).isEqualTo(PREFIX + SUFFIX);
+        // Non-ASCII must hash its UTF-8 bytes, or those passwords are never found.
+        assertThat(PwnedPasswordsScreen.sha1Hex("pässword"))
+                .isEqualTo(java.util.HexFormat.of().withUpperCase().formatHex(
+                        sha1("pässword".getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+    }
+
+    private static byte[] sha1(byte[] in) {
+        try {
+            return java.security.MessageDigest.getInstance("SHA-1").digest(in);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
     @DisplayName("An outage fails open and is counted, so a silent stop is visible")
     void fails_open() {
         PwnedPasswordsScreen screen = new PwnedPasswordsScreen("https://corpus.test/range/", prefix -> {

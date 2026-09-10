@@ -85,6 +85,101 @@ class SecurityHeadersAndProblemsIntegrationTest {
         assertThat(a).isNotEqualTo(b);
     }
 
+    // ---- CONF-7.2: pages render under their own policy --------------------
+    // These prove the part unit tests cannot: that the nonce a controller puts
+    // in the page while rendering is the one the header writer emits when the
+    // response commits, through the real filter chain's request wrappers.
+
+    @Autowired tech.cwvermaak.weldforge.repository.TenantRepository tenantRepository;
+    @Autowired tech.cwvermaak.weldforge.repository.UserRepository userRepository;
+    @Autowired tech.cwvermaak.weldforge.repository.OidcClientRepository oidcClientRepository;
+    @Autowired tech.cwvermaak.weldforge.service.JwtService jwtService;
+
+    private static String headerNonce(MvcResult r) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("script-src 'self' 'nonce-([^']+)'")
+                .matcher(r.getResponse().getHeader("Content-Security-Policy"));
+        assertThat(m.find()).isTrue();
+        return m.group(1);
+    }
+
+    private static void assertInlineBlocksCarry(String html, String nonce) {
+        java.util.regex.Matcher blocks = java.util.regex.Pattern.compile("<(style|script)([^>]*)>").matcher(html);
+        int seen = 0;
+        while (blocks.find()) {
+            seen++;
+            assertThat(blocks.group(2)).as("<%s>", blocks.group(1)).contains("nonce=\"" + nonce + "\"");
+        }
+        assertThat(seen).isPositive();
+    }
+
+    @Test
+    @DisplayName("The tenant verification page renders (it answered 400 in production) under its policy")
+    void verify_contact_page_end_to_end() throws Exception {
+        MvcResult r = mvc.perform(get("/api/auth/tenants/verify-contact-page").param("token", "tok-123"))
+                .andReturn();
+
+        assertThat(r.getResponse().getStatus()).isEqualTo(200);
+        assertThat(r.getResponse().getContentType()).startsWith("text/html");
+        String html = r.getResponse().getContentAsString();
+        assertThat(html).contains("Confirm tenant ownership").doesNotContain("Conversion");
+        assertInlineBlocksCarry(html, headerNonce(r));
+        assertSecurityHeaders(r);
+    }
+
+    @Test
+    @DisplayName("The hosted sign-in page's stylesheet carries the response's nonce")
+    void hosted_login_end_to_end() throws Exception {
+        MvcResult r = mvc.perform(get("/login/")).andReturn();
+
+        assertThat(r.getResponse().getStatus()).isEqualTo(200);
+        assertInlineBlocksCarry(r.getResponse().getContentAsString(), headerNonce(r));
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @DisplayName("The consent page renders under its own policy for a signed-in user")
+    void consent_page_end_to_end() throws Exception {
+        tech.cwvermaak.weldforge.model.Tenant tenant = tenantRepository.findBySlug("default").orElseThrow();
+        tech.cwvermaak.weldforge.model.User user = userRepository.save(tech.cwvermaak.weldforge.model.User.builder()
+                .tenant(tenant)
+                .username("csp-consent-user")
+                .email("csp-consent@test.com")
+                .provider(tech.cwvermaak.weldforge.model.AuthProvider.LOCAL)
+                .providerId("csp-consent-user")
+                .active(true)
+                .build());
+        oidcClientRepository.save(tech.cwvermaak.weldforge.model.OidcClient.builder()
+                .tenant(tenant)
+                .clientId("csp-consent-rp")
+                .clientSecret("rp-secret")
+                .name("CSP Consent RP")
+                .redirectUris("https://app.test/callback")
+                .scopes("openid email")
+                .grantTypes("authorization_code")
+                .requirePkce(false)
+                .build());
+        String session = jwtService.generateAccessToken(user.getEmail(), tenant.getId(), tenant.getSlug(),
+                false, user.getTokenVersion(), null, null, "NONE",
+                "https://sso.weldforge.org/t/default", java.util.List.of("pwd"),
+                java.util.UUID.randomUUID().toString());
+
+        MvcResult r = mvc.perform(get("/t/default/oauth2/authorize")
+                        .header("Authorization", "Bearer " + session)
+                        .param("response_type", "code")
+                        .param("client_id", "csp-consent-rp")
+                        .param("redirect_uri", "https://app.test/callback")
+                        .param("scope", "openid email")
+                        .param("state", "st-1"))
+                .andReturn();
+
+        assertThat(r.getResponse().getStatus()).isEqualTo(200);
+        String html = r.getResponse().getContentAsString();
+        assertThat(html).contains("CSP Consent RP wants to access your account");
+        assertInlineBlocksCarry(html, headerNonce(r));
+        assertThat(html).doesNotContainPattern("\\son[a-z]+\\s*=").doesNotContainPattern("\\sstyle\\s*=");
+        assertSecurityHeaders(r);
+    }
+
     // ---- CONF-7.3 ------------------------------------------------------
 
     @Test
