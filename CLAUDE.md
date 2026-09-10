@@ -353,17 +353,21 @@ Did **not** touch the pre-existing uncommitted working-tree changes
 
 > Re-verify with `git branch -a` / `gh pr list` before acting.
 
-- **Two local branches, committed, NOT pushed, NOT deployed** (user chose
-  "commit locally, stop"): `fix/conf-sprint-5-gaps` (from `main` @ `d79b62f`)
-  and `feat/conf-sprint-6` stacked on it. Migrations now at **V56**. Deploy is
-  Flux: bump `infrastructure/apps/weldforge/overlays/{staging,production}`.
+- **Shipped:** PRs #93 (Sprint 5 gaps) and #94 (Sprint 6) merged; `sha-797c70b`
+  live on staging and production (infra `c145ce3`, `ad7b8f7`). Migrations at
+  **V56**. Deploy = bump `infrastructure/apps/weldforge/overlays/{staging,production}`,
+  then on the node: `ssh tech01`, `export KUBECONFIG=/etc/rancher/k3s/k3s.yaml`,
+  `flux reconcile source git flux-system -n flux-system` and
+  `flux reconcile kustomization weldforge-<env> -n flux-system`. Pre-deploy dump:
+  `kubectl -n postgres create job <name> --from=cronjob/postgres-backup`.
+- Staging has no `leap` tenant — smoke-test staging against `default`.
 - Record of what shipped and why: `docs/product/standards-conformance-backlog.md`
   §7, `docs/security/hardening-backlog.md` F44–F53, and the new
   `docs/compliance/standards-conformance.md` (regenerate each sprint) plus
   `docs/adr/0001–0004`.
-- **Live prod bug fixed on the Sprint 6 branch:** `/api/auth/tenants/verify-contact-page`
-  answers 400 "Conversion = ';'" in prod until deployed (identity-proofing
-  V2a emails are dead links).
+- Fixed and live: `/api/auth/tenants/verify-contact-page` had answered 400
+  "Conversion = ';'" in prod (identity-proofing V2a emails were dead links).
+- Open: B-API-2 — no Bean Validation provider, `@Valid` enforced nowhere.
 - **Open, needs a product decision:** OIDC `max_age` is enforced as MFA-factor
   freshness and ends in a browser `400 mfa_required`; `prompt=login` ignored
   (conformance statement D1/D2).
