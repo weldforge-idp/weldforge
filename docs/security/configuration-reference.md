@@ -218,10 +218,11 @@ are load-bearing:
   no-referrer`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
   HSTS on HTTPS. There is no flag. A server-rendered page that adds an inline
   `<style>` or `<script>` must carry `ContentSecurityPolicy.nonce()`, or the
-  browser refuses it. The Traefik `weldforge-security-headers` middleware in the
-  infrastructure repo defines `Referrer-Policy: strict-origin-when-cross-origin`.
-  Where that middleware is attached it can override the application's
-  `no-referrer`, so check on staging which value the browser actually receives.
+  browser refuses it. **Do not set `referrerPolicy` in the Traefik
+  `weldforge-security-headers` middleware:** Traefik overwrites the header, and
+  until 2026-09-10 it replaced the app's `no-referrer` with
+  `strict-origin-when-cross-origin` on every API response (removed in
+  infrastructure `0e52fa0`).
 - **RFC 9457 Problem Details on `/api/**`** (CONF-7.3): errors are
   `application/problem+json`, and keep the legacy `error` / `message` members
   as extensions. The protocol endpoints keep their own error formats.

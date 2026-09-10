@@ -1228,8 +1228,8 @@ CONF-3.1 moves to Sprint 3 now that `replicas: 1` makes it latent rather than li
 | **2** ✅ | Grant integrity and token lifecycle — **delivered 2026-09-08** | 1.2, 6.1, 6.2, 6.3 | 18 |
 | **3** ✅ | Interoperability truthfulness — **delivered 2026-09-09** | 4.1, 4.2, 4.3, 1.4, 3.1 | 29 |
 | **4** ✅ | OIDC Core request parameters — **delivered 2026-09-09** | 2.1, 2.2, 2.3, 2.4, 1.3 | 29 |
-| **5** ✅ | SAML assertion fidelity — **delivered 2026-09-09**; gaps closed on `fix/conf-sprint-5-gaps` 2026-09-10, **not yet deployed** | 5.1, 5.2, 5.3, 5.4, 5.5 | 21 |
-| **6** ✅ | Baseline and evidence — **built 2026-09-10 on `feat/conf-sprint-6`, not yet deployed** | 7.1, 7.2, 7.3, 8.1, 8.2, 8.4 | 26 |
+| **5** ✅ | SAML assertion fidelity — **delivered 2026-09-09**; gaps closed and **live 2026-09-10** (#93) | 5.1, 5.2, 5.3, 5.4, 5.5 | 21 |
+| **6** ✅ | Baseline and evidence — **live 2026-09-10** (#94) | 7.1, 7.2, 7.3, 8.1, 8.2, 8.4 | 26 |
 | — | Backlog, not scheduled | 7.4, 8.3 | 10 |
 
 Sprint 1 now lands on the velocity assumption. Sprints 3, 4 and 6 run over and
@@ -1316,7 +1316,7 @@ metadata all 200.
 | CONF-2.4 | `at_hash` |
 | CONF-1.3 | Code flows without PKCE counted on `sso.oidc.pkce.missing`; backfill waits on zero |
 
-### Sprint 5 — delivered 2026-09-09, gaps closed on a branch 2026-09-10
+### Sprint 5 — delivered 2026-09-09, gaps closed 2026-09-10 (#93)
 
 `fa4a255`, merged in PR #92 (`d79b62f`); production `sha-d79b62f` (infrastructure
 `4273710`). Verified live: the `leap` metadata publishes a parseable X.509 whose
@@ -1338,9 +1338,9 @@ rather than following the fetch host. A fetch through a tenant subdomain used to
 publish an entityID no assertion would carry, and if it was the first fetch it
 became the cached certificate's subject too.
 
-### Sprint 6 — built 2026-09-10, not yet deployed
+### Sprint 6 — delivered 2026-09-10 (#94)
 
-On `feat/conf-sprint-6`, stacked on `fix/conf-sprint-5-gaps`. 665 → 747 tests,
+Merged as `797c70b`, stacked on #93. 665 → 747 tests,
 185 → 196 BDD scenarios (`password_policy.feature`, `security_baseline.feature`,
 `password_reset.feature`), plus a Testcontainers suite that drives the headers,
 the consent / verification / sign-in pages and the error formats through the
@@ -1399,6 +1399,32 @@ auth-flow behaviour, so they need a story of their own rather than a ride-along.
 **Process (CONF-8.1).** Regenerate the conformance statement at the close of
 every sprint that changes protocol behaviour, from the code and the live `leap`
 metadata, not from this backlog.
+
+### Production release — 2026-09-10
+
+Sprint 5 gaps and Sprint 6 went live together as `sha-797c70b`: staging first
+(infrastructure `c145ce3`), then production (`ad7b8f7`), both reconciled by
+Flux.
+
+- **Before:** a pre-deploy dump was taken and verified (`gzip -t`, sha256)
+  at `/backups/pg-20260910T185504Z.sql.gz`. Production was at V55 and had
+  **no SAML SPs**, so V56 touched zero rows. The CONF-5.1 default that went
+  live on 2026-09-09 therefore affected nobody.
+- **Staging:** V56 applied, and 19/19 smoke checks passed (tenant `default`;
+  staging has no `leap`).
+- **The edge was overwriting the app.** Traefik's `weldforge-security-headers`
+  middleware replaced the app's `Referrer-Policy: no-referrer` with
+  `strict-origin-when-cross-origin`. Verified against the pod directly, and
+  removed from the middleware (infrastructure `0e52fa0`). The SPA falls back to
+  the browser default, which is the value it had before.
+- **Production:** V56 applied and the app started with no errors. 19/19 smoke
+  checks passed on `leap`, plus `intellisuite.sso` and `/login` on the tenant
+  subdomain. The tenant verification page answers 200 with a matching nonce
+  (it answered 400 until this release). Data intact: 7 tenants, 13 users,
+  1152 refresh-token rows, none revoked by the release. (The 1152 recorded on
+  2026-09-08 was this same row total, not a live count; 71 are unexpired.)
+- **Not verified:** the consent page in a real browser needs a signed-in
+  account; it is covered by the full-chain integration test instead.
 
 ### Sprint goals
 
