@@ -101,6 +101,11 @@ public class SamlIdpService {
                 .enabled(dto.getEnabled() != null ? dto.getEnabled() : true)
                 .encryptAssertions(Boolean.TRUE.equals(dto.getEncryptAssertions()))
                 .wantAuthnRequestSigned(Boolean.TRUE.equals(dto.getWantAuthnRequestSigned()))
+                // A new SP gets the truthful context unless it pins one; SPs
+                // that existed before CONF-5.1 were pinned to the legacy value
+                // by V56, which is the opt-in the change register promised.
+                .authnContextOverride(blankToNull(dto.getAuthnContextOverride()))
+                .useEntityIdAsIssuer(Boolean.TRUE.equals(dto.getUseEntityIdAsIssuer()))
                 .build();
         spRepository.save(sp);
 
@@ -127,10 +132,18 @@ public class SamlIdpService {
         if (dto.getEnabled() != null) sp.setEnabled(dto.getEnabled());
         if (dto.getEncryptAssertions() != null) sp.setEncryptAssertions(dto.getEncryptAssertions());
         if (dto.getWantAuthnRequestSigned() != null) sp.setWantAuthnRequestSigned(dto.getWantAuthnRequestSigned());
+        // Null leaves the pin alone; an empty string removes it, which is how
+        // an SP pinned by V56 is moved onto the session-derived context.
+        if (dto.getAuthnContextOverride() != null) {
+            sp.setAuthnContextOverride(blankToNull(dto.getAuthnContextOverride()));
+        }
+        if (dto.getUseEntityIdAsIssuer() != null) sp.setUseEntityIdAsIssuer(dto.getUseEntityIdAsIssuer());
 
         auditService.recordAdmin(AuditEventTypes.SAML_SP_UPDATE, null,
                 AuditEventTypes.TARGET_SAML_SP, String.valueOf(sp.getId()),
-                AuditService.meta("entity_id", sp.getEntityId()));
+                AuditService.meta("entity_id", sp.getEntityId(),
+                        "authn_context_override", sp.getAuthnContextOverride(),
+                        "use_entity_id_as_issuer", sp.getUseEntityIdAsIssuer()));
 
         return toDto(sp);
     }
@@ -159,10 +172,15 @@ public class SamlIdpService {
     public String generateMetadata(Tenant tenant, String baseUrl) {
         ensureOpenSaml();
         TenantSigningKey key = signingKeyService.getOrCreateActive(tenant);
-        RSAPublicKey publicKey = signingKeyService.loadPublicKey(key);
         String slug = tenant.getSlug();
 
-        String entityId = baseUrl + "/t/" + slug + "/saml2/idp/metadata";
+        // CONF-5.4: the entityID is the canonical one, not whatever host the
+        // metadata happened to be fetched from. It must be byte-identical to
+        // the Issuer an opted-in SP receives, and the certificate's subject is
+        // minted from it once and cached -- so a fetch through a tenant
+        // subdomain used to publish an entityID no assertion would ever carry.
+        // Endpoint locations still follow the request host, which is harmless.
+        String entityId = metadataEntityId(tenant);
         String ssoLocation = baseUrl + "/t/" + slug + "/saml2/idp/sso";
 
         StringBuilder xml = new StringBuilder();
@@ -238,14 +256,8 @@ public class SamlIdpService {
         RSAPrivateKey privateKey = signingKeyService.loadPrivateKey(key);
         RSAPublicKey publicKey = signingKeyService.loadPublicKey(key);
 
-        // CONF-5.4: the metadata entityID is what a conformant SP expects to
-        // see as Issuer. Opt-in per SP, because an SP matches assertions
-        // against a configured issuer string and flipping it before the SP is
-        // reconfigured rejects every assertion.
         String entityId = metadataEntityId(tenant);
-        String issuer = Boolean.TRUE.equals(sp.getUseEntityIdAsIssuer())
-                ? entityId
-                : tenant.getSlug() + "-idp";
+        String issuer = issuerFor(tenant, sp);
         Instant now = Instant.now();
         String responseId = "_" + UUID.randomUUID();
         String assertionId = "_" + UUID.randomUUID();
@@ -309,7 +321,31 @@ public class SamlIdpService {
     }
 
     /**
-     * Refuse an AuthnRequest ID that has already been used (CONF-5.3).
+     * How old an AuthnRequest may be when it arrives (CONF-5.3). The SP mints
+     * the request and the browser carries it straight here, so anything older
+     * is a request that sat somewhere it should not have.
+     */
+    public static final java.time.Duration AUTHN_REQUEST_MAX_AGE = java.time.Duration.ofMinutes(10);
+    /** Tolerated disagreement between the SP's clock and ours, either way. */
+    public static final java.time.Duration CLOCK_SKEW = java.time.Duration.ofMinutes(3);
+    /**
+     * How long a spent request ID is remembered. It MUST outlast the oldest
+     * request the freshness check still accepts, or a request could be
+     * replayed in the gap between its ID being forgotten and its IssueInstant
+     * going stale -- which is exactly what the original one-hour retention,
+     * with no freshness check at all, allowed.
+     */
+    static final java.time.Duration REPLAY_RETENTION =
+            AUTHN_REQUEST_MAX_AGE.plus(CLOCK_SKEW).plus(CLOCK_SKEW);
+
+    /** As below, for callers with no IssueInstant in hand. */
+    public void rejectReplayedRequest(Tenant tenant, SamlServiceProvider sp, String requestId) {
+        rejectReplayedRequest(tenant, sp, requestId, null);
+    }
+
+    /**
+     * Refuse an AuthnRequest that is stale or whose ID has already been used
+     * (CONF-5.3).
      *
      * <p>A captured AuthnRequest could otherwise be replayed to mint a second
      * assertion. The mitigations that existed were real but incidental -- an
@@ -317,41 +353,70 @@ public class SamlIdpService {
      * come from stored SP configuration rather than the request -- and none of
      * them is the control.
      *
-     * <p>A request with no ID is not rejected: the ID attribute is required by
-     * the schema, but an SP that omits it is broken rather than hostile, and
-     * refusing here would turn a conformance bug in someone else's software
-     * into an outage. It simply cannot be replay-checked, which is recorded.
+     * <p>The two checks only work together. A replay cache is finite, so on
+     * its own it protects a request for exactly as long as it remembers the
+     * ID; the freshness check is what makes a request older than that
+     * unusable, so an ID can be forgotten safely.
      *
-     * @throws SamlMessageException when this request ID has been seen before
+     * <p>A request with no ID, or no usable IssueInstant, is not rejected: both
+     * are required by the schema, but an SP that omits them is broken rather
+     * than hostile, and refusing here would turn a conformance bug in someone
+     * else's software into an outage. The gap is logged instead.
+     *
+     * @throws SamlMessageException when the request is stale, from the future,
+     *                              or its ID has been seen before
      */
     @org.springframework.transaction.annotation.Transactional
-    public void rejectReplayedRequest(Tenant tenant, SamlServiceProvider sp, String requestId) {
+    public void rejectReplayedRequest(Tenant tenant, SamlServiceProvider sp, String requestId,
+                                      Instant issueInstant) {
+        String spId = sp == null ? "(unknown)" : sp.getEntityId();
+        Instant now = Instant.now();
+        if (issueInstant == null) {
+            log.warn("AuthnRequest carries no usable IssueInstant and cannot be freshness-checked: "
+                    + "sp={} tenant={}", spId, tenant.getSlug());
+        } else if (issueInstant.isBefore(now.minus(AUTHN_REQUEST_MAX_AGE).minus(CLOCK_SKEW))) {
+            refuse(tenant, sp, requestId, "stale", "AuthnRequest is too old");
+        } else if (issueInstant.isAfter(now.plus(CLOCK_SKEW))) {
+            refuse(tenant, sp, requestId, "future", "AuthnRequest is issued in the future");
+        }
+
         if (requestId == null || requestId.isBlank()) {
             log.warn("AuthnRequest carries no ID and cannot be replay-checked: sp={} tenant={}",
-                    sp == null ? "(unknown)" : sp.getEntityId(), tenant.getSlug());
+                    spId, tenant.getSlug());
             return;
         }
         if (replayRepository.existsById(requestId)) {
-            log.warn("AuthnRequest replay refused: request_id={} sp={} tenant={}",
-                    requestId, sp == null ? "(unknown)" : sp.getEntityId(), tenant.getSlug());
-            auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
-                    .eventType(AuditEventTypes.SAML_AUTHNREQUEST_REPLAY)
-                    .outcome(tech.cwvermaak.weldforge.model.AuditEvent.Outcome.DENIED)
-                    .tenant(tenant)
-                    .targetType(AuditEventTypes.TARGET_SAML_SP)
-                    .targetId(sp == null ? null : sp.getEntityId())
-                    .metadata(Map.of("request_id", requestId)));
-            throw new SamlMessageException("AuthnRequest has already been processed");
+            refuse(tenant, sp, requestId, "replay", "AuthnRequest has already been processed");
         }
-        replayRepository.save(tech.cwvermaak.weldforge.model.SamlRequestReplay.builder()
-                .requestId(requestId)
-                .tenantId(tenant.getId())
-                .spEntityId(sp == null ? null : sp.getEntityId())
-                .seenAt(java.time.LocalDateTime.now())
-                // Outlives any plausible in-flight request; the prune job
-                // reclaims the row afterwards.
-                .expiresAt(java.time.LocalDateTime.now().plusHours(1))
-                .build());
+        try {
+            // Flushed now, not at commit: two concurrent copies of one request
+            // both pass existsById, and the primary key is what separates
+            // them. The loser must get the same refusal and audit event as any
+            // other replay, not a bare constraint violation at commit.
+            replayRepository.saveAndFlush(tech.cwvermaak.weldforge.model.SamlRequestReplay.builder()
+                    .requestId(requestId)
+                    .tenantId(tenant.getId())
+                    .spEntityId(sp == null ? null : sp.getEntityId())
+                    .seenAt(java.time.LocalDateTime.now())
+                    .expiresAt(java.time.LocalDateTime.now().plus(REPLAY_RETENTION))
+                    .build());
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            refuse(tenant, sp, requestId, "replay", "AuthnRequest has already been processed");
+        }
+    }
+
+    private void refuse(Tenant tenant, SamlServiceProvider sp, String requestId,
+                        String reason, String message) {
+        log.warn("AuthnRequest refused ({}): request_id={} sp={} tenant={}", reason, requestId,
+                sp == null ? "(unknown)" : sp.getEntityId(), tenant.getSlug());
+        auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
+                .eventType(AuditEventTypes.SAML_AUTHNREQUEST_REPLAY)
+                .outcome(tech.cwvermaak.weldforge.model.AuditEvent.Outcome.DENIED)
+                .tenant(tenant)
+                .targetType(AuditEventTypes.TARGET_SAML_SP)
+                .targetId(sp == null ? null : sp.getEntityId())
+                .metadata(AuditService.meta("request_id", requestId, "reason", reason)));
+        throw new SamlMessageException(message);
     }
 
     /**
@@ -465,8 +530,51 @@ public class SamlIdpService {
      * entityID rejects the assertion it was meant to accept.
      */
     public String metadataEntityId(Tenant tenant) {
-        return publicHost.getScheme() + "://" + publicHost.getBaseDomainHost()
-                + "/t/" + tenant.getSlug() + "/saml2/idp/metadata";
+        // originForTenant keeps a configured port (dev: localhost:8076), which
+        // the port-less base-domain host would silently drop.
+        return publicHost.originForTenant(null) + "/t/" + tenant.getSlug() + "/saml2/idp/metadata";
+    }
+
+    /**
+     * The {@code Issuer} on every message this IdP sends to {@code sp}:
+     * assertions, LogoutRequests and LogoutResponses alike (CONF-5.4).
+     *
+     * <p>The metadata entityID is what a conformant SP expects. Opt-in per SP,
+     * because an SP matches inbound messages against a configured issuer
+     * string and flipping it before the SP is reconfigured rejects every one.
+     * It has to be one rule for all three message types: an SP that opted in
+     * and then received a logout message from {@code {slug}-idp} would reject
+     * it as coming from a stranger.
+     */
+    public String issuerFor(Tenant tenant, SamlServiceProvider sp) {
+        return sp != null && Boolean.TRUE.equals(sp.getUseEntityIdAsIssuer())
+                ? metadataEntityId(tenant)
+                : tenant.getSlug() + "-idp";
+    }
+
+    /**
+     * The {@code SessionIndex} this IdP gives {@code sp} for a login session
+     * (CONF-5.2).
+     *
+     * <p>Derived rather than stored: a hash of the session id (the login's
+     * refresh-token family) and the SP's entity ID. That makes it stable for
+     * the lifetime of the session -- which is what lets an SP name it in a
+     * LogoutRequest -- while giving each SP a different value, so two SPs
+     * cannot use it to correlate one user's sessions between themselves.
+     * Recomputing it at logout needs nothing but the user's live families.
+     */
+    public static String sessionIndexFor(String sessionId, SamlServiceProvider sp) {
+        try {
+            java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = sha.digest(("weldforge-saml-session-index|" + sessionId + "|"
+                    + (sp == null ? "" : sp.getEntityId())).getBytes(StandardCharsets.UTF_8));
+            // 128 bits is ample for an identifier that is also scoped by SP
+            // and user; the leading underscore keeps it a valid xs:ID.
+            return "_" + Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(Arrays.copyOf(digest, 16));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     /** Password over a protected transport. The legacy value, and the fallback. */
@@ -759,7 +867,13 @@ public class SamlIdpService {
                 .enabled(sp.getEnabled())
                 .encryptAssertions(sp.getEncryptAssertions())
                 .wantAuthnRequestSigned(sp.getWantAuthnRequestSigned())
+                .authnContextOverride(sp.getAuthnContextOverride())
+                .useEntityIdAsIssuer(sp.getUseEntityIdAsIssuer())
                 .build();
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     private static String escapeXml(String s) {

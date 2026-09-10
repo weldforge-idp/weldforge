@@ -326,7 +326,9 @@ public class AuthService {
                 tenant.getCustomClaims(),
                 refreshAdminRole,
                 tenantIssuer(tenant),
-                AuthenticationMethods.fromStorage(issued.row().getAmr()));
+                AuthenticationMethods.fromStorage(issued.row().getAmr()),
+                // Same family, same session: a refresh is not a new login.
+                issued.row().getFamilyId().toString());
         long effectiveTtl = tenant.getAccessTtlMs() != null
                 ? tenant.getAccessTtlMs() / 1000
                 : jwtService.getExpirationTime();
@@ -462,6 +464,14 @@ public class AuthService {
     private AuthResponseDto issueTokens(User user, HttpServletRequest httpRequest,
                                         HttpServletResponse response, List<String> amr) {
         Tenant tenant = user.getTenant();
+
+        // The refresh family is minted first because it IS the session: the
+        // access token names it (sid) so a SAML SessionIndex can be derived
+        // from it and a single-session logout can end exactly this login
+        // (CONF-5.2) rather than every session the user has.
+        Issued refresh = refreshTokenService.issueNew(user, clientIp(httpRequest), userAgent(httpRequest),
+                AuthenticationMethods.toStorage(amr));
+
         // PRD SSO-03 + OA2-07 + ADM-02: per-tenant TTL, custom claims, admin role.
         String adminRoleName = user.getAdminRole() != null ? user.getAdminRole().name() : "NONE";
         String accessToken = jwtService.generateAccessToken(
@@ -474,10 +484,9 @@ public class AuthService {
                 tenant.getCustomClaims(),
                 adminRoleName,
                 tenantIssuer(tenant),
-                amr);
+                amr,
+                refresh.row().getFamilyId().toString());
 
-        Issued refresh = refreshTokenService.issueNew(user, clientIp(httpRequest), userAgent(httpRequest),
-                AuthenticationMethods.toStorage(amr));
         writeRefreshCookie(response, refresh.rawToken(), tenant.getRefreshTtlMs());
 
         // Also set the access token as an HttpOnly cookie so server-side

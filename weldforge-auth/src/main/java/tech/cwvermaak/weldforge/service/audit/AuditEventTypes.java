@@ -92,6 +92,8 @@ public final class AuditEventTypes {
 
     // SAML SLO
     public static final String SAML_IDP_LOGOUT_INITIATED = "saml_idp.logout.initiated";
+    /** An SP's LogoutRequest ended sessions on our side (CONF-5.2). */
+    public static final String SAML_SP_LOGOUT            = "saml_idp.logout.sp_initiated";
 
     // Group-Role binding
     public static final String GROUP_ROLE_MAPPING_CREATE = "group_role.mapping.create";

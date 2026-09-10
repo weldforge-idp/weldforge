@@ -59,6 +59,21 @@ single-use**, and (3) **governance documentation**.
 | F31 | **Code replay revokes what it produced (CONF-1.2)** — rejecting the replay was the visible half of RFC 6749 §4.1.2; the other half is that a replay proves the code leaked, so the first exchange's tokens are suspect. `V50` links a code to its family; replay revokes it through the same `REQUIRES_NEW` revoker as refresh-reuse detection. | `V50__oauth_code_issued_family.sql`, `service/oidc/OidcAuthorizationService.java`, `controller/OidcAuthorizationController.java` |
 | F32 | **UserInfo respects scope and revocation (CONF-6.1)** — returned `email`/`name`/`picture` to any token regardless of consent (OIDC Core §5.4) and skipped the revocation list introspection already consulted. An absent `scope` claim now releases only `sub` rather than reading as "all scopes". | `controller/OidcUserinfoController.java`, `service/oidc/OidcIntrospectionService.java` |
 | F33 | **Bearer challenges on 401 (CONF-6.2)** — all six 401 branches returned a bare status; RFC 6750 §3 wants a `WWW-Authenticate` challenge so a client can tell "refresh me" from "re-authenticate me". Descriptions describe the token, never the account, so the endpoint is not an enumeration oracle. | `controller/OidcUserinfoController.java` |
+| F34 | **`client_secret_basic` (CONF-4.1, B-OIDC-4)** — the token endpoint accepted only a form body while registration handed clients `client_secret_basic`. Both methods now resolve for token, introspection and revocation; presenting both at once is refused (RFC 6749 §2.3.1). | `service/oidc/ClientCredentials.java` |
+| F35 | **Discovery is complete (CONF-4.2)** — advertised neither the `refresh_token` grant nor the registration endpoint. A test now walks every advertised URL against the controller mappings, so the document cannot drift again. | `controller/OidcDiscoveryController.java` |
+| F36 | **Registration management (CONF-4.3, B-OIDC-4)** — every registration response carried a `registration_client_uri` that 404'd. `V52` adds a hashed registration access token and the RFC 7592 read/delete endpoints; every failure is the same 403 so client ids cannot be enumerated. | `V52__oidc_registration_access_token.sql` |
+| F37 | **RFC 9207 `iss` in the authorization response (CONF-1.4)** — every tenant is a distinct issuer behind one hostname, the shape the mix-up attack targets. | `controller/OidcAuthorizationController.java` |
+| F38 | **Persisted WebAuthn ceremony state (CONF-3.1)** — two unbounded per-process maps lost ceremonies across a rolling update and leaked abandoned ones. `V51` rows are single-use and bound to one user and one ceremony type. | `V51__webauthn_ceremony_state.sql`, `service/mfa/WebAuthnService.java` |
+| F39 | **`max_age` is bound (CONF-2.1)** — `decide()` passed a literal null into step-up, so an RP asking for a fresh login was answered as if it had not asked. | `controller/OidcAuthorizationController.java` |
+| F40 | **`auth_time` (CONF-2.2)** — `V53` records it on the code and refresh family; a refresh replays the original authentication, and an unknown time omits the claim rather than inventing one. | `V53__auth_time.sql` |
+| F41 | **`prompt` handling and persisted consent (CONF-2.3)** — `prompt=none` rendered a consent page into a hidden iframe. It now answers `login_required` / `consent_required`; `V54` stores consent keyed by scope set, which also ends re-consent on every login. | `V54__oidc_consent_grants.sql` |
+| F42 | **`at_hash` (CONF-2.4)** — binds the ID token to its access token; reserved against tenant custom claims. | `service/oidc/OidcTokenService.java` |
+| F43 | **PKCE telemetry (CONF-1.3, B-OIDC-4)** — new clients already require PKCE; code flows without a challenge from older clients are counted on `sso.oidc.pkce.missing`, not refused. Backfill waits on the meter reading zero. | `service/oidc/OidcAuthorizationService.java` |
+| F44 | **SAML authentication context tells the truth (CONF-5.1)** — `AuthnContextClassRef` was a hardcoded `PasswordProtectedTransport`, so a security-key login was described as a password. Now derived from the session's `amr`; `V56` pins every SP that predates the change to the legacy value, per the change register, until an admin un-pins it. | `service/saml/SamlIdpService.java`, `V55`, `V56__pin_existing_saml_sps_authn_context.sql` |
+| F45 | **SAML session index and session-scoped logout (CONF-5.2)** — no `SessionIndex` was emitted, and the SP-initiated logout endpoint answered `Success` while ending nothing on our side. Access tokens now carry `sid` (the login's refresh family); the `SessionIndex` is derived from it per SP; a LogoutRequest naming a session revokes exactly that family, the JWT filter refuses tokens from an ended session, and a request naming no session ends them all (SAML Core §3.7.3.2). | `service/saml/SamlSloService.java`, `config/JwtAuthenticationFilter.java`, `service/JwtService.java` |
+| F46 | **AuthnRequest replay and freshness (CONF-5.3, B-SAML-1(c))** — `V55` added a replay cache, but with no `IssueInstant` check a captured request became replayable again the moment its ID aged out. Requests older than 10 min (+3 min skew) or dated in the future are now refused, retention always outlasts that window, and a concurrent duplicate is refused rather than surfacing as a constraint violation. | `service/saml/SamlIdpService.java`, `service/saml/SamlInboundMessageParser.java` |
+| F47 | **Coherent SAML identity (CONF-5.4, B-SAML-3)** — real self-signed X.509 per signing key in both signature `KeyInfo` and metadata; the entityID is canonical regardless of fetch host; assertions *and* logout messages share one per-SP Issuer rule (entityID opt-in). | `service/saml/SamlSigningCertificateService.java`, `service/saml/SamlIdpService.java` |
+| F48 | **Metadata states the signing requirement (CONF-5.5, B-SAML-1(d))** — `WantAuthnRequestsSigned` reflects a tenant-level intent, settable via the admin API and portal. | `model/Tenant.java`, `service/TenantService.java` |
 
 ---
 
@@ -71,6 +86,10 @@ single-use**, and (3) **governance documentation**.
 > sixteen work items are **not** tracked in this document — that backlog was
 > written from a security-review lens, and protocol conformance is a different
 > one. Read the two together.
+>
+> **2026-09-10.** F34–F48 record Sprints 3–5 and the Sprint 5 follow-up, which
+> closed acceptance criteria that had shipped untested or unbuilt (replay
+> freshness, session-scoped SAML logout, the existing-SP pin).
 
 ## Open items
 
@@ -198,7 +217,7 @@ HKDF.
 
 ### SAML IdP
 
-**B-SAML-1 · High · The IdP trusts attacker-controllable request fields. ⚠️ MOSTLY FIXED.**
+**B-SAML-1 · High · The IdP trusts attacker-controllable request fields. ✅ FIXED (F11, F12, F46, F48).**
 `service/saml/SamlIdpService.java`, `controller/SamlIdpController.java`. Three reinforcing
 gaps:
 - **(a) AuthnRequest signatures are never verified.** ✅ **FIXED (F12)** — per-SP
@@ -206,17 +225,14 @@ gaps:
   SP cert. The flag is now settable through the admin API (`SamlServiceProviderDto`,
   added during the 2026-06 docs pass) — previously it required raw SQL.
 - **(d) IdP metadata advertises `WantAuthnRequestsSigned="false"`** while enforcement is
-  per-SP (`SamlIdpService.generateMetadata`). **OPEN (Low).** More than cosmetic: a
-  compliant SP reads the metadata and won't sign, so flipping `wantAuthnRequestSigned=true`
-  on an SP can break its login until the SP is separately told to sign. Surface a
-  tenant-level default or per-SP metadata, and document the ordering in the onboarding guide.
+  per-SP (`SamlIdpService.generateMetadata`). ✅ **FIXED (F48)** — tenant-level
+  `samlWantAuthnRequestsSigned`, published in metadata; the ordering is in
+  `docs/integrations/relying-party-onboarding.md` §3.4.
 - **(b) inbound XML was parsed by `indexOf`/substring string-scanning, not a hardened DOM
   parser.** ✅ **FIXED (F11)** via `SamlInboundMessageParser` (XXE-hardened, namespace-aware).
-- **(c) no replay / `InResponseTo` correlation.** **OPEN** — track issued request IDs /
-  treat assertions as single-use at the SP.
-
-Saving grace for the open part: an authenticated browser session is still required and
-ACS/Audience/Recipient come from stored SP config, not the request.
+- **(c) no replay / `InResponseTo` correlation.** ✅ **FIXED (F46)** — AuthnRequest IDs
+  are single-use and requests must be fresh; the two only work together, since the cache
+  is finite.
 
 **B-SAML-2 · Medium · Legacy assertion-encryption crypto. ⚠️ OUTWARD-FACING — deferred.**
 `service/saml/SamlAssertionEncrypter.java` uses AES-CBC + RSA-OAEP-MGF1-SHA1. Target is
@@ -226,12 +242,14 @@ the downstream SP must decrypt, so flipping it unilaterally could break a tenant
 field, default = current CBC for existing SPs, GCM for new) with an algorithm allowlist —
 coordinated with the SP, not a silent switch.
 
-**B-SAML-3 · Medium · Signature `KeyInfo` / metadata cert / issuer mismatch.**
-`signXml` emits a bare `<KeyValue>` while metadata advertises an `<X509Certificate>` that
-is actually a raw SubjectPublicKeyInfo, and the assertion `Issuer` (`{slug}-idp`) ≠
-metadata `entityID`. Mint a real self-signed X.509 per signing key, reference it in the
-signature `KeyInfo`, and use the metadata entityID as the `Issuer`. Strongly consider
-migrating IdP message build/sign to OpenSAML (already on the classpath).
+**B-SAML-3 · Medium · Signature `KeyInfo` / metadata cert / issuer mismatch. ✅ FIXED (F47).**
+`signXml` emitted a bare `<KeyValue>` while metadata advertised an `<X509Certificate>` that
+was actually a raw SubjectPublicKeyInfo, and the assertion `Issuer` (`{slug}-idp`) ≠
+metadata `entityID`. A real self-signed X.509 per signing key is now in both places, and
+the entityID is available as `Issuer` per SP (opt-in, because an SP pinned to the old
+value rejects every assertion if it flips unannounced). *Residual:* message build and sign
+are still hand-rolled string assembly; migrating to OpenSAML (already on the classpath)
+remains worthwhile.
 
 ### Multi-tenancy / SCIM / audit
 

@@ -16,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter;
 import tech.cwvermaak.weldforge.model.AdminRole;
+import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.JwtService;
@@ -45,11 +46,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * forward on every refresh and would misreport it.
      */
     public static final String AUTH_TIME_ATTRIBUTE = "weldforge.auth_time";
+    /**
+     * The login session this token belongs to -- its refresh-token family --
+     * as a {@code String}, or absent for a token minted before sessions were
+     * named. SAML derives its {@code SessionIndex} from it (CONF-5.2).
+     */
+    public static final String SESSION_ID_ATTRIBUTE = "weldforge.session_id";
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
     private final TenantResolverFilter tenantResolver;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -89,6 +97,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // the next refresh.
         if (!jwtService.hasValidAudience(claims)) {
             log.debug("jwt_missing_or_wrong_audience sub={}", claims.getSubject());
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Single-session termination (CONF-5.2). token_version ends every
+        // session a user has; a SAML LogoutRequest naming one SessionIndex
+        // must end only that one, which it does by revoking the session's
+        // refresh-token family. Without this check the access tokens already
+        // minted from that family would keep working until they expired.
+        Object sidClaim = claims.get(JwtService.CLAIM_SESSION_ID);
+        String sessionId = sidClaim == null ? null : sidClaim.toString();
+        if (sessionId != null && sessionTerminated(sessionId)) {
+            log.debug("jwt_session_terminated sub={} sid={}", claims.getSubject(), sessionId);
             filterChain.doFilter(request, response);
             return;
         }
@@ -210,12 +231,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             request.setAttribute(AUTH_TIME_ATTRIBUTE, claims.getIssuedAt().toInstant());
         }
 
+        if (sessionId != null) {
+            request.setAttribute(SESSION_ID_ATTRIBUTE, sessionId);
+        }
+
         UsernamePasswordAuthenticationToken authToken =
                 new UsernamePasswordAuthenticationToken(email, null, null);
         authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         SecurityContextHolder.getContext().setAuthentication(authToken);
 
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * A malformed {@code sid} is treated as terminated: the claim is minted
+     * only by this server, so a value that is not a UUID was not minted here.
+     */
+    private boolean sessionTerminated(String sessionId) {
+        try {
+            return refreshTokenRepository.existsByFamilyIdAndRevokedAtIsNotNull(
+                    java.util.UUID.fromString(sessionId));
+        } catch (IllegalArgumentException e) {
+            return true;
+        }
     }
 
     private static String readBearer(HttpServletRequest request) {

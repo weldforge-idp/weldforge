@@ -20,6 +20,14 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
     List<RefreshToken> findByUserIdAndRevokedAtIsNull(Long userId);
 
     /**
+     * True once any token in the family has been revoked, i.e. the login
+     * session the family represents has been ended (CONF-5.2). Rotation never
+     * sets {@code revokedAt} -- only {@link #revokeFamily}, the per-user and
+     * per-tenant sweeps do, and each of those revokes the whole family.
+     */
+    boolean existsByFamilyIdAndRevokedAtIsNotNull(UUID familyId);
+
+    /**
      * Atomically mark every token in a family as revoked. Used on reuse
      * detection and on explicit logout-all.
      */

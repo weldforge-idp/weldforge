@@ -38,6 +38,14 @@ public class TenantDto {
     /** Return the user to the calling app/login flow after a password reset. */
     private Boolean returnToCallerEnabled;
 
+    /**
+     * CONF-5.5. Advertised in the tenant's SAML IdP metadata as
+     * {@code WantAuthnRequestsSigned}. The tenant's stated intent; enforcement
+     * stays per SP, so switch this on first, let SPs start signing, then
+     * enforce SP by SP.
+     */
+    private Boolean samlWantAuthnRequestsSigned;
+
     /** Custom-login branding (logoUrl, primaryColor, tagline, …). */
     private Map<String, Object> branding;
 

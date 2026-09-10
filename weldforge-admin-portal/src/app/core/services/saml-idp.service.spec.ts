@@ -66,6 +66,20 @@ describe('SamlIdpService', () => {
     });
   });
 
+  describe('partial update', () => {
+    it('sends only the changed field, so un-pinning an SP does not resend its config', () => {
+      http.put.mockReturnValue(of({ id: 7, entityId: 'https://sp.test', acsUrl: 'https://sp.test/acs' }));
+
+      service.update(7, { authnContextOverride: '' }).subscribe();
+
+      // '' is the API's "clear the pin" signal; null would mean "leave it".
+      expect(http.put).toHaveBeenCalledWith(
+        expect.stringContaining('/api/admin/saml/service-providers/7'),
+        { authnContextOverride: '' }
+      );
+    });
+  });
+
   describe('delete', () => {
     it('sends a DELETE request for the given service provider id', () => {
       http.delete.mockReturnValue(of(undefined));

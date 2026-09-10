@@ -28,4 +28,17 @@ public class SamlServiceProviderDto {
      * and rejects unsigned or invalid ones.
      */
     private Boolean wantAuthnRequestSigned;
+    /**
+     * CONF-5.1. When set, every assertion to this SP carries this
+     * {@code AuthnContextClassRef} verbatim instead of one derived from the
+     * session. On update, null leaves it unchanged and an empty string clears
+     * it -- which is how an SP pinned by V56 moves to the truthful value.
+     */
+    private String authnContextOverride;
+    /**
+     * CONF-5.4. When true, messages to this SP carry the metadata entityID as
+     * {@code Issuer} instead of the legacy {@code {slug}-idp}. Reconfigure the
+     * SP to expect the entityID first, then turn this on.
+     */
+    private Boolean useEntityIdAsIssuer;
 }

@@ -26,6 +26,8 @@ export interface Tenant {
   passwordRecoveryEnabled?: boolean;
   emailVerificationRequired?: boolean;
   returnToCallerEnabled?: boolean;
+  /** CONF-5.5. Advertised in IdP metadata as WantAuthnRequestsSigned. */
+  samlWantAuthnRequestsSigned?: boolean;
   branding?: Record<string, unknown> | null;
 }
 

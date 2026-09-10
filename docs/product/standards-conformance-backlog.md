@@ -1202,7 +1202,7 @@ than flipped unilaterally. Apply the same discipline.
 | CONF-1.1 | RPs that came to rely on the widened scope set | `app.oidc.enforce-refresh-scope` — log-only for one release, with a counter on the delta, then enforce | 30 days |
 | CONF-1.3 | Confidential clients not sending a `code_challenge` | Telemetry first; backfill migration only once the counter reads zero | 30 days |
 | CONF-3.2 | Authenticators without user-verification capability | New enrolments only; grandfather existing credentials | Release note |
-| CONF-5.1 | SPs gating on the literal `PasswordProtectedTransport` | Per-SP opt-in, current value the default for existing SPs | 30 days |
+| CONF-5.1 | SPs gating on the literal `PasswordProtectedTransport` | Per-SP opt-in, current value the default for existing SPs — **V56 pins them; clear the pin per SP when its owner is ready** | 30 days |
 | CONF-5.4 | SPs pinned to the current `Issuer` value | Per-SP opt-in; coordinate individually | 60 days |
 | CONF-7.3 | The admin portal's error handling | Ship the frontend change in the same release | Internal |
 
@@ -1221,9 +1221,9 @@ CONF-3.1 moves to Sprint 3 now that `replicas: 1` makes it latent rather than li
 |---|---|---|---|
 | **1** ✅ | Fix what is broken in production — **delivered 2026-09-08** | 3.0, 3.2, 3.3, 1.1, 6.4 | 21 |
 | **2** ✅ | Grant integrity and token lifecycle — **delivered 2026-09-08** | 1.2, 6.1, 6.2, 6.3 | 18 |
-| **3** | Interoperability truthfulness | 4.1, 4.2, 4.3, 1.4, 3.1 | 29 |
-| **4** | OIDC Core request parameters | 2.1, 2.2, 2.3, 2.4, 1.3 | 29 |
-| **5** | SAML assertion fidelity | 5.1, 5.2, 5.3, 5.4, 5.5 | 21 |
+| **3** ✅ | Interoperability truthfulness — **delivered 2026-09-09** | 4.1, 4.2, 4.3, 1.4, 3.1 | 29 |
+| **4** ✅ | OIDC Core request parameters — **delivered 2026-09-09** | 2.1, 2.2, 2.3, 2.4, 1.3 | 29 |
+| **5** ✅ | SAML assertion fidelity — **delivered 2026-09-09, gaps closed 2026-09-10** | 5.1, 5.2, 5.3, 5.4, 5.5 | 21 |
 | **6** | Baseline and evidence | 7.1, 7.2, 7.3, 8.1, 8.2, 8.4 | 26 |
 | — | Backlog, not scheduled | 7.4, 8.3 | 10 |
 
@@ -1284,6 +1284,54 @@ and gzip-verified first (`/backups/pg-20260908T200435Z.sql.gz`).
 Post-deploy: 7 tenants, 13 users, 1152 live refresh tokens — all intact. Apex,
 `leap.sso` and `intellisuite.sso` all 200; OIDC discovery, JWKS and SAML IdP
 metadata all 200.
+
+### Sprint 3 — delivered 2026-09-09
+
+`46b1eff`, merged in PR #88 (`b157694`); production `sha-b157694` the same day
+(infrastructure `60f6b8b`). 563 → 588 tests. Recorded as F34–F38.
+
+| Story | What it fixed |
+|---|---|
+| CONF-4.1 | Token, introspection and revocation accept `client_secret_basic`; both methods at once is refused |
+| CONF-4.2 | Discovery advertises `refresh_token` and registration; a test walks every advertised URL |
+| CONF-4.3 | V52 — RFC 7592 read/delete behind a hashed registration access token |
+| CONF-1.4 | RFC 9207 `iss` on the authorization response |
+| CONF-3.1 | V51 — WebAuthn ceremony state survives a rolling update; unblocks `replicas: 2` |
+
+### Sprint 4 — delivered 2026-09-09
+
+`8b73b59`, merged in PR #89 (`233ab91`); production `sha-233ab91` (infrastructure
+`442fc73`). 595 → 609 tests, 160 → 168 BDD scenarios. Recorded as F39–F43.
+
+| Story | What it fixed |
+|---|---|
+| CONF-2.1 | `max_age` bound at `/authorize` and carried through consent |
+| CONF-2.2 | V53 — `auth_time` on code and family; omitted rather than invented when unknown |
+| CONF-2.3 | `prompt=none` answers `login_required` / `consent_required`; V54 persists consent by scope set |
+| CONF-2.4 | `at_hash` |
+| CONF-1.3 | Code flows without PKCE counted on `sso.oidc.pkce.missing`; backfill waits on zero |
+
+### Sprint 5 — delivered 2026-09-09, gaps closed 2026-09-10
+
+`fa4a255`, merged in PR #92 (`d79b62f`); production `sha-d79b62f` (infrastructure
+`4273710`). Verified live: the `leap` metadata publishes a parseable X.509 whose
+subject is the entityID. Recorded as F44–F48.
+
+**A review the next day found the sprint had shipped short of its own acceptance
+criteria**, in four ways, all closed on `fix/conf-sprint-5-gaps`:
+
+| Gap | Consequence | Fix |
+|---|---|---|
+| CONF-5.1 defaulted every *existing* SP to the derived context | Contradicted the §6 register ("current value the default for existing SPs"); an SP matching only the literal breaks on its first MFA login | V56 pins every pre-existing SP to `PasswordProtectedTransport`; un-pinning is an admin action |
+| CONF-5.2 `SessionIndex` was a fresh random value per assertion, and SP-initiated logout ended nothing | Not stable for the session, so an SP could not name it; `/saml2/sp-slo` answered `Success` while the user stayed signed in | `sid` claim = refresh family; per-SP derived index; logout revokes exactly the named family, the JWT filter refuses its tokens, no index ends all |
+| CONF-5.3 had no `IssueInstant` check and no test | The 1-hour replay cache was the only control, so a captured request was replayable again after an hour | 10 min + 3 min skew freshness, retention sized to outlast it, concurrent duplicate refused; BDD scenario with the DENIED audit event |
+| CONF-5.5 had no test; none of the three new settings was reachable except by SQL | The Issuer opt-in and the context pin were unusable in practice | Admin API + portal controls; BDD scenario for the metadata default |
+
+Two smaller coherence fixes rode along: LogoutRequest and LogoutResponse now use
+the same per-SP Issuer rule as assertions, and the metadata entityID is canonical
+rather than following the fetch host. A fetch through a tenant subdomain used to
+publish an entityID no assertion would carry, and if it was the first fetch it
+became the cached certificate's subject too.
 
 ### Sprint goals
 
