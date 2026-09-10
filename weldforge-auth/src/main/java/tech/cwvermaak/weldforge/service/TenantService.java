@@ -136,6 +136,7 @@ public class TenantService {
         if (dto.getPasswordRecoveryEnabled() != null)    t.setPasswordRecoveryEnabled(dto.getPasswordRecoveryEnabled());
         if (dto.getEmailVerificationRequired() != null)  t.setEmailVerificationRequired(dto.getEmailVerificationRequired());
         if (dto.getReturnToCallerEnabled() != null)      t.setReturnToCallerEnabled(dto.getReturnToCallerEnabled());
+        if (dto.getSamlWantAuthnRequestsSigned() != null) t.setSamlWantAuthnRequestsSigned(dto.getSamlWantAuthnRequestsSigned());
         if (dto.getBranding() != null)                   t.setBranding(dto.getBranding());
         // contactEmail can be updated freely; it is NOT a privileged field.
         // verifiedAt is deliberately NOT settable here — the explicit
@@ -379,6 +380,7 @@ public class TenantService {
                 .passwordRecoveryEnabled(t.getPasswordRecoveryEnabled())
                 .emailVerificationRequired(t.getEmailVerificationRequired())
                 .returnToCallerEnabled(t.getReturnToCallerEnabled())
+                .samlWantAuthnRequestsSigned(t.getSamlWantAuthnRequestsSigned())
                 .branding(t.getBranding())
                 .contactEmail(t.getContactEmail())
                 .verifiedAt(t.getVerifiedAt())

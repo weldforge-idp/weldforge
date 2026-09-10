@@ -110,3 +110,62 @@ Feature: SAML IdP mode
     And user "alice@acme.test" exists for SAML IdP in tenant "acme"
     When a SAML Response is built for "alice@acme.test" to SP "https://sp.acme.test"
     Then the assertion issuer is the tenant's metadata entityID
+
+  # --- Sprint 5 follow-up: the acceptance criteria that shipped untested -----
+  # CONF-5.3 and CONF-5.5 went out with no scenario at all, and CONF-5.2's
+  # second half -- logout targeting one session -- was never built.
+
+  Scenario: A request ID is single-use
+    Given an AuthnRequest with ID "_abc123" was processed
+    When the same AuthnRequest ID "_abc123" arrives again
+    Then the AuthnRequest is refused
+    And a "saml.authnrequest.replay" audit event is recorded with outcome DENIED
+
+  Scenario: A stale request is refused, so a forgotten ID cannot be replayed later
+    # The replay cache is finite. Without a freshness check it protects a
+    # request only for as long as it remembers the ID.
+    When an AuthnRequest with ID "_old1" issued 30 minutes ago arrives
+    Then the AuthnRequest is refused
+    And a "saml.authnrequest.replay" audit event is recorded with outcome DENIED
+
+  Scenario: A request dated in the future is refused
+    When an AuthnRequest with ID "_ahead1" issued 30 minutes in the future arrives
+    Then the AuthnRequest is refused
+
+  Scenario: A fresh request with a new ID is accepted
+    When an AuthnRequest with ID "_fresh1" issued 1 minutes ago arrives
+    Then the AuthnRequest is accepted
+
+  Scenario: Metadata reflects the tenant default
+    Given tenant "acme" requires signed AuthnRequests by default
+    When I fetch the IdP metadata for tenant "acme"
+    Then its IdP metadata advertises WantAuthnRequestsSigned="true"
+
+  Scenario: Metadata does not claim signing is wanted when it is not
+    When I fetch the IdP metadata for tenant "acme"
+    Then its IdP metadata advertises WantAuthnRequestsSigned="false"
+
+  Scenario: The session index is stable for the lifetime of the browser session
+    Given alice has login sessions "laptop" and "phone"
+    When assertions are built for alice's session "laptop" to SP "https://app.acme.test/saml" twice
+    Then both assertions carry the same session index
+    And another SP is given a different session index for session "laptop"
+
+  Scenario: Logout targets that session
+    Given alice has login sessions "laptop" and "phone"
+    When SP "https://app.acme.test/saml" sends a LogoutRequest naming alice's session "laptop"
+    Then only alice's session "laptop" is terminated
+    And a "saml_idp.logout.sp_initiated" audit event is recorded for the logout
+
+  Scenario: A LogoutRequest naming no session ends every session
+    # SAML Core 3.7.3.2: no SessionIndex means all of the principal's sessions.
+    Given alice has login sessions "laptop" and "phone"
+    When SP "https://app.acme.test/saml" sends a LogoutRequest naming no session
+    Then all of alice's sessions are terminated
+
+  Scenario: Logout messages carry the same issuer as the assertions
+    # An SP that opted in to the entityID would reject a LogoutRequest from
+    # "{slug}-idp" as coming from a stranger.
+    Given SP "https://app.acme.test/saml" opts in to the entityID issuer
+    When an IdP-initiated LogoutRequest is built for alice to SP "https://app.acme.test/saml"
+    Then the LogoutRequest issuer is the tenant's metadata entityID

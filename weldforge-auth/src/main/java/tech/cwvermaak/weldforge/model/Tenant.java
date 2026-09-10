@@ -93,10 +93,6 @@ public class Tenant {
     private Map<String, Object> branding;
 
     /**
-     * Per-tenant access token TTL in milliseconds. Null = use the
-     * application default. PRD SSO-03: range 1 min – 30 days.
-     */
-    /**
      * Advertised in this tenant's IdP metadata as
      * {@code WantAuthnRequestsSigned} (CONF-5.5).
      *
@@ -109,6 +105,10 @@ public class Tenant {
     @Builder.Default
     private Boolean samlWantAuthnRequestsSigned = false;
 
+    /**
+     * Per-tenant access token TTL in milliseconds. Null = use the
+     * application default. PRD SSO-03: range 1 min – 30 days.
+     */
     @Column(name = "access_ttl_ms")
     private Long accessTtlMs;
 

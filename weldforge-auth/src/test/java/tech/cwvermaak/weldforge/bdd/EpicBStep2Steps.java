@@ -130,7 +130,10 @@ public class EpicBStep2Steps {
         idpService = new SamlIdpService(tenantAccessor, spRepository, signingKeyService,
                 userRepository, scimGroupRepository, auditService,
                 signingCertificateService, publicHostProperties, replayRepository);
-        sloService = new SamlSloService(spRepository, auditService);
+        sloService = new SamlSloService(spRepository, auditService, idpService,
+                mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class),
+                mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class),
+                mock(tech.cwvermaak.weldforge.service.AuthService.class));
     }
 
     private Tenant tenant(String slug) {

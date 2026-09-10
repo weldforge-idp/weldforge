@@ -48,12 +48,6 @@ public class SamlServiceProvider {
     private String spCertificate;
 
     /**
-     * B-SAML-1(a). When {@code true}, the IdP requires inbound AuthnRequests
-     * (and LogoutRequests) from this SP to carry a valid XML signature
-     * verifiable against {@link #spCertificate}, and rejects unsigned or
-     * badly-signed requests. Default {@code false} for backward compatibility.
-     */
-    /**
      * When set, every assertion to this SP carries this
      * {@code AuthnContextClassRef} verbatim rather than one derived from the
      * session (CONF-5.1).
@@ -79,6 +73,12 @@ public class SamlServiceProvider {
     @Builder.Default
     private Boolean useEntityIdAsIssuer = false;
 
+    /**
+     * B-SAML-1(a). When {@code true}, the IdP requires inbound AuthnRequests
+     * (and LogoutRequests) from this SP to carry a valid XML signature
+     * verifiable against {@link #spCertificate}, and rejects unsigned or
+     * badly-signed requests. Default {@code false} for backward compatibility.
+     */
     @Column(name = "want_authn_request_signed", nullable = false)
     @Builder.Default
     private Boolean wantAuthnRequestSigned = false;

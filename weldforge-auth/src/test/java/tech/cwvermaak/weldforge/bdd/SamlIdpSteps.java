@@ -140,7 +140,17 @@ public class SamlIdpSteps {
         // the assertions about KeyInfo and metadata need to be true of.
         var replayRepository =
                 mock(tech.cwvermaak.weldforge.repository.SamlRequestReplayRepository.class);
-        var publicHostProperties = new tech.cwvermaak.weldforge.config.tenant.PublicHostProperties();
+        // Stateful, with the primary key's semantics: a second insert of the
+        // same ID fails the way the real table does.
+        when(replayRepository.existsById(anyString())).thenAnswer(inv ->
+                spentRequestIds.contains((String) inv.getArgument(0)));
+        when(replayRepository.saveAndFlush(any())).thenAnswer(inv -> {
+            tech.cwvermaak.weldforge.model.SamlRequestReplay row = inv.getArgument(0);
+            if (!spentRequestIds.add(row.getRequestId())) {
+                throw new org.springframework.dao.DataIntegrityViolationException("duplicate key");
+            }
+            return row;
+        });
         var signingCertificateService =
                 new tech.cwvermaak.weldforge.service.saml.SamlSigningCertificateService(
                         mock(tech.cwvermaak.weldforge.repository.TenantSigningKeyRepository.class),
@@ -149,7 +159,34 @@ public class SamlIdpSteps {
         samlIdpService = new SamlIdpService(tenantAccessor, spRepository, signingKeyService,
                 userRepository, scimGroupRepository, auditService,
                 signingCertificateService, publicHostProperties, replayRepository);
+
+        // SLO collaborators: the user's login sessions are refresh-token
+        // families; ending one revokes that family and nothing else.
+        refreshTokenRepository = mock(tech.cwvermaak.weldforge.repository.RefreshTokenRepository.class);
+        when(refreshTokenRepository.findByUserIdAndRevokedAtIsNull(anyLong())).thenAnswer(inv ->
+                liveSessions.values().stream()
+                        .filter(f -> !revokedFamilies.contains(f))
+                        .map(f -> RefreshToken.builder().familyId(f).build())
+                        .toList());
+        familyRevoker = mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class);
+        when(familyRevoker.revoke(any(), anyString())).thenAnswer(inv -> {
+            revokedFamilies.add(inv.getArgument(0));
+            return 1;
+        });
+        authService = mock(tech.cwvermaak.weldforge.service.AuthService.class);
+        sloService = new tech.cwvermaak.weldforge.service.saml.SamlSloService(spRepository, auditService,
+                samlIdpService, refreshTokenRepository, familyRevoker, authService);
     }
+
+    private final tech.cwvermaak.weldforge.config.tenant.PublicHostProperties publicHostProperties =
+            new tech.cwvermaak.weldforge.config.tenant.PublicHostProperties();
+    private final Set<String> spentRequestIds = new HashSet<>();
+    private final Map<String, UUID> liveSessions = new LinkedHashMap<>();
+    private final Set<UUID> revokedFamilies = new HashSet<>();
+    private tech.cwvermaak.weldforge.repository.RefreshTokenRepository refreshTokenRepository;
+    private tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker familyRevoker;
+    private tech.cwvermaak.weldforge.service.AuthService authService;
+    private tech.cwvermaak.weldforge.service.saml.SamlSloService sloService;
 
     private Tenant createTenant(String slug) {
         Tenant t = Tenant.builder().id(idSeq.getAndIncrement()).slug(slug).name(slug).build();
@@ -219,7 +256,10 @@ public class SamlIdpSteps {
 
     @Then("the metadata entity ID contains {string}")
     public void metadataEntityIdContains(String expected) {
-        assertThat(lastMetadata).contains("entityID=\"https://sso.test/t/" + expected);
+        // The canonical entityID, whatever host the metadata was fetched from:
+        // it has to equal the Issuer an opted-in SP receives (CONF-5.4).
+        assertThat(lastMetadata).contains("entityID=\""
+                + publicHostProperties.originForTenant(null) + "/t/" + expected);
     }
 
     @Then("the metadata includes an SSO endpoint")
@@ -484,5 +524,151 @@ public class SamlIdpSteps {
     public void assertionIssuerIsEntityId() {
         String entityId = samlIdpService.metadataEntityId(tenantsBySlug.get("acme"));
         assertThat(decodedResponse()).contains("<saml:Issuer>" + entityId + "</saml:Issuer>");
+    }
+
+    // ---- Sprint 5 follow-up: replay, freshness, signing intent, logout ----
+
+    private static final String ACME_SP = "https://app.acme.test/saml";
+
+    private void receiveAuthnRequest(String requestId, java.time.Instant issueInstant) {
+        Tenant t = tenantsBySlug.get("acme");
+        lastError = null;
+        try {
+            samlIdpService.rejectReplayedRequest(t, spByEntityId(ACME_SP), requestId, issueInstant);
+        } catch (Exception e) {
+            lastError = e;
+        }
+    }
+
+    @Given("an AuthnRequest with ID {string} was processed")
+    public void authnRequestProcessed(String requestId) {
+        receiveAuthnRequest(requestId, java.time.Instant.now());
+        assertThat(lastError).as("the first use of a request ID is accepted").isNull();
+    }
+
+    @When("the same AuthnRequest ID {string} arrives again")
+    public void authnRequestArrivesAgain(String requestId) {
+        receiveAuthnRequest(requestId, java.time.Instant.now());
+    }
+
+    @When("an AuthnRequest with ID {string} issued {int} minutes ago arrives")
+    public void authnRequestIssuedAgo(String requestId, int minutes) {
+        receiveAuthnRequest(requestId, java.time.Instant.now().minus(java.time.Duration.ofMinutes(minutes)));
+    }
+
+    @When("an AuthnRequest with ID {string} issued {int} minutes in the future arrives")
+    public void authnRequestIssuedAhead(String requestId, int minutes) {
+        receiveAuthnRequest(requestId, java.time.Instant.now().plus(java.time.Duration.ofMinutes(minutes)));
+    }
+
+    @Then("the AuthnRequest is refused")
+    public void authnRequestRefused() {
+        assertThat(lastError).isInstanceOf(tech.cwvermaak.weldforge.service.saml.SamlMessageException.class);
+    }
+
+    @Then("the AuthnRequest is accepted")
+    public void authnRequestAccepted() {
+        assertThat(lastError).isNull();
+    }
+
+    @Then("a {string} audit event is recorded with outcome DENIED")
+    public void auditRecordedDenied(String type) {
+        assertThat(world.auditLog)
+                .filteredOn(e -> type.equals(e.getEventType()))
+                .extracting(AuditEvent::getOutcome)
+                .contains(AuditEvent.Outcome.DENIED);
+    }
+
+    @Given("tenant {string} requires signed AuthnRequests by default")
+    public void tenantRequiresSignedRequests(String slug) {
+        tenantsBySlug.get(slug).setSamlWantAuthnRequestsSigned(true);
+    }
+
+    @Then("its IdP metadata advertises WantAuthnRequestsSigned={string}")
+    public void metadataAdvertisesSigning(String value) {
+        assertThat(lastMetadata).contains("WantAuthnRequestsSigned=\"" + value + "\"");
+    }
+
+    @Given("alice has login sessions {string} and {string}")
+    public void aliceHasSessions(String a, String b) {
+        liveSessions.put(a, UUID.randomUUID());
+        liveSessions.put(b, UUID.randomUUID());
+    }
+
+    private User alice() {
+        Tenant t = tenantsBySlug.get("acme");
+        return userStore.stream()
+                .filter(u -> "alice@acme.test".equalsIgnoreCase(u.getEmail())
+                        && u.getTenant().getId().equals(t.getId()))
+                .findFirst().orElseThrow();
+    }
+
+    private final List<String> sessionIndexesSeen = new ArrayList<>();
+
+    @When("assertions are built for alice's session {string} to SP {string} twice")
+    public void assertionsForSessionTwice(String session, String spEntityId) {
+        String sid = liveSessions.get(session).toString();
+        SamlServiceProvider sp = spByEntityId(spEntityId);
+        for (int i = 0; i < 2; i++) {
+            lastSamlResponse = samlIdpService.buildSamlResponse(tenantsBySlug.get("acme"), alice(), sp,
+                    "_req" + i, List.of("pwd"), SamlIdpService.sessionIndexFor(sid, sp));
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("SessionIndex=\"([^\"]+)\"").matcher(decodedResponse());
+            assertThat(m.find()).isTrue();
+            sessionIndexesSeen.add(m.group(1));
+        }
+    }
+
+    @Then("both assertions carry the same session index")
+    public void sameSessionIndex() {
+        assertThat(sessionIndexesSeen).hasSize(2);
+        assertThat(sessionIndexesSeen.get(0)).isEqualTo(sessionIndexesSeen.get(1));
+    }
+
+    @Then("another SP is given a different session index for session {string}")
+    public void differentSpDifferentIndex(String session) {
+        SamlServiceProvider other = SamlServiceProvider.builder().entityId("https://other.acme.test/saml").build();
+        assertThat(SamlIdpService.sessionIndexFor(liveSessions.get(session).toString(), other))
+                .isNotEqualTo(sessionIndexesSeen.get(0));
+    }
+
+    @When("SP {string} sends a LogoutRequest naming alice's session {string}")
+    public void logoutNamingSession(String spEntityId, String session) {
+        SamlServiceProvider sp = spByEntityId(spEntityId);
+        sloService.terminateSessions(tenantsBySlug.get("acme"), sp, alice(),
+                List.of(SamlIdpService.sessionIndexFor(liveSessions.get(session).toString(), sp)), null);
+    }
+
+    @When("SP {string} sends a LogoutRequest naming no session")
+    public void logoutNamingNoSession(String spEntityId) {
+        sloService.terminateSessions(tenantsBySlug.get("acme"), spByEntityId(spEntityId), alice(),
+                List.of(), null);
+    }
+
+    @Then("only alice's session {string} is terminated")
+    public void onlySessionTerminated(String session) {
+        assertThat(revokedFamilies).containsExactly(liveSessions.get(session));
+        verify(authService, never()).logoutAll(any());
+    }
+
+    @Then("all of alice's sessions are terminated")
+    public void allSessionsTerminated() {
+        verify(authService).logoutAll(alice());
+    }
+
+    @Then("a {string} audit event is recorded for the logout")
+    public void logoutAudited(String type) {
+        auditRecorded(type);
+    }
+
+    @When("an IdP-initiated LogoutRequest is built for alice to SP {string}")
+    public void idpLogoutRequest(String spEntityId) {
+        lastSamlResponse = sloService.buildLogoutRequest(tenantsBySlug.get("acme"), alice(),
+                spByEntityId(spEntityId), tech.cwvermaak.weldforge.service.saml.SamlSloService.Binding.POST);
+    }
+
+    @Then("the LogoutRequest issuer is the tenant's metadata entityID")
+    public void logoutRequestIssuerIsEntityId() {
+        assertionIssuerIsEntityId();
     }
 }

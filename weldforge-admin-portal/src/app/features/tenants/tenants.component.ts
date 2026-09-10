@@ -9,7 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
-import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatSlideToggleChange, MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
@@ -23,7 +23,11 @@ import {
   TenantService
 } from '../../core/services/tenant.service';
 import { OidcClient, OidcClientService } from '../../core/services/oidc-client.service';
-import { SamlIdpServiceProvider, SamlIdpService } from '../../core/services/saml-idp.service';
+import {
+  AUTHN_CONTEXT_PASSWORD_PROTECTED,
+  SamlIdpServiceProvider,
+  SamlIdpService
+} from '../../core/services/saml-idp.service';
 import { TenantTwilioService, TwilioProvider } from '../../core/services/tenant-twilio.service';
 import { TenantMfaPolicyService, MfaPolicy, MfaEnforcement } from '../../core/services/tenant-mfa-policy.service';
 import { environment } from '../../../environments/environment';
@@ -439,9 +443,21 @@ interface TenantRow extends Tenant {
               <h4>SAML IdP — downstream service providers</h4>
               <p class="sub">Apps that receive SAML assertions from WeldForge. Register each SP's entity ID and Assertion Consumer Service URL.</p>
 
+              <div class="wf-toggle-row">
+                <mat-slide-toggle [checked]="!!t.samlWantAuthnRequestsSigned"
+                                  (change)="setMetadataWantsSignedRequests(t, $event.checked)">
+                  Metadata asks SPs to sign AuthnRequests
+                </mat-slide-toggle>
+                <p class="sub">Published as <code>WantAuthnRequestsSigned</code>. This states intent only; it does not enforce anything. Turn it on first, let each SP start signing, then enable <em>Signed requests</em> on that SP. Enforcing before the SP signs breaks its login.</p>
+              </div>
+
               <table *ngIf="samlIdpSps().length" class="wf-table">
                 <thead>
-                  <tr><th>Entity ID</th><th>Name</th><th>ACS URL</th><th>Status</th><th>IdP metadata</th><th></th></tr>
+                  <tr><th>Entity ID</th><th>Name</th><th>ACS URL</th><th>Status</th>
+                      <th title="Verify this SP's request signatures">Signed requests</th>
+                      <th title="Issuer on assertions and logout messages">Issuer</th>
+                      <th title="AuthnContextClassRef on assertions">Auth context</th>
+                      <th>IdP metadata</th><th></th></tr>
                 </thead>
                 <tbody>
                   <tr *ngFor="let sp of samlIdpSps()">
@@ -450,6 +466,27 @@ interface TenantRow extends Tenant {
                     <td class="mono trunc">{{ sp.acsUrl }}</td>
                     <td>
                       <span class="status" [class.on]="sp.enabled">{{ sp.enabled ? 'enabled' : 'disabled' }}</span>
+                    </td>
+                    <td>
+                      <mat-slide-toggle [checked]="!!sp.wantAuthnRequestSigned"
+                                        [disabled]="!sp.spCertificate"
+                                        [title]="sp.spCertificate ? 'Reject unsigned or badly signed requests' : 'Upload the SP certificate first'"
+                                        (change)="setSpRequiresSignedRequests(sp, $event)">
+                      </mat-slide-toggle>
+                    </td>
+                    <td>
+                      <mat-slide-toggle [checked]="!!sp.useEntityIdAsIssuer"
+                                        [title]="sp.useEntityIdAsIssuer ? 'Sending the metadata entityID' : 'Sending the legacy ' + t.slug + '-idp'"
+                                        (change)="setSpEntityIdIssuer(t, sp, $event)">
+                        {{ sp.useEntityIdAsIssuer ? 'entityID' : 'legacy' }}
+                      </mat-slide-toggle>
+                    </td>
+                    <td>
+                      <mat-slide-toggle [checked]="!sp.authnContextOverride"
+                                        [title]="sp.authnContextOverride ? 'Pinned to ' + sp.authnContextOverride : 'Reports how the user actually signed in'"
+                                        (change)="setSpContextFromSession(sp, $event)">
+                        {{ sp.authnContextOverride ? 'pinned' : 'from session' }}
+                      </mat-slide-toggle>
                     </td>
                     <td>
                       <button mat-icon-button (click)="copyIdpMetadataUrl(t)" title="Copy IdP metadata URL">
@@ -1171,6 +1208,75 @@ export class TenantsComponent implements OnInit {
         this.ok(`SAML SP ${created.entityId} registered`);
       },
       error: err => this.err('Create failed', err),
+    });
+  }
+
+  /**
+   * PUT a partial change to one SP and swap the saved row into the signal.
+   * On failure the toggle is put back, since its visual state has already
+   * flipped and would otherwise disagree with the server.
+   */
+  private updateSamlIdpSp(sp: SamlIdpServiceProvider, patch: Partial<SamlIdpServiceProvider>,
+                          event?: MatSlideToggleChange) {
+    if (!sp.id) return;
+    this.samlIdpApi.update(sp.id, patch).subscribe({
+      next: saved => {
+        this.samlIdpSps.update(sps => sps.map(x => x.id === saved.id ? saved : x));
+        this.ok(`SP ${saved.entityId} updated`);
+      },
+      error: err => {
+        if (event) event.source.checked = !event.checked;
+        this.err('Update failed', err);
+      },
+    });
+  }
+
+  setSpRequiresSignedRequests(sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
+    if (event.checked && !confirm(
+        `Require signed AuthnRequests from ${sp.entityId}?\n\n`
+        + 'Unsigned requests from this SP will be rejected from now on. Confirm the SP already signs.')) {
+      event.source.checked = false;
+      return;
+    }
+    this.updateSamlIdpSp(sp, { wantAuthnRequestSigned: event.checked }, event);
+  }
+
+  setSpEntityIdIssuer(t: TenantRow, sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
+    // The most breaking switch on this page: the SP matches Issuer against a
+    // configured string, so flipping it first rejects every assertion.
+    const next = event.checked
+      ? 'the entityID published in this tenant\'s IdP metadata'
+      : `the legacy "${t.slug}-idp"`;
+    if (!confirm(`Send ${next} as Issuer to ${sp.entityId}?\n\n`
+        + 'Reconfigure the SP to expect this issuer FIRST, or it will reject every login.')) {
+      event.source.checked = !event.checked;
+      return;
+    }
+    this.updateSamlIdpSp(sp, { useEntityIdAsIssuer: event.checked }, event);
+  }
+
+  setSpContextFromSession(sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
+    // On: clear the pin so the SP is told how the user really signed in.
+    // Off: pin the legacy password value. An SP that only accepts that value
+    // breaks the first time one of its users signs in with a security key.
+    if (event.checked && !confirm(
+        `Report the real sign-in method to ${sp.entityId}?\n\n`
+        + 'Users who sign in with MFA will be sent a stronger authentication context than '
+        + 'PasswordProtectedTransport. Confirm the SP accepts it.')) {
+      event.source.checked = false;
+      return;
+    }
+    this.updateSamlIdpSp(sp,
+      { authnContextOverride: event.checked ? '' : AUTHN_CONTEXT_PASSWORD_PROTECTED }, event);
+  }
+
+  setMetadataWantsSignedRequests(t: TenantRow, wanted: boolean) {
+    this.api.update(t.id, { samlWantAuthnRequestsSigned: wanted }).subscribe({
+      next: updated => {
+        t.samlWantAuthnRequestsSigned = updated.samlWantAuthnRequestsSigned;
+        this.ok(`IdP metadata for ${t.slug} now says WantAuthnRequestsSigned="${wanted}"`);
+      },
+      error: err => this.err('Failed to update IdP metadata setting', err),
     });
   }
 

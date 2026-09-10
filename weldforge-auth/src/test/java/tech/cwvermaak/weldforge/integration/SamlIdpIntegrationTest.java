@@ -153,7 +153,9 @@ class SamlIdpIntegrationTest {
         String metadata = samlIdpService.generateMetadata(tenant, "https://sso.example.com");
 
         assertThat(metadata).contains("EntityDescriptor");
-        assertThat(metadata).contains("entityID=\"https://sso.example.com/t/default/saml2/idp/metadata\"");
+        // The entityID is canonical, not the fetch host (CONF-5.4): it must be
+        // the Issuer an opted-in SP receives. Endpoint locations follow the host.
+        assertThat(metadata).contains("entityID=\"" + samlIdpService.metadataEntityId(tenant) + "\"");
         assertThat(metadata).contains("IDPSSODescriptor");
         assertThat(metadata).contains("KeyDescriptor");
         assertThat(metadata).contains("X509Certificate");

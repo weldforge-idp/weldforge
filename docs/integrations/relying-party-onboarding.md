@@ -239,6 +239,18 @@ GET /t/{slug}/saml2/idp/metadata        (public, application/samlmetadata+xml)
 
 (`SamlIdpController.metadata`.) Point your SP's IdP-metadata configuration here.
 
+What the metadata publishes:
+
+- **`entityID`** — always the canonical
+  `https://sso.weldforge.org/t/{slug}/saml2/idp/metadata`, whichever host you
+  fetched it from. Endpoint `Location`s follow the host you used.
+- **Signing certificate** — a real self-signed X.509 wrapping the tenant's
+  current RSA signing key (subject = the entityID). The same certificate is in
+  every assertion's signature `KeyInfo`, so you can pin it or validate against
+  metadata; both agree. It changes when the tenant's key rotates — re-fetch
+  metadata rather than hard-coding the certificate.
+- **`WantAuthnRequestsSigned`** — the tenant's stated intent (see §3.4).
+
 ### 3.2 Register your SP
 
 Admin API — `SamlIdpAdminController`, base `/api/admin/saml/service-providers`
@@ -265,7 +277,12 @@ Create/update body is a `SamlServiceProviderDto`:
 | `attributeMappings` | `Map` controlling which user attributes map into assertion attributes |
 | `enabled` | toggle |
 | `encryptAssertions` | when true **and** `spCertificate` is set, the IdP returns an `EncryptedAssertion` (PRD SAM-04) |
-| `wantAuthnRequestSigned` | when true **and** `spCertificate` is set, the IdP verifies the XML signature on inbound AuthnRequest / LogoutRequest messages and rejects unsigned/invalid ones (B-SAML-1) |
+| `wantAuthnRequestSigned` | when true **and** `spCertificate` is set, the IdP verifies the XML signature on inbound AuthnRequest / LogoutRequest messages and rejects unsigned/invalid ones (B-SAML-1). See §3.4 for the order to turn this on in. |
+| `useEntityIdAsIssuer` | when true, assertions **and** logout messages carry the metadata entityID as `Issuer` instead of the legacy `{slug}-idp`. Default false. See §3.6. |
+| `authnContextOverride` | a fixed `AuthnContextClassRef` sent on every assertion instead of one derived from how the user signed in. On `PUT`, omit it to leave it unchanged and send `""` to clear it. See §3.6. |
+
+The admin portal exposes the last three as per-SP toggles (**Tenants → SAML
+IdP**). `PUT` is a partial update: send only the fields you are changing.
 
 ### 3.3 SSO endpoints (the runtime flow)
 
@@ -273,28 +290,82 @@ Create/update body is a `SamlServiceProviderDto`:
   `SAMLRequest` (and optional `RelayState`). The user must already be
   authenticated (else `401`). WeldForge decodes the AuthnRequest (XXE-hardened
   parse), matches the `Issuer` to a registered SP, verifies the request
-  signature if required, builds a signed `SAMLResponse`, and returns an
-  auto-submitting HTML form POSTing it to the SP's `acsUrl`
-  (`SamlIdpController.handleSso`).
-- **Single Logout**: IdP-initiated `POST /t/{slug}/saml2/idp/slo`;
-  SP-initiated `POST /t/{slug}/saml2/sp-slo` (PRD SAM-06).
+  signature if required, checks the request is fresh and unused (below),
+  builds a signed `SAMLResponse`, and returns an auto-submitting HTML form
+  POSTing it to the SP's `acsUrl` (`SamlIdpController.handleSso`).
+- **Requests are single-use and must be fresh.** An AuthnRequest whose `ID` has
+  been seen before, whose `IssueInstant` is more than 10 minutes old, or that is
+  dated more than 3 minutes in the future is refused with `400` and audited as
+  `saml.authnrequest.replay`. Mint a new AuthnRequest per login attempt (every
+  mainstream SP library does) and keep your SP's clock synchronised. A request
+  with no `ID` or `IssueInstant` is accepted but cannot be protected; fix the SP.
+- **`SessionIndex`.** Every assertion's `AuthnStatement` carries a
+  `SessionIndex` that is stable for the user's WeldForge login session and
+  different for each SP. Store it with your SP-side session if you implement
+  Single Logout.
+- **Single Logout** (PRD SAM-06):
+  - *IdP-initiated* — `POST /t/{slug}/saml2/idp/slo` returns a `LogoutRequest`
+    per SP with an `sloUrl`, each naming the session being ended by its
+    `SessionIndex`.
+  - *SP-initiated* — `POST /t/{slug}/saml2/sp-slo` with a `SAMLRequest`, sent
+    with the user's WeldForge session. The `NameID` must be that user (a
+    mismatch is answered with `status:Requester` and ends nothing). With one or
+    more `SessionIndex` elements, **only those sessions end** — the user stays
+    signed in on their other devices. With none, **every** session of that
+    user ends (SAML Core §3.7.3.2). Either way, if the browser's own session
+    ended, its cookies are cleared.
 
 ### 3.4 Enabling signed AuthnRequests (recommended, XSW-resistant)
 
-To harden against forged / replayed AuthnRequests:
+Order matters. Turning enforcement on before your SP signs breaks its login.
 
-1. Upload your SP's signing certificate in `spCertificate`.
-2. Set `wantAuthnRequestSigned: true`.
+1. **Tenant admin:** switch on *"Metadata asks SPs to sign AuthnRequests"*
+   (`PUT /api/admin/tenants/{id}` with `"samlWantAuthnRequestsSigned": true`).
+   The IdP metadata now says `WantAuthnRequestsSigned="true"`. Nothing is
+   enforced yet.
+2. **SP owner:** re-import WeldForge's metadata (or configure signing by hand)
+   so the SP starts signing its AuthnRequests and LogoutRequests. Confirm a
+   login still works.
+3. **Tenant admin:** upload the SP's signing certificate in `spCertificate`,
+   then set `wantAuthnRequestSigned: true` on that SP.
 
-The IdP then rejects unsigned or invalid-signature AuthnRequests and
-LogoutRequests for that SP (`SamlIdpService.verifyAuthnRequestSignature`,
-`SamlInboundMessageParser` does an XXE-hardened namespace-aware DOM parse).
-Without a cert configured, signature verification is a no-op.
+From step 3 the IdP rejects unsigned or invalid-signature AuthnRequests and
+LogoutRequests for that SP (`SamlIdpService.verifyAuthnRequestSignature`; the
+XML is parsed XXE-hardened and namespace-aware by `SamlInboundMessageParser`).
+Without a certificate on file, signature verification cannot run.
 
 ### 3.5 Assertion encryption
 
 Set `encryptAssertions: true` (with `spCertificate`) to have the IdP emit an
 `EncryptedAssertion` instead of a cleartext assertion.
+
+### 3.6 Issuer and authentication context (per-SP opt-ins)
+
+Both change bytes your SP already checks, so both are per-SP and neither
+changes on its own.
+
+**Issuer.** By default assertions and logout messages carry `Issuer` =
+`{slug}-idp`. A conformant SP expects the metadata entityID instead. To switch:
+first reconfigure the SP to expect
+`https://sso.weldforge.org/t/{slug}/saml2/idp/metadata` as the IdP's issuer,
+then set `useEntityIdAsIssuer: true`. In the other order, every login is
+rejected until the SP is updated.
+
+**Authentication context.** `AuthnContextClassRef` reports how the user signed
+in to WeldForge, strongest factor first:
+
+| Session | `AuthnContextClassRef` |
+|---|---|
+| security key / passkey (`hwk`, `swk`) | `urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract` |
+| one-time code (`otp`, `sms`) | `urn:oasis:names:tc:SAML:2.0:ac:classes:TimeSyncToken` |
+| password only, or unknown | `urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport` |
+
+**SPs that already existed when migration V56 was applied are pinned** to
+`PasswordProtectedTransport`, because an SP that accepts only that value would
+otherwise reject users the first time they sign in with MFA. When your SP
+accepts the stronger classes, ask the tenant admin to clear the pin
+(`authnContextOverride: ""`, or the *Auth context → from session* toggle). SPs
+registered after V56 get the derived value unless they set a pin.
 
 ---
 
@@ -434,5 +505,5 @@ its own site so browsers/password managers treat it distinctly. The
 - `docs/auth-url-spec.md` — URL contract & per-tenant subdomain model
 - `docs/tenant-branding.md` — branding keys (authoritative)
 - `docs/security/hardening-backlog.md` — B-TEN-3 (SCIM bulk advertisement),
-  B-SAML-1 (signed AuthnRequests)
+  B-SAML-1 (signed AuthnRequests, replay), B-SAML-3 (certificate and issuer)
 - `docs/integrations/leap.md` — the always-live demo tenant

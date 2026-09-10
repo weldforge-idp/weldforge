@@ -51,6 +51,52 @@ class SamlInboundMessageParserTest {
     }
 
     @Test
+    @DisplayName("extracts IssueInstant, so a stale request can be refused (CONF-5.3)")
+    void extractsIssueInstant() {
+        String xml = "<samlp:AuthnRequest " + NS + " ID=\"_t1\" Version=\"2.0\" "
+                + "IssueInstant=\"2026-09-10T12:34:56.789Z\">"
+                + "<saml:Issuer>https://sp.example.com/meta</saml:Issuer></samlp:AuthnRequest>";
+
+        assertThat(SamlInboundMessageParser.parse(xml).issueInstant())
+                .isEqualTo(java.time.Instant.parse("2026-09-10T12:34:56.789Z"));
+    }
+
+    @Test
+    @DisplayName("an unparseable IssueInstant reads as absent, not as an error")
+    void unparseableIssueInstantIsNull() {
+        String xml = "<samlp:AuthnRequest " + NS + " ID=\"_t2\" IssueInstant=\"yesterday\">"
+                + "<saml:Issuer>https://sp.example.com/meta</saml:Issuer></samlp:AuthnRequest>";
+
+        assertThat(SamlInboundMessageParser.parse(xml).issueInstant()).isNull();
+    }
+
+    @Test
+    @DisplayName("extracts a LogoutRequest's NameID and every SessionIndex (CONF-5.2)")
+    void extractsLogoutSubjectAndSessionIndexes() {
+        String xml = "<samlp:LogoutRequest " + NS + " ID=\"_lo2\" Version=\"2.0\">"
+                + "<saml:Issuer>https://sp.example.com/meta</saml:Issuer>"
+                + "<saml:NameID>alice@acme.test</saml:NameID>"
+                + "<samlp:SessionIndex>_one</samlp:SessionIndex>"
+                + "<samlp:SessionIndex> _two </samlp:SessionIndex>"
+                + "</samlp:LogoutRequest>";
+
+        SamlInboundMessageParser.ParsedMessage m = SamlInboundMessageParser.parse(xml);
+
+        assertThat(m.nameId()).isEqualTo("alice@acme.test");
+        assertThat(m.sessionIndexes()).containsExactly("_one", "_two");
+    }
+
+    @Test
+    @DisplayName("a LogoutRequest naming no session yields an empty index list")
+    void noSessionIndexIsEmpty() {
+        String xml = "<samlp:LogoutRequest " + NS + " ID=\"_lo3\">"
+                + "<saml:Issuer>https://sp.example.com/meta</saml:Issuer>"
+                + "<saml:NameID>alice@acme.test</saml:NameID></samlp:LogoutRequest>";
+
+        assertThat(SamlInboundMessageParser.parse(xml).sessionIndexes()).isEmpty();
+    }
+
+    @Test
     @DisplayName("trims whitespace around the Issuer text")
     void trimsIssuer() {
         String xml = "<samlp:AuthnRequest " + NS + " ID=\"_x\">"
