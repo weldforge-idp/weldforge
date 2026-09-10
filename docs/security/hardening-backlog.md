@@ -74,6 +74,11 @@ single-use**, and (3) **governance documentation**.
 | F46 | **AuthnRequest replay and freshness (CONF-5.3, B-SAML-1(c))** — `V55` added a replay cache, but with no `IssueInstant` check a captured request became replayable again the moment its ID aged out. Requests older than 10 min (+3 min skew) or dated in the future are now refused, retention always outlasts that window, and a concurrent duplicate is refused rather than surfacing as a constraint violation. | `service/saml/SamlIdpService.java`, `service/saml/SamlInboundMessageParser.java` |
 | F47 | **Coherent SAML identity (CONF-5.4, B-SAML-3)** — real self-signed X.509 per signing key in both signature `KeyInfo` and metadata; the entityID is canonical regardless of fetch host; assertions *and* logout messages share one per-SP Issuer rule (entityID opt-in). | `service/saml/SamlSigningCertificateService.java`, `service/saml/SamlIdpService.java` |
 | F48 | **Metadata states the signing requirement (CONF-5.5, B-SAML-1(d))** — `WantAuthnRequestsSigned` reflects a tenant-level intent, settable via the admin API and portal. | `model/Tenant.java`, `service/TenantService.java` |
+| F49 | **Password policy per NIST SP 800-63B (CONF-7.1)** — composition rules off by default, 12-character floor, new passwords screened against Pwned Passwords by k-anonymity (5-character SHA-1 prefix only, egress-guarded, fails open, metered on `sso.password.breach_check`). ADR 0004. | `service/security/PasswordPolicyService.java`, `service/security/PwnedPasswordsScreen.java` |
+| F50 | **CSP and Referrer-Policy (CONF-7.2)** — `default-src 'self'` with per-response nonces on every server-rendered inline block, `object-src`/`base-uri 'none'`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer`. The SAML POST form's `onload` handler, which no nonce can cover, is now a nonce'd script. | `config/security/ContentSecurityPolicy.java`, `config/SecurityConfig.java` |
+| F51 | **RFC 9457 Problem Details on `/api/**` (CONF-7.3)** — one error contract from the exception handler, the 401 entry point and the 403/415/429 filters; legacy members kept as extensions. | `config/ApiProblem.java`, `config/GlobalExceptionHandler.java` |
+| F52 | **Tenant verification page answered 400 in production** — `String.formatted` over CSS containing `100%;` threw, so every emailed ownership-verification link failed. Escaped, and covered by a regression test. | `controller/AuthController.java` |
+| F53 | **Hosted reset reported policy failures as an expired link** — and pre-checked a stale 8-character rule. It now shows the policy's reasons; the token survives the failed attempt. | `controller/LoginController.java` |
 
 ---
 
@@ -89,7 +94,9 @@ single-use**, and (3) **governance documentation**.
 >
 > **2026-09-10.** F34–F48 record Sprints 3–5 and the Sprint 5 follow-up, which
 > closed acceptance criteria that had shipped untested or unbuilt (replay
-> freshness, session-scoped SAML logout, the existing-SP pin).
+> freshness, session-scoped SAML logout, the existing-SP pin). F49–F53 record
+> Sprint 6. The standards position these add up to is in
+> [`../compliance/standards-conformance.md`](../compliance/standards-conformance.md).
 
 ## Open items
 
@@ -317,6 +324,15 @@ strings remain in the tree/history. Redact the literals (history rewrite is sepa
 `AppAuthorizationFilter` (app-key) rather than the recommended ROLE_ADMIN; move to
 role-gating in `SecurityConfig` for defense-in-depth. Also `server_tokens off;` and remove
 deprecated `X-XSS-Protection` header in the nginx configmap.
+
+**B-API-2 · Medium · Bean validation is not enforced anywhere.** Found 2026-09-10 while
+writing the Sprint 6 tests. The build has `jakarta.validation-api` but no provider
+(`hibernate-validator` / `spring-boot-starter-validation`), so every `@Valid` is silently
+a no-op. The DTOs on `PaymentGatewayAdminController` are accepted unvalidated, and
+`GlobalExceptionHandler.handleValidation` never runs in production. Add
+`spring-boot-starter-validation`, then audit each `@Valid` DTO's constraints: turning
+validation on may start refusing requests that are accepted today, so treat it as an
+outward-facing change.
 
 ### Governance / documentation (delivered alongside this backlog)
 

@@ -13,6 +13,7 @@ import tech.cwvermaak.weldforge.service.security.RateLimitingService.Bucket4jEnd
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -79,6 +80,27 @@ class RateLimitingFilterTest {
         verify(res).setStatus(429);
         verify(res).setHeader(eq("Retry-After"), any());
         verify(chain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    @DisplayName("CONF-7.3: the 429 is a problem document that keeps retryAfterSeconds")
+    void depletedBucketIsAProblem() throws Exception {
+        when(service.tryConsume(eq(Bucket4jEndpoint.RECOVERY), any()))
+                .thenReturn(ConsumptionProbe.rejected(0L, 42_000_000_000L, 42_000_000_000L));
+        org.springframework.mock.web.MockHttpServletResponse res =
+                new org.springframework.mock.web.MockHttpServletResponse();
+
+        filter.doFilterInternal(new org.springframework.mock.web.MockHttpServletRequest(
+                "POST", "/api/auth/forgot-password"), res, mock(FilterChain.class));
+
+        assertThat(res.getStatus()).isEqualTo(429);
+        assertThat(res.getHeader("Retry-After")).isEqualTo("42");
+        assertThat(res.getContentType()).startsWith("application/problem+json");
+        assertThat(res.getContentAsString())
+                .contains("\"type\":\"tag:weldforge.org,2026:problem:too_many_requests\"")
+                .contains("\"status\":429")
+                .contains("\"error\":\"too_many_requests\"")
+                .contains("\"retryAfterSeconds\":42");
     }
 
     @Test

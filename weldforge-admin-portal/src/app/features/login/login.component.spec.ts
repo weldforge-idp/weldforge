@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 
 import { LoginComponent } from './login.component';
 import { AuthService } from '../../core/services/auth.service';
@@ -143,6 +144,34 @@ describe('LoginComponent — post-authentication redirect', () => {
 
       expect(externalNav.go).not.toHaveBeenCalled();
       expect(router.navigate).toHaveBeenCalledWith(['/tenants']);
+    });
+  });
+
+  describe('explains a failed sign-in (CONF-7.3)', () => {
+    function failWith(body: unknown, status = 401): LoginComponent {
+      const c = componentWith({});
+      auth.login.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: body })));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      c.submitCredentials();
+      return c;
+    }
+
+    it('shows the problem document\'s detail', () => {
+      const c = failWith({
+        type: 'tag:weldforge.org,2026:problem:unauthorized', title: 'Unauthorized', status: 401,
+        detail: 'Invalid email or password', error: 'unauthorized', message: 'legacy text',
+      });
+
+      expect(c.error()).toBe('Invalid email or password');
+      expect(externalNav.go).not.toHaveBeenCalled();
+    });
+
+    it('still reads a legacy body that has only message', () => {
+      expect(failWith({ error: 'unauthorized', message: 'Account locked' }).error()).toBe('Account locked');
+    });
+
+    it('falls back to a generic message when the body explains nothing', () => {
+      expect(failWith('<html>bad gateway</html>', 502).error()).toBe('Invalid credentials');
     });
   });
 

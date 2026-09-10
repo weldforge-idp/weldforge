@@ -106,7 +106,7 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
                 filterChain.doFilter(request, response);
                 return;
             }
-            deny(response, "Missing or invalid x-app-authorization header");
+            deny(request, response, "Missing or invalid x-app-authorization header");
             return;
         }
 
@@ -115,12 +115,12 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
             Optional<ServiceAccount> saOpt =
                     serviceAccountRepository.findByTokenHashAndEnabledTrue(ApiKeyHasher.hash(header));
             if (saOpt.isEmpty()) {
-                deny(response, "Invalid service account token");
+                deny(request, response, "Invalid service account token");
                 return;
             }
             ServiceAccount sa = saOpt.get();
             if (sa.getExpiresAt() != null && sa.getExpiresAt().isBefore(LocalDateTime.now())) {
-                deny(response, "Service account token expired");
+                deny(request, response, "Service account token expired");
                 return;
             }
             if (sa.getTenant() != null) {
@@ -148,13 +148,13 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
         Optional<AppClient> clientOpt =
                 appClientRepository.findByApiKeyHashAndEnabledTrue(ApiKeyHasher.hash(header));
         if (clientOpt.isEmpty()) {
-            deny(response, "Missing or invalid x-app-authorization header");
+            deny(request, response, "Missing or invalid x-app-authorization header");
             return;
         }
 
         AppClient client = clientOpt.get();
         if (!isWithinScope(client, request)) {
-            deny(response, "API key not authorised for this path/method");
+            deny(request, response, "API key not authorised for this path/method");
             return;
         }
         if (client.getTenant() != null) {
@@ -195,8 +195,10 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
         return false;
     }
 
-    private static void deny(HttpServletResponse response, String msg) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.getWriter().write(msg);
+    /** A 403 problem document (CONF-7.3); this used to be a bare text body. */
+    private static void deny(HttpServletRequest request, HttpServletResponse response, String msg)
+            throws IOException {
+        ApiProblem.write(response, ApiProblem.body(
+                org.springframework.http.HttpStatus.FORBIDDEN, "forbidden", msg, request));
     }
 }

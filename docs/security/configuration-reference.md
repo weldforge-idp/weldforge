@@ -96,14 +96,34 @@ regardless of this flag.
 
 ### Password policy
 
+Defaults follow **NIST SP 800-63B §5.1.1.2** (CONF-7.1,
+[ADR 0004](../adr/0004-nist-sp-800-63b-password-policy.md)): a length floor and
+screening against breached passwords, and **no composition rules**.
+
+*Why no composition rules, when they look stricter?* Because they select for
+exactly the passwords attackers try first. "One uppercase, one digit, one
+symbol" produces `Password1!`, which satisfies every class and is in every
+breach list. Meanwhile it rejects `correct horse battery staple`, which is
+longer, easier to remember, and not in any list. 800-63B says verifiers SHALL
+NOT impose composition rules and SHALL screen against known-compromised
+passwords; enterprise buyers increasingly audit against that text directly.
+Re-enable a rule only where a contract or regulator requires it, and record the
+deviation in [`../compliance/standards-conformance.md`](../compliance/standards-conformance.md).
+
 | Env var | YAML path | Default | Recommended prod | Effect |
 |---|---|---|---|---|
-| `APP_PASSWORD_MIN_LENGTH` | `app.security.password.min-length` | `10` | `10`+ *(default OK)* | Minimum password length. |
-| `APP_PASSWORD_MAX_LENGTH` | `app.security.password.max-length` | `72` | `72` *(default OK)* | Maximum length (72 = BCrypt byte ceiling). |
-| `APP_PASSWORD_REQUIRE_UPPERCASE` | `app.security.password.require-uppercase` | `true` | `true` *(default OK)* | Require an uppercase letter. |
-| `APP_PASSWORD_REQUIRE_LOWERCASE` | `app.security.password.require-lowercase` | `true` | `true` *(default OK)* | Require a lowercase letter. |
-| `APP_PASSWORD_REQUIRE_DIGIT` | `app.security.password.require-digit` | `true` | `true` *(default OK)* | Require a digit. |
-| `APP_PASSWORD_REQUIRE_SYMBOL` | `app.security.password.require-symbol` | `true` | `true` *(default OK)* | Require a symbol. |
+| `APP_PASSWORD_MIN_LENGTH` | `app.security.password.min-length` | `12` | `12` *(default OK)* | Minimum password length. |
+| `APP_PASSWORD_MAX_LENGTH` | `app.security.password.max-length` | `72` | `72` *(default OK)* | Maximum length in **bytes** (72 = bcrypt's ceiling; longer input is refused, never truncated). |
+| `APP_PASSWORD_REQUIRE_UPPERCASE` | `app.security.password.require-uppercase` | `false` | `false` *(default OK)* | Require an uppercase letter. |
+| `APP_PASSWORD_REQUIRE_LOWERCASE` | `app.security.password.require-lowercase` | `false` | `false` *(default OK)* | Require a lowercase letter. |
+| `APP_PASSWORD_REQUIRE_DIGIT` | `app.security.password.require-digit` | `false` | `false` *(default OK)* | Require a digit. |
+| `APP_PASSWORD_REQUIRE_SYMBOL` | `app.security.password.require-symbol` | `false` | `false` *(default OK)* | Require a symbol. |
+| `APP_PASSWORD_BREACH_CHECK_ENABLED` | `app.security.password.breach-check.enabled` | `true` | `true` *(default OK)* | Screen new passwords against the Pwned Passwords corpus. Disable only when air-gapped; that logs a WARN at boot. |
+| `APP_PASSWORD_BREACH_CHECK_URL` | `app.security.password.breach-check.range-url` | `https://api.pwnedpasswords.com/range/` | default, or a local mirror | k-anonymity range endpoint. Only the first five hex characters of the password's SHA-1 are sent; matching happens locally. The URL passes the SSRF egress guard. |
+| `APP_PASSWORD_BREACH_CHECK_TIMEOUT` | `app.security.password.breach-check.timeout` | `2s` | `2s` *(default OK)* | Connect and read timeout. On timeout or any error the check **fails open**: the password is accepted, a WARN is logged, and `sso.password.breach_check{outcome="unavailable"}` is incremented. **Alert on that counter**; it is the only sign screening has stopped. |
+
+The policy applies when a password is **set** (registration, change, reset).
+Existing passwords are not re-checked.
 
 ### Account lockout
 
@@ -191,6 +211,20 @@ are load-bearing:
 - **`/actuator/**` exposes only** `health,prometheus,circuitbreakers`, with
   `health.show-details=when-authorized`. Actuator is **not** routed through the
   public ingress.
+- **Security headers on every response** (CONF-7.2): a
+  `Content-Security-Policy` of `default-src 'self'`, with inline scripts and
+  styles allowed only with a per-response nonce, and `object-src 'none'`,
+  `base-uri 'none'`, `frame-ancestors 'none'`; plus `Referrer-Policy:
+  no-referrer`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
+  HSTS on HTTPS. There is no flag. A server-rendered page that adds an inline
+  `<style>` or `<script>` must carry `ContentSecurityPolicy.nonce()`, or the
+  browser refuses it. The Traefik `weldforge-security-headers` middleware in the
+  infrastructure repo defines `Referrer-Policy: strict-origin-when-cross-origin`.
+  Where that middleware is attached it can override the application's
+  `no-referrer`, so check on staging which value the browser actually receives.
+- **RFC 9457 Problem Details on `/api/**`** (CONF-7.3): errors are
+  `application/problem+json`, and keep the legacy `error` / `message` members
+  as extensions. The protocol endpoints keep their own error formats.
 
 ### Cross-links
 
@@ -198,6 +232,8 @@ are load-bearing:
   hardening items not yet shipped.
 - [`docs/threat-model.md`](../threat-model.md) — the threat model these
   controls map to.
+- [`docs/compliance/standards-conformance.md`](../compliance/standards-conformance.md)
+  — the standards these defaults conform to, and the recorded deviations.
 - [`docs/runbooks/key-rotation.md`](../runbooks/key-rotation.md) — coordinated
   `JWT_SECRET` rotation across external consumers.
 - [`docs/auth-url-spec.md`](../auth-url-spec.md) — per-tenant subdomain auth

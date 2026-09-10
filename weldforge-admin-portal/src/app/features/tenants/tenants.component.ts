@@ -31,6 +31,7 @@ import {
 import { TenantTwilioService, TwilioProvider } from '../../core/services/tenant-twilio.service';
 import { TenantMfaPolicyService, MfaPolicy, MfaEnforcement } from '../../core/services/tenant-mfa-policy.service';
 import { environment } from '../../../environments/environment';
+import { apiErrorMessage } from '../../core/api-error';
 
 interface BrandingDraft {
   registrationEnabled: boolean;
@@ -1401,6 +1402,7 @@ export class TenantsComponent implements OnInit {
   private ok(msg: string) { this.snack.open(msg, 'OK', { duration: 3000 }); }
   private err(msg: string, err: any) {
     console.error(msg, err);
-    this.snack.open(`${msg}${err?.error?.message ? ': ' + err.error.message : ''}`, 'Dismiss', { duration: 5000 });
+    const detail = apiErrorMessage(err);
+    this.snack.open(`${msg}${detail ? ': ' + detail : ''}`, 'Dismiss', { duration: 5000 });
   }
 }

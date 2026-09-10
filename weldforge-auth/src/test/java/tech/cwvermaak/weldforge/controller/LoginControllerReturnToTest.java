@@ -28,7 +28,8 @@ class LoginControllerReturnToTest {
                 mock(tech.cwvermaak.weldforge.service.AuthService.class),
                 mock(tech.cwvermaak.weldforge.repository.TenantRepository.class),
                 mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),
-                publicHost);
+                publicHost,
+                new tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties());
     }
 
     private static String encode(String url) {

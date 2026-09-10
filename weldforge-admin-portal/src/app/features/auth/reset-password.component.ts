@@ -8,6 +8,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of, tap } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { AuthShellComponent } from './auth-shell.component';
+import { apiErrorMessage } from '../../core/api-error';
 
 @Component({
   selector: 'app-reset-password',
@@ -24,6 +25,8 @@ import { AuthShellComponent } from './auth-shell.component';
         <mat-form-field appearance="outline" class="wf-field">
           <mat-label>New password</mat-label>
           <input matInput [(ngModel)]="newPassword" name="newPassword" required type="password" autocomplete="new-password">
+          <!-- CONF-7.1: length, not character classes. -->
+          <mat-hint>Use a long passphrase: a few unrelated words work well. Passwords found in known data breaches are refused.</mat-hint>
         </mat-form-field>
 
         <mat-form-field appearance="outline" class="wf-field">
@@ -120,7 +123,7 @@ export class ResetPasswordComponent {
         }
       }),
       catchError(err => {
-        this.error.set(err?.error?.message || 'Could not reset your password. The link may be expired.');
+        this.error.set(apiErrorMessage(err, 'Could not reset your password. The link may be expired.'));
         this.loading.set(false);
         return of(null);
       })

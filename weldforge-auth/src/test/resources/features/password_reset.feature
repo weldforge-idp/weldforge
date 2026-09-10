@@ -30,6 +30,17 @@ Feature: Password reset
     Then the password is changed successfully
     And the login lockout for "alice@acme.test" is cleared
 
+  Scenario: A password the policy refuses leaves the emailed link usable
+    # Sprint 6 (CONF-7.1): the hosted reset page now shows the policy's
+    # reasons, and the user retries on the same link -- so a refused password
+    # must not consume it.
+    When a password reset is requested for "alice@acme.test"
+    And the reset token is used with new password "short"
+    Then the reset is refused by the password policy
+    And the reset link is still usable
+    When the same reset token is used again with new password "NewS3cure!Pass"
+    Then the password is changed successfully
+
   Scenario: Expired token is rejected
     When a password reset is requested for "alice@acme.test"
     And the token is expired

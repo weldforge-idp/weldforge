@@ -64,8 +64,11 @@ public class OidcDiscoveryController {
         doc.put("scopes_supported", List.of("openid", "profile", "email"));
         doc.put("code_challenge_methods_supported", List.of("S256"));
         // Claims the issuer actually mints, rather than a subset of them.
+        // auth_time has been minted since CONF-2.2 (Sprint 4) and was never
+        // listed here; an RP doing capability detection concluded it was
+        // absent -- the CONF-4.2 failure in miniature.
         doc.put("claims_supported", List.of(
-                "sub", "iss", "aud", "exp", "iat", "email", "name", "picture",
+                "sub", "iss", "aud", "exp", "iat", "auth_time", "email", "name", "picture",
                 "nonce", "amr", "roles"));
         // CONF-1.4 / RFC 9207: advertised so a client knows it can rely on the
         // parameter being present, which is what lets it treat a response

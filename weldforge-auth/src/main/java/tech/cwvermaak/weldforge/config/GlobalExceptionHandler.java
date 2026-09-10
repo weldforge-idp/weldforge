@@ -4,6 +4,7 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -23,6 +24,11 @@ import java.util.Map;
  * Consistent error responses across every controller. Stack traces are
  * never leaked — the actual exception is logged at ERROR for the catch-all
  * and at DEBUG for expected client errors.
+ *
+ * <p>On {@code /api/**} the body is an RFC 9457 problem document
+ * ({@link ApiProblem}, CONF-7.3) that still carries the legacy members as
+ * extensions. Everywhere else -- the protocol endpoints, whose own specs
+ * define their error format -- the legacy shape is unchanged.
  */
 @RestControllerAdvice
 @Slf4j
@@ -88,27 +94,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(PasswordPolicyViolation.class)
     public ResponseEntity<Map<String, Object>> handlePasswordPolicy(PasswordPolicyViolation ex,
                                                                      HttpServletRequest request) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("error", "password_policy");
-        body.put("message", ex.getMessage());
-        body.put("reasons", ex.getReasons());
-        body.put("timestamp", Instant.now().toString());
-        body.put("path", request.getRequestURI());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return respond(HttpStatus.BAD_REQUEST, "password_policy", ex.getMessage(), request,
+                Map.of("reasons", ex.getReasons()));
     }
 
     @ExceptionHandler(tech.cwvermaak.weldforge.service.SeatLimitExceededException.class)
     public ResponseEntity<Map<String, Object>> handleSeatLimit(
             tech.cwvermaak.weldforge.service.SeatLimitExceededException ex,
             HttpServletRequest request) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("error", "seat_limit_exceeded");
-        body.put("message", ex.getMessage());
-        body.put("limit", ex.getLimit());
-        body.put("current", ex.getCurrent());
-        body.put("timestamp", Instant.now().toString());
-        body.put("path", request.getRequestURI());
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        Map<String, Object> extras = new LinkedHashMap<>();
+        extras.put("limit", ex.getLimit());
+        extras.put("current", ex.getCurrent());
+        return respond(HttpStatus.CONFLICT, "seat_limit_exceeded", ex.getMessage(), request, extras);
     }
 
     @ExceptionHandler(ProviderUnavailableException.class)
@@ -142,9 +139,25 @@ public class GlobalExceptionHandler {
 
     private static ResponseEntity<Map<String, Object>> respond(HttpStatus status, String error,
                                                                 String message, HttpServletRequest request) {
+        return respond(status, error, message, request, Map.of());
+    }
+
+    private static ResponseEntity<Map<String, Object>> respond(HttpStatus status, String error,
+                                                                String message, HttpServletRequest request,
+                                                                Map<String, Object> extras) {
+        if (ApiProblem.appliesTo(request)) {
+            Map<String, Object> body = ApiProblem.body(status, error, message, request);
+            body.putAll(extras);
+            // Set explicitly, so a client's Accept: application/json does not
+            // negotiate it away -- problem+json is what RFC 9457 requires.
+            return ResponseEntity.status(status)
+                    .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                    .body(body);
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", error);
         body.put("message", message);
+        body.putAll(extras);
         body.put("timestamp", Instant.now().toString());
         body.put("path", request.getRequestURI());
         return ResponseEntity.status(status).body(body);

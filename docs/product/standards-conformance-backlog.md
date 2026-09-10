@@ -1042,8 +1042,10 @@ Scenario: Deployments may re-enable composition rules
   **open** with a logged warning so an outage cannot block all registration.
 - `docs/security/configuration-reference.md` — record the rationale.
 
-**Product decision needed.** Confirm relaxing composition rules is acceptable —
-it reads as "weaker" to a non-specialist reviewer even though it is current guidance.
+**Product decision — taken 2026-09-10.** Relax composition rules and screen via
+the Pwned Passwords range API, failing open. It reads as "weaker" to a
+non-specialist reviewer even though it is current guidance; ADR 0004 and
+`docs/security/configuration-reference.md` are the answer to that question.
 
 ---
 
@@ -1204,7 +1206,10 @@ than flipped unilaterally. Apply the same discipline.
 | CONF-3.2 | Authenticators without user-verification capability | New enrolments only; grandfather existing credentials | Release note |
 | CONF-5.1 | SPs gating on the literal `PasswordProtectedTransport` | Per-SP opt-in, current value the default for existing SPs — **V56 pins them; clear the pin per SP when its owner is ready** | 30 days |
 | CONF-5.4 | SPs pinned to the current `Issuer` value | Per-SP opt-in; coordinate individually | 60 days |
-| CONF-7.3 | The admin portal's error handling | Ship the frontend change in the same release | Internal |
+| CONF-5.2 | Consumers of the platform HS512 token (Tech Metropolis trio) | Additive: tokens gain a `sid` claim; nothing removed or renamed. SP-initiated SAML logout now really ends sessions | Release note |
+| CONF-7.1 | Users setting a password; anyone scripting registration with short or breached passwords | Applies only when a password is set; existing passwords untouched. Breach screening fails open | Release note |
+| CONF-7.2 | Pages that embed WeldForge responses, or rely on its `Referer` | None framed WeldForge before (`X-Frame-Options: DENY` was already on); `Referer` from protocol pages carried codes and state and should not have been relied on | Release note |
+| CONF-7.3 | The admin portal's error handling; the Tech Metropolis proxies | Legacy `error` / `message` kept as RFC 9457 extension members, so no parser breaks; the portal reads `detail` first, in the same release. Only the `Content-Type` changes, to `application/problem+json` | Internal |
 
 **Affected parties.** The Tech Metropolis trio (Safe Space, Krusty, Commons) all share
 the `techmetropolis` tenant, plus the `leap`, `default` and `intellisuite` tenants.
@@ -1223,8 +1228,8 @@ CONF-3.1 moves to Sprint 3 now that `replicas: 1` makes it latent rather than li
 | **2** ✅ | Grant integrity and token lifecycle — **delivered 2026-09-08** | 1.2, 6.1, 6.2, 6.3 | 18 |
 | **3** ✅ | Interoperability truthfulness — **delivered 2026-09-09** | 4.1, 4.2, 4.3, 1.4, 3.1 | 29 |
 | **4** ✅ | OIDC Core request parameters — **delivered 2026-09-09** | 2.1, 2.2, 2.3, 2.4, 1.3 | 29 |
-| **5** ✅ | SAML assertion fidelity — **delivered 2026-09-09, gaps closed 2026-09-10** | 5.1, 5.2, 5.3, 5.4, 5.5 | 21 |
-| **6** | Baseline and evidence | 7.1, 7.2, 7.3, 8.1, 8.2, 8.4 | 26 |
+| **5** ✅ | SAML assertion fidelity — **delivered 2026-09-09**; gaps closed on `fix/conf-sprint-5-gaps` 2026-09-10, **not yet deployed** | 5.1, 5.2, 5.3, 5.4, 5.5 | 21 |
+| **6** ✅ | Baseline and evidence — **built 2026-09-10 on `feat/conf-sprint-6`, not yet deployed** | 7.1, 7.2, 7.3, 8.1, 8.2, 8.4 | 26 |
 | — | Backlog, not scheduled | 7.4, 8.3 | 10 |
 
 Sprint 1 now lands on the velocity assumption. Sprints 3, 4 and 6 run over and
@@ -1311,7 +1316,7 @@ metadata all 200.
 | CONF-2.4 | `at_hash` |
 | CONF-1.3 | Code flows without PKCE counted on `sso.oidc.pkce.missing`; backfill waits on zero |
 
-### Sprint 5 — delivered 2026-09-09, gaps closed 2026-09-10
+### Sprint 5 — delivered 2026-09-09, gaps closed on a branch 2026-09-10
 
 `fa4a255`, merged in PR #92 (`d79b62f`); production `sha-d79b62f` (infrastructure
 `4273710`). Verified live: the `leap` metadata publishes a parseable X.509 whose
@@ -1332,6 +1337,68 @@ the same per-SP Issuer rule as assertions, and the metadata entityID is canonica
 rather than following the fetch host. A fetch through a tenant subdomain used to
 publish an entityID no assertion would carry, and if it was the first fetch it
 became the cached certificate's subject too.
+
+### Sprint 6 — built 2026-09-10, not yet deployed
+
+On `feat/conf-sprint-6`, stacked on `fix/conf-sprint-5-gaps`. 665 → 747 tests,
+185 → 196 BDD scenarios (`password_policy.feature`, `security_baseline.feature`,
+`password_reset.feature`), plus a Testcontainers suite that drives the headers,
+the consent / verification / sign-in pages and the error formats through the
+real filter chain. Portal: 70 → 86 tests. Recorded as F49–F53.
+
+**Test map** — every change, and where it is proven:
+
+| Change | Unit | BDD | Full chain |
+|---|---|---|---|
+| 800-63B defaults, YAML binding | `PasswordPolicyServiceTest`, `BreachedPasswordScreenConfigTest` | `password_policy.feature` | — |
+| Breach screen: matching, wire format, fail-open (non-200, redirect, timeout, unreachable, egress refusal) | `PwnedPasswordsScreenTest`, `PwnedPasswordsScreenHttpTest` | `password_policy.feature` | — |
+| Hosted reset: reasons shown, configured rule, token survives | `LoginControllerResetAndCspTest` | `password_reset.feature` | — |
+| CSP header, nonce per response | `ContentSecurityPolicyTest` | `security_baseline.feature` | `SecurityHeadersAndProblemsIntegrationTest` |
+| Page nonces: consent, SAML form, verification page, hosted pages | `ServerRenderedPagesCspTest`, `SamlIdpControllerCspTest`, `LoginControllerResetAndCspTest` | `security_baseline.feature` | consent, verification, `/login` end to end |
+| Verification page 400 in production | `ServerRenderedPagesCspTest` | — | end to end, 200 |
+| Problem Details: handler, entry point, 403/415/429 filters | `ApiProblemTest`, `GlobalExceptionHandlerTest`, `ApiAuthenticationEntryPointTest`, `AppAuthorizationFilterProblemTest`, `AuthJsonContentTypeFilterTest`, `RateLimitingFilterTest` | `security_baseline.feature` | `/api/**` 400 and 401 |
+| OAuth and SCIM formats unchanged | — | `security_baseline.feature` | token and SCIM failures |
+| Discovery `auth_time` | `OidcDiscoveryCompletenessTest` | — | — |
+| Portal reads `detail`; password hints | `api-error.spec`, `login.component.spec`, `password-forms.spec`, `service-accounts.component.spec` | — | — |
+
+| Story | What changed |
+|---|---|
+| CONF-7.1 | 800-63B defaults: 12-character floor, composition rules off, breach screening by k-anonymity (fails open, metered on `sso.password.breach_check`). The product decision the story asked for was taken on 2026-09-10: relax composition and screen via HIBP |
+| CONF-7.2 | Nonce-based CSP (`default-src 'self'`) and `Referrer-Policy: no-referrer` on every response. The consent page, SAML POST form, tenant verification page and hosted login pages carry the nonce; the SAML form's `onload` handler became a nonce'd script |
+| CONF-7.3 | RFC 9457 on `/api/**`, from the exception handler, the 401 entry point and the 403/415/429 filters. Legacy members kept as extensions; the portal reads `detail` first |
+| CONF-8.1 | [`../compliance/standards-conformance.md`](../compliance/standards-conformance.md), linked from the README and the onboarding guide |
+| CONF-8.2 | [`../adr/`](../adr/) 0001–0004: RFC 9068 declined, RFC 9207 adopted, RFC 7592 read and delete only, 800-63B adopted with two deviations |
+| CONF-8.4 | Onboarding guide §2.2–2.7 and §3 rewritten against the live `leap` tenant; the stale SCIM bulk caveat removed |
+
+**Found while doing it, and fixed:**
+
+- **The tenant ownership verification page was broken in production.** Its
+  template goes through `String.formatted`, and a bare `width: 100%;` in the CSS
+  threw `UnknownFormatConversionException`. Every emailed verification link
+  (identity-proofing V2a, PR #37) answered `400 {"message":"Conversion = ';'"}`
+  instead of the page. Verified live on 2026-09-10.
+- **The hosted reset page reported every policy failure as an expired link.**
+  It also pre-checked a stale 8-character rule of its own. It now shows the
+  policy's reasons, and the reset token survives the failed attempt.
+- **Discovery omitted `auth_time`** from `claims_supported`, although it has
+  been minted since Sprint 4.
+
+**Found, and recorded rather than fixed** (conformance statement D1, D2):
+`max_age` is enforced as MFA-factor freshness. When it is exceeded, or the user
+has no MFA factor, `/authorize` answers `400 {"error":"mfa_required"}` in the
+browser instead of re-authenticating. `prompt=login` is ignored. Both change
+auth-flow behaviour, so they need a story of their own rather than a ride-along.
+
+**Found while writing the tests, not fixed:** the build has
+`jakarta.validation-api` but no validation provider (no Hibernate Validator), so
+`@Valid` is enforced nowhere. The `@Valid` DTOs on
+`PaymentGatewayAdminController` are not validated, and the exception handler's
+`MethodArgumentNotValidException` branch never runs in production. Tracked as
+`B-API-2`.
+
+**Process (CONF-8.1).** Regenerate the conformance statement at the close of
+every sprint that changes protocol behaviour, from the code and the live `leap`
+metadata, not from this backlog.
 
 ### Sprint goals
 

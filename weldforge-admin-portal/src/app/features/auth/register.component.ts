@@ -10,6 +10,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { AuthShellComponent } from './auth-shell.component';
 import { forwardOidcParams, readOidcReturnTo, safeOidcReturnUrl } from '../../core/oidc-continuation';
 import { ExternalNavigator } from '../../core/external-navigator';
+import { apiErrorMessage } from '../../core/api-error';
 
 @Component({
   selector: 'app-register',
@@ -36,6 +37,9 @@ import { ExternalNavigator } from '../../core/external-navigator';
         <mat-form-field appearance="outline" class="wf-field">
           <mat-label>Password</mat-label>
           <input matInput [(ngModel)]="password" name="password" required type="password" autocomplete="new-password">
+          <!-- CONF-7.1: length, not character classes. The server states the
+               exact rule it enforces in its error if this one is not met. -->
+          <mat-hint>Use a long passphrase: a few unrelated words work well. Passwords found in known data breaches are refused.</mat-hint>
         </mat-form-field>
 
         <p class="wf-error" *ngIf="error()">{{ error() }}</p>
@@ -126,7 +130,7 @@ export class RegisterComponent {
         if (err?.status === 404) {
           this.disabled.set(true);
         } else {
-          this.error.set(err?.error?.message || 'Could not create your account. Please try again.');
+          this.error.set(apiErrorMessage(err, 'Could not create your account. Please try again.'));
         }
         return of(null);
       })

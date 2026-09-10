@@ -87,7 +87,8 @@ public class PasswordResetSteps {
         props.setRequireLowercase(true);
         props.setRequireDigit(true);
         props.setRequireSymbol(true);
-        PasswordPolicyService passwordPolicyService = new PasswordPolicyService(props);
+        PasswordPolicyService passwordPolicyService = new PasswordPolicyService(props,
+                tech.cwvermaak.weldforge.service.security.BreachedPasswordScreen.DISABLED);
 
         when(tenantRepository.findBySlug(anyString())).thenAnswer(inv -> {
             String slug = inv.getArgument(0);
@@ -282,6 +283,29 @@ public class PasswordResetSteps {
 
         try {
             passwordResetService.resetPassword(rawToken, newPassword);
+        } catch (Exception e) {
+            lastError = e;
+        }
+    }
+
+    @Then("the reset is refused by the password policy")
+    public void resetRefusedByPolicy() {
+        assertThat(lastError).isInstanceOf(
+                tech.cwvermaak.weldforge.service.security.PasswordPolicyViolation.class);
+    }
+
+    @Then("the reset link is still usable")
+    public void resetLinkStillUsable() {
+        // Validation runs before the token is consumed, so a password the
+        // policy refuses must not burn the link the user was emailed.
+        assertThat(tokenStore.get(tokenStore.size() - 1).isUsed()).isFalse();
+    }
+
+    @When("the same reset token is used again with new password {string}")
+    public void sameTokenUsedAgain(String newPassword) {
+        lastError = null;
+        try {
+            passwordResetService.resetPassword(lastRawToken, newPassword);
         } catch (Exception e) {
             lastError = e;
         }

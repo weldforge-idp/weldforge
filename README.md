@@ -187,6 +187,13 @@ tolerance; MFA TOTP anti-replay and single-use challenge tokens; tenant-scoped
 admin-role assignment; SAML inbound XXE-hardened parsing and per-SP AuthnRequest
 signature verification. See the backlog (F1–F12) for details.
 
+**Standards conformance.** Which OAuth 2.0, OpenID Connect, SAML 2.0, SCIM 2.0,
+WebAuthn and NIST SP 800-63B requirements WeldForge implements, to what degree,
+and every known deviation, is in the
+[standards conformance statement](docs/compliance/standards-conformance.md).
+Standards considered and declined are recorded as [ADRs](docs/adr/). No
+certification is claimed.
+
 **Operating WeldForge:**
 [Configuration reference](docs/security/configuration-reference.md) ·
 [Production bootstrap](docs/runbooks/production-bootstrap.md) ·

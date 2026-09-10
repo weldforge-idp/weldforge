@@ -12,6 +12,7 @@ import { GroupRoleMappingService, GroupRoleMapping } from '../../core/services/g
 import { AdminService, Role } from '../../core/services/admin.service';
 import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
 import { TenantPickerService } from '../../core/services/tenant-picker.service';
+import { apiErrorMessage } from '../../core/api-error';
 
 @Component({
   selector: 'app-group-role-mappings',
@@ -251,6 +252,7 @@ export class GroupRoleMappingsComponent implements OnInit {
   private ok(msg: string) { this.snack.open(msg, 'OK', { duration: 3000 }); }
   private err(msg: string, e: any) {
     console.error(msg, e);
-    this.snack.open(`${msg}${e?.error?.message ? ': ' + e.error.message : ''}`, 'Dismiss', { duration: 5000 });
+    const detail = apiErrorMessage(e);
+    this.snack.open(`${msg}${detail ? ': ' + detail : ''}`, 'Dismiss', { duration: 5000 });
   }
 }

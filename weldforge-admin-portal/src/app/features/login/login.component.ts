@@ -13,6 +13,7 @@ import { catchError, tap } from 'rxjs/operators';
 import { of } from 'rxjs';
 import { forwardOidcParams, resolvePostAuthTarget } from '../../core/oidc-continuation';
 import { ExternalNavigator } from '../../core/external-navigator';
+import { apiErrorMessage } from '../../core/api-error';
 
 type Step = 'credentials' | 'mfa';
 
@@ -298,7 +299,7 @@ export class LoginComponent implements OnInit {
       }),
       catchError(err => {
         console.error(err);
-        this.error.set(err?.error?.message || 'Invalid credentials');
+        this.error.set(apiErrorMessage(err, 'Invalid credentials'));
         this.loading.set(false);
         return of(null);
       })

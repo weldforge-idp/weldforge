@@ -14,6 +14,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import tech.cwvermaak.weldforge.config.security.ApiAuthenticationEntryPoint;
+import tech.cwvermaak.weldforge.config.security.ContentSecurityPolicy;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -89,6 +90,15 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsSource))
                 .csrf(csrf -> csrf.disable())
+                // CONF-7.2. Spring's defaults (nosniff, frame DENY, HSTS on
+                // HTTPS, no-store) stay; this adds a nonce-based CSP for the
+                // server-rendered pages and stops protocol URLs -- codes,
+                // state, SAML payloads -- leaking to third parties in Referer.
+                .headers(headers -> headers
+                        .referrerPolicy(referrer -> referrer.policy(
+                                org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
+                                        .ReferrerPolicy.NO_REFERRER))
+                        .addHeaderWriter(new ContentSecurityPolicy()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 .addFilterBefore(tenantResolverFilter, UsernamePasswordAuthenticationFilter.class)

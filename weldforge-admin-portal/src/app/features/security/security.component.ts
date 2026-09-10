@@ -11,6 +11,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { create as webauthnCreate, supported as webauthnSupported } from '@github/webauthn-json';
 import { MfaFactor, MfaService, TotpEnrollResponse } from '../../core/services/mfa.service';
+import { apiErrorMessage } from '../../core/api-error';
 
 type TotpStep = 'idle' | 'scan' | 'verify';
 
@@ -512,6 +513,7 @@ export class SecurityComponent implements OnInit {
   private ok(msg: string) { this.snack.open(msg, 'OK', { duration: 3000 }); }
   private err(msg: string, e: any) {
     console.error(msg, e);
-    this.snack.open(`${msg}${e?.error?.message ? ': ' + e.error.message : ''}`, 'Dismiss', { duration: 5000 });
+    const detail = apiErrorMessage(e);
+    this.snack.open(`${msg}${detail ? ': ' + detail : ''}`, 'Dismiss', { duration: 5000 });
   }
 }

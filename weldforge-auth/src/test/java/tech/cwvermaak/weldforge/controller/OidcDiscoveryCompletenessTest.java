@@ -91,7 +91,7 @@ class OidcDiscoveryCompletenessTest {
     @DisplayName("Advertised claims include the ones actually minted")
     void claims_match_what_is_minted() {
         assertThat((List<String>) discovery().get("claims_supported"))
-                .contains("amr", "roles", "picture");
+                .contains("amr", "roles", "picture", "auth_time");
     }
 
     @Test

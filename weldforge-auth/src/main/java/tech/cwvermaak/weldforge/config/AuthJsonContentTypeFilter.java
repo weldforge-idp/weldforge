@@ -69,11 +69,9 @@ public class AuthJsonContentTypeFilter extends OncePerRequestFilter {
             log.warn("auth_content_type_rejected method={} path={} content_type={} ip={}",
                     request.getMethod(), request.getRequestURI(),
                     request.getContentType(), request.getRemoteAddr());
-            response.setStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE.value());
-            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            response.getWriter().write(
-                    "{\"error\":\"unsupported_media_type\","
-                  + "\"message\":\"/api/auth/** requires Content-Type: application/json\"}");
+            ApiProblem.write(response, ApiProblem.body(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "unsupported_media_type", "/api/auth/** requires Content-Type: application/json",
+                    request));
             return;
         }
         chain.doFilter(request, response);

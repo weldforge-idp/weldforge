@@ -8,6 +8,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { catchError, of, tap } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { AuthShellComponent } from './auth-shell.component';
+import { apiErrorMessage } from '../../core/api-error';
 
 @Component({
   selector: 'app-verify-email',
@@ -104,7 +105,7 @@ export class VerifyEmailComponent implements OnInit {
       tap(() => this.status.set('success')),
       catchError(err => {
         this.status.set('failed');
-        this.error.set(err?.error?.message || 'This verification link is invalid or has expired.');
+        this.error.set(apiErrorMessage(err, 'This verification link is invalid or has expired.'));
         return of(null);
       })
     ).subscribe();

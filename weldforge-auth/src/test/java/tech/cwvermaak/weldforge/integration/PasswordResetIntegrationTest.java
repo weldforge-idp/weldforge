@@ -59,6 +59,8 @@ class PasswordResetIntegrationTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("app.crypto.secret", () -> "ci-only-crypto-secret-0123456789abcdef");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+        // No outbound calls from CI; the breach screen has its own tests.
+        registry.add("app.security.password.breach-check.enabled", () -> "false");
     }
 
     @BeforeAll

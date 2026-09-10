@@ -349,6 +349,29 @@ Did **not** touch the pre-existing uncommitted working-tree changes
 
 ---
 
+## Session log 2026-09-10 — Sprint 5 gaps + Sprint 6  *(project)*
+
+> Re-verify with `git branch -a` / `gh pr list` before acting.
+
+- **Two local branches, committed, NOT pushed, NOT deployed** (user chose
+  "commit locally, stop"): `fix/conf-sprint-5-gaps` (from `main` @ `d79b62f`)
+  and `feat/conf-sprint-6` stacked on it. Migrations now at **V56**. Deploy is
+  Flux: bump `infrastructure/apps/weldforge/overlays/{staging,production}`.
+- Record of what shipped and why: `docs/product/standards-conformance-backlog.md`
+  §7, `docs/security/hardening-backlog.md` F44–F53, and the new
+  `docs/compliance/standards-conformance.md` (regenerate each sprint) plus
+  `docs/adr/0001–0004`.
+- **Live prod bug fixed on the Sprint 6 branch:** `/api/auth/tenants/verify-contact-page`
+  answers 400 "Conversion = ';'" in prod until deployed (identity-proofing
+  V2a emails are dead links).
+- **Open, needs a product decision:** OIDC `max_age` is enforced as MFA-factor
+  freshness and ends in a browser `400 mfa_required`; `prompt=login` ignored
+  (conformance statement D1/D2).
+- Product decisions taken: 800-63B password defaults + HIBP screening
+  (fail-open); pre-existing SAML SPs pinned to `PasswordProtectedTransport` (V56).
+
+---
+
 ## Operational deadlines
 
 ### SendGrid trial perks expire 2026-07-16 — verify, don't downgrade

@@ -1,3 +1,4 @@
+- [Session 2026-09-10](session_2026_09_10.md) — Sprint 5 gaps + Sprint 6 on two local unpushed branches; verify-contact prod bug fixed there; max_age/prompt=login open
 - [Open work snapshot 2026-05-23](open_work_2026_05_23.md) — end-of-session state for resumption: production state, 8 open agenda items, things explicitly NOT to do on resume
 - [Tech Metropolis tenant trio](tenant_tech_metropolis.md) — `techmetropolis` (id 6) is the most active tenant; Safe Space + Krusty + Commons all share it for cross-app SSO via a shared HS512 secret in `wf-jwt-secret`
 - [PlatformSettings on its own branch](platform_settings_wip.md) — committed on feature/write-buddy-integration@1a321df, NOT on main; V33 slot is now occupied by an unrelated migration so the branch must renumber on revival (main is at V40)

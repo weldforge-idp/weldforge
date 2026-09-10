@@ -18,9 +18,40 @@ public class PasswordPolicySteps {
         this.world = world;
     }
 
+    private final PasswordPolicyProperties properties = new PasswordPolicyProperties();
+    /** A stand-in corpus: the passwords every breach list contains. */
+    private final java.util.Set<String> breachCorpus = java.util.Set.of(
+            "password1234", "Password1234!", "qwertyuiop123");
+    /** What the screen was given, to prove the password itself never left. */
+    private final java.util.List<String> sentToCorpus = new java.util.ArrayList<>();
+
     @Given("the default password policy")
     public void defaultPolicy() {
-        service = new PasswordPolicyService(new PasswordPolicyProperties());
+        // The real k-anonymity screen, with the network replaced by a corpus
+        // lookup keyed on the prefix it would have sent.
+        var screen = new tech.cwvermaak.weldforge.service.security.PwnedPasswordsScreenTestAccess(
+                breachCorpus, sentToCorpus).screen();
+        service = new PasswordPolicyService(properties, screen);
+    }
+
+    @Given("the deployment sets app.security.password.require-symbol=true")
+    public void requireSymbol() {
+        properties.setRequireSymbol(true);
+        defaultPolicy();
+    }
+
+    @When("a user registers with a password present in the breach corpus")
+    public void registersWithBreached() {
+        iValidate("password1234");
+    }
+
+    @Then("the password is never transmitted in full to any third party")
+    public void neverTransmittedInFull() {
+        assertThat(sentToCorpus).isNotEmpty();
+        assertThat(sentToCorpus).allSatisfy(sent -> {
+            assertThat(sent).hasSize(5);
+            assertThat(breachCorpus).noneMatch(sent::contains);
+        });
     }
 
     @When("I validate {string}")

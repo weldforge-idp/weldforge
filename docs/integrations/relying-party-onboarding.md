@@ -49,15 +49,22 @@ smoke-testing discovery/JWKS/metadata without credentials.
 ## 2. OIDC relying-party onboarding
 
 WeldForge is a hand-rolled OpenID Provider (no Spring Authorization Server).
-Supported per the discovery document (`OidcDiscoveryController`):
+What it supports, as published by the live `leap` tenant's discovery document
+(`OidcDiscoveryController`, checked 2026-09-10):
 
-- `response_types_supported`: `code`
-- `grant_types_supported`: `authorization_code`, `client_credentials`
+- `response_types_supported`: `code` (`response_modes_supported`: `query`)
+- `grant_types_supported`: `authorization_code`, `refresh_token`, `client_credentials`
+- `token_endpoint_auth_methods_supported`: `client_secret_basic`, `client_secret_post`, `none`
 - `id_token_signing_alg_values_supported`: `RS256`
-- `token_endpoint_auth_methods_supported`: `client_secret_post`, `none`
-- `scopes_supported`: `openid`, `profile`, `email`
 - `code_challenge_methods_supported`: `S256` (PKCE)
+- `scopes_supported`: `openid`, `profile`, `email`
 - `subject_types_supported`: `public`
+- `authorization_response_iss_parameter_supported`: `true` (RFC 9207, see §2.4)
+- `claims_supported`: `sub`, `iss`, `aud`, `exp`, `iat`, `auth_time`, `email`,
+  `name`, `picture`, `nonce`, `amr`, `roles`
+
+Which standards and profiles this adds up to, and the known deviations, are in
+[`../compliance/standards-conformance.md`](../compliance/standards-conformance.md).
 
 ### 2.1 Discovery & JWKS
 
@@ -124,23 +131,47 @@ POST /t/{slug}/oauth2/register      Content-Type: application/json
 
 Returns `201` with `client_id`, `client_secret` (omitted for public clients),
 `client_id_issued_at`, `client_secret_expires_at: 0` (never expires),
-`registration_client_uri`, plus the echoed metadata. The endpoint is public
-(rate-limited in production); a registration **access token** for later
-management is not yet implemented.
+`registration_client_uri`, `registration_access_token`, plus the echoed
+metadata. The endpoint is public (rate-limited in production). When
+`token_endpoint_auth_method` is omitted, the client is registered for
+`client_secret_basic`.
 
-> **Auth-method note:** dynamic registration accepts the RFC value
-> `client_secret_basic`, but the token endpoint authenticates confidential
-> clients via `client_secret_post` (secret in the form body), and discovery only
-> advertises `client_secret_post` / `none`. Send the secret in the POST body.
+**Managing the registration (RFC 7592).** Present the registration access token
+as a bearer token:
+
+```
+GET    /t/{slug}/oauth2/register/{client_id}    Authorization: Bearer <registration_access_token>
+DELETE /t/{slug}/oauth2/register/{client_id}    Authorization: Bearer <registration_access_token>
+```
+
+Read returns the current registration; delete deregisters the client. **Update
+(`PUT`) is not supported** — see
+[ADR 0003](../adr/0003-rfc7592-client-registration-management.md); ask a tenant
+admin to change a registered client. Any failure — wrong token, unknown client,
+another tenant's client — is the same `403 {"error":"invalid_token"}`, so the
+endpoint cannot be used to discover which client ids exist.
+
+> **Client authentication.** The token, introspection and revocation endpoints
+> accept either `client_secret_basic` (HTTP Basic, with `client_id` and
+> `client_secret` each form-urlencoded first, per RFC 6749 §2.3.1) or
+> `client_secret_post` (both in the form body). Use one or the other; a request
+> carrying both is refused.
 
 ### 2.3 redirect_uri, PKCE & scope rules
 
 - **redirect_uri is exact-match** against the registered list — checked at both
   `/authorize` and the consent `/decide` step
   (`OidcAuthorizationController`). No wildcards, no prefix matching.
-- **PKCE**: only `S256` is supported. PKCE is required whenever the client has
-  `requirePkce` on (default), and **always** for public clients
-  (`OidcAuthorizationService.issueAuthorizationCode` / `exchangeCode`).
+- **PKCE**: only `S256` is supported. **New clients require PKCE by default**:
+  `requirePkce` is on for clients created through the admin API or dynamic
+  registration unless an admin explicitly turns it off for a confidential
+  client, and it is always on for public clients
+  (`OidcAuthorizationService.issueAuthorizationCode` / `exchangeCode`). Send a
+  `code_challenge` on every authorization request, confidential client or not.
+  Clients registered before this default existed may still run a code flow
+  without PKCE. Those flows are counted on the `sso.oidc.pkce.missing` meter
+  rather than refused, and will be switched to required once the meter reads
+  zero. Do not rely on the exemption.
 - **Scope restriction**: when a client has a non-empty registered scope list,
   any requested scope outside it is rejected with `invalid_scope`. The standard
   OIDC scopes are **always permitted** regardless of registration:
@@ -159,40 +190,71 @@ GET /t/{slug}/oauth2/authorize
     &state=...               (recommended)
     &nonce=...               (recommended)
     &code_challenge=...&code_challenge_method=S256   (PKCE)
+    &max_age=...  &prompt=...                        (optional, see §2.7)
 ```
 
 State machine (`OidcAuthorizationController.authorize`):
 
 1. **Unauthenticated** → `302` to the tenant's subdomain login page
    (`https://{slug}.sso.weldforge.org/login/?oidcReturnTo=<base64url>`).
-2. **Authenticated, no consent** → server-rendered HTML consent screen listing
-   the requested scopes, with a CSRF token bound to the user+tenant.
-3. **Allow** → mint a single-use authorization code (5-minute TTL, stored
-   hashed), `302` back to `redirect_uri` with `code` and `state`.
-4. **Deny** → `302` back with `error=access_denied` and `state`
+2. **Authenticated, consent already given** for these scopes → a code is issued
+   straight away. Consent is remembered per user and client; a later request
+   for **fewer** scopes is covered, and a request for **more** asks again.
+3. **Authenticated, no consent** → server-rendered HTML consent screen listing
+   the requested scopes, with a CSRF token bound to the user and tenant.
+4. **Allow** → mint a single-use authorization code (5-minute TTL, stored
+   hashed), `302` back to `redirect_uri` with `code`, `state` and `iss`.
+5. **Deny** → `302` back with `error=access_denied` and `state`
    (RFC 6749 §4.1.2.1).
 
-If the client requires MFA / a max-auth-age and the user's factors don't
-satisfy it, the flow raises a step-up challenge instead of issuing a code.
+**Check `iss` (RFC 9207).** Every authorization response, success or error,
+carries `iss` = the tenant's issuer (`https://sso.weldforge.org/t/{slug}`).
+Every tenant is a separate issuer behind one hostname, so a client integrated
+with more than one tenant must compare `iss` with the issuer it sent the user to
+before redeeming the code. That is what defeats the mix-up attack
+([ADR 0002](../adr/0002-rfc9207-issuer-identification.md)).
 
-**Token exchange:**
+If the client requires MFA and the user's factors don't satisfy it, no code is
+issued; see §2.7 for how that surfaces.
+
+**Token exchange** (shown with `client_secret_basic`; `client_secret_post`
+works too, see §2.2):
 
 ```
 POST /t/{slug}/oauth2/token    Content-Type: application/x-www-form-urlencoded
+Authorization: Basic base64(urlencode(client_id) ":" urlencode(client_secret))   (confidential clients)
+
 grant_type=authorization_code
 &code=...
 &redirect_uri=...              (must match the code's redirect_uri)
-&client_id=...
-&client_secret=...             (confidential clients only)
-&code_verifier=...             (PKCE clients)
+&client_id=...                 (public clients, which send no Authorization header)
+&code_verifier=...             (PKCE)
 ```
 
 Response: `access_token`, `token_type: Bearer`, `expires_in`, `id_token`,
-`scope`. Both access and ID tokens are **RS256-signed** with the tenant key
-(`kid` in the JWS header), carry `iss = .../t/{slug}`, `aud = client_id`, and a
-`roles` array derived from the user's role + super-admin flag
-(`OidcTokenService`). Authorization codes are single-use and tenant+client
-bound.
+`scope`, and a `refresh_token` when the client holds the `refresh_token` grant.
+Both access and ID tokens are **RS256-signed** with the tenant key (`kid` in the
+JWS header), carry `iss = .../t/{slug}`, `aud = client_id`, and a `roles` array
+derived from the user's role and super-admin flag (`OidcTokenService`). The ID
+token also carries `auth_time`, `amr` and `at_hash` (§2.7). Authorization codes
+are single-use and bound to the tenant and client. A code presented twice is
+refused, **and the tokens the first exchange produced are revoked**, because a
+replayed code means it leaked.
+
+Access tokens are not RFC 9068 tokens: no `typ: at+jwt`, and `aud` is the
+`client_id`. Resource servers should validate them accordingly
+([ADR 0001](../adr/0001-rfc9068-jwt-access-token-profile.md)).
+
+**Refreshing:**
+
+```
+POST /t/{slug}/oauth2/token
+grant_type=refresh_token&refresh_token=...    (+ client authentication)
+```
+
+Refresh tokens rotate: every use returns a new refresh token, and presenting a
+used one revokes its whole family (reuse detection). A refresh can **narrow**
+scope but never widen it past what the user consented to.
 
 **Client-credentials grant** (machine-to-machine; confidential clients whose
 `grantTypes` include `client_credentials`):
@@ -209,9 +271,24 @@ are rejected for this grant.
 
 | Endpoint | Method | Auth | Notes |
 |---|---|---|---|
-| `/t/{slug}/oauth2/userinfo` | `GET` | `Authorization: Bearer <access_token>` | Verifies the token against the tenant JWKS and that `iss` ends with `/t/{slug}`; returns `sub`, `email`, optional `name`, `picture`. 401 on any failure (`OidcUserinfoController`). |
-| `/t/{slug}/oauth2/introspect` | `POST` (form) | `client_id` + `client_secret` | RFC 7662. Unauthenticated → 401; authenticated with a bad token → `active=false` (not 401) (`OidcIntrospectRevokeController`). |
-| `/t/{slug}/oauth2/revoke` | `POST` (form) | `client_id` + `client_secret` | RFC 7009. Always `200`, even for an unknown token. |
+| `/t/{slug}/oauth2/userinfo` | `GET` | `Authorization: Bearer <access_token>` | Verifies the token against the tenant JWKS, that `iss` is this tenant, that it is an access token, and that it has not been revoked. Returns `sub` always, `email` only with the `email` scope, and `name` / `picture` only with `profile` (OIDC Core §5.4). A failure is `401` with a `WWW-Authenticate: Bearer` challenge (RFC 6750 §3) whose `error` tells a client whether to refresh or re-authenticate (`OidcUserinfoController`). |
+| `/t/{slug}/oauth2/introspect` | `POST` (form) | client authentication (§2.2) | RFC 7662. Unauthenticated → `401`; authenticated with a bad, expired or revoked token → `active=false`, not an error (`OidcIntrospectRevokeController`). |
+| `/t/{slug}/oauth2/revoke` | `POST` (form) | client authentication; a **public** client sends only `client_id` | RFC 7009. Always `200` for a token the caller is entitled to revoke, known or not, so the endpoint cannot be used to probe which tokens exist. |
+| `/t/{slug}/oauth2/logout` | `GET` / `POST` | browser session, optional `id_token_hint` | OIDC RP-Initiated Logout 1.0 (`end_session_endpoint`). Ends **every** session the user has, with or without `id_token_hint`, then redirects to a registered `post_logout_redirect_uri` with `state`, or returns `204`. Front- and back-channel logout are not implemented. |
+
+**Revocation, precisely** (RFC 7009):
+
+- **A refresh token** revokes its whole family: the token, every successor
+  rotated from it, and so the login session it represents. That is what "sign
+  this app out" should mean. Access tokens already minted keep working until
+  they expire, unless you revoke them too.
+- **An access token** is added to the revocation list. UserInfo and
+  introspection refuse it immediately.
+- **`token_type_hint`** is accepted and ignored (§2.2 allows this). The server
+  works out what the token is: a tenant-signed JWT is an access token, anything
+  else is looked up as a refresh token.
+- A token issued to another client is not revoked. The response is still
+  `200`.
 
 ### 2.6 Token TTLs
 
@@ -223,6 +300,47 @@ are rejected for this grant.
 - **Authorization code**: **300s** (5 min), single-use
   (`OidcAuthorizationService.CODE_TTL_SECONDS`).
 - **Client-credentials access token**: advertised `expires_in: 3600`.
+
+### 2.7 Session freshness: `max_age`, `prompt` and `auth_time`
+
+**`auth_time`.** The ID token carries `auth_time`: when the user actually
+authenticated to WeldForge, in seconds since the epoch. A refreshed ID token
+reports the **original** authentication, not the refresh; that difference from
+`iat` is the whole point of the claim. When the authentication time is not
+known (a session older than the claim itself), `auth_time` is **omitted**
+rather than guessed. Treat a missing `auth_time` as "unknown", never as "now".
+
+**`amr`.** The ID token's `amr` lists the RFC 8176 methods the user actually
+used — for example `["pwd"]`, `["pwd","otp","mfa"]`, `["pwd","hwk","mfa"]`.
+Use it, not the presence of MFA enrolment, to decide whether a login was
+strong enough.
+
+**`at_hash`.** The ID token binds the access token issued with it (OIDC Core
+§3.1.3.6). Validate it if your library supports that.
+
+**`prompt`.**
+
+| Value | Behaviour |
+|---|---|
+| `none` | Never shows UI. With no session, redirects back with `error=login_required`; with a session but no standing consent for the requested scopes, `error=consent_required`; otherwise issues a code silently. Use this for silent session checks. |
+| `consent` | Always shows the consent screen, even when consent is already on file. |
+| `login`, `select_account` | **Not supported; ignored.** An existing session is reused. To force a fresh login, end the session first (RP-initiated logout) or use `max_age`, with the caveat below. |
+
+**`max_age`.** Send `max_age=N` to require that the user authenticated within
+the last `N` seconds. The effective limit is the smallest of the request's
+`max_age`, the client's configured maximum authentication age and the tenant's
+step-up default.
+
+> **Known deviation — read before relying on `max_age`.** WeldForge enforces
+> `max_age` as **MFA step-up freshness**: it checks when the user last used a
+> verified MFA factor, not when they last authenticated. When that is too old,
+> or the user has no MFA factor at all, the authorization request ends with a
+> `400` JSON error `{"error":"mfa_required"}` shown in the browser. It does not
+> redirect back to your `redirect_uri`, and it does not prompt the user to
+> re-authenticate. OIDC Core §3.1.2.1 expects re-authentication. Until that
+> changes, send `max_age` only to users you know have MFA enrolled, and compare
+> `auth_time` yourself. This is recorded in the
+> [conformance statement](../compliance/standards-conformance.md).
 
 ---
 
@@ -422,16 +540,10 @@ to provision users and groups into a tenant.
 | `GET /scim/v2/{slug}/Schemas` | core User / Group schema metadata |
 
 Advertised capabilities: `patch: supported=true`, `filter: supported=true`
-(maxResults 1000), `sort/etag/changePassword: supported=false`,
-auth scheme `oauthbearertoken`.
-
-> ⚠️ **Caveat — do not rely on the advertised bulk capability.**
-> `ServiceProviderConfig` currently advertises `bulk: supported=false`
-> (`maxOperations: 0`) **even though** the `/Bulk` endpoint is actually
-> implemented (`ScimBulkController`). This mismatch is tracked as **B-TEN-3** in
-> `docs/security/hardening-backlog.md`. Until it's reconciled, treat bulk as
-> unsupported in your provisioning config — the advertised contract says it's
-> off, and the implementation may change to match the advertisement.
+(maxResults 1000), `bulk: supported=true` with the enforced `maxOperations`
+(default 100, `app.scim.bulk.max-operations`) and `maxPayloadSize`,
+`sort/etag/changePassword: supported=false`, auth scheme `oauthbearertoken`.
+Read the limits from `ServiceProviderConfig` rather than hard-coding them.
 
 ### 5.3 Supported resources
 
@@ -440,8 +552,9 @@ auth scheme `oauthbearertoken`.
   (`ScimUserController`).
 - **Groups** — `/scim/v2/{slug}/Groups`: mirror of Users
   (`ScimGroupController`).
-- **Bulk** — `/scim/v2/{slug}/Bulk` exists but is **not** advertised (see
-  caveat above).
+- **Bulk** — `/scim/v2/{slug}/Bulk`, capped at the advertised
+  `maxOperations`. A failed sub-operation returns a generic error detail; the
+  cause is logged server-side (`ScimBulkController`).
 
 User deactivation is the SCIM `active` attribute (PRD PRV-03): setting
 `active=false` (via `PUT` or `PATCH`) deactivates the account and emits a
@@ -504,6 +617,9 @@ its own site so browsers/password managers treat it distinctly. The
 
 - `docs/auth-url-spec.md` — URL contract & per-tenant subdomain model
 - `docs/tenant-branding.md` — branding keys (authoritative)
-- `docs/security/hardening-backlog.md` — B-TEN-3 (SCIM bulk advertisement),
-  B-SAML-1 (signed AuthnRequests, replay), B-SAML-3 (certificate and issuer)
+- `docs/compliance/standards-conformance.md` — which standards WeldForge
+  implements, to what degree, and the known deviations
+- `docs/adr/` — standards considered and declined or partly adopted
+- `docs/security/hardening-backlog.md` — B-SAML-1 (signed AuthnRequests,
+  replay), B-SAML-3 (certificate and issuer)
 - `docs/integrations/leap.md` — the always-live demo tenant
