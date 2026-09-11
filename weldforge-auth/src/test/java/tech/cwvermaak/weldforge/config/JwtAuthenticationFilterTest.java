@@ -15,7 +15,6 @@ import tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
-import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.JwtService;
 
@@ -44,12 +43,10 @@ class JwtAuthenticationFilterTest {
 
     private final JwtService jwtService = jwtService();
     private final UserRepository userRepository = mock(UserRepository.class);
-    private final TenantRepository tenantRepository = mock(TenantRepository.class);
     private final RefreshTokenRepository refreshTokenRepository = mock(RefreshTokenRepository.class);
 
     private final JwtAuthenticationFilter filter =
-            new JwtAuthenticationFilter(jwtService, userRepository, tenantRepository, tenantResolver,
-                    refreshTokenRepository);
+            new JwtAuthenticationFilter(jwtService, userRepository, tenantResolver, refreshTokenRepository);
 
     @BeforeEach
     void wireUser() {
@@ -175,6 +172,29 @@ class JwtAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication())
                 .as("a token lacking the platform audience must not authenticate")
                 .isNull();
+    }
+
+    @Test
+    @DisplayName("A super-admin's X-Tenant-Slug no longer switches tenant here -- the JWT's tenant stands")
+    void super_admin_header_does_not_switch_tenant() throws Exception {
+        // Tenant selection moved to CrossTenantSelectorFilter, which is
+        // membership-checked, audited and refuses rather than falls back.
+        // This filter used to switch silently -- and fell back to the home
+        // tenant, also silently, for an unknown slug.
+        HttpServletRequest req = req("sso.weldforge.org", "/api/admin/oidc/clients");
+        when(req.getHeader("Authorization"))
+                .thenReturn("Bearer " + token("super@acme.test", "acme", 1L, true));
+        when(req.getHeader("X-Tenant-Slug")).thenReturn("contoso");
+        AtomicReference<String> seenTenant = new AtomicReference<>();
+        AtomicReference<tech.cwvermaak.weldforge.model.AdminRole> seenRole = new AtomicReference<>();
+
+        filter.doFilter(req, mock(HttpServletResponse.class), (r, s) -> {
+            seenTenant.set(TenantContext.get());
+            seenRole.set(TenantContext.getAdminRole());
+        });
+
+        assertThat(seenTenant.get()).isEqualTo("acme");
+        assertThat(seenRole.get()).isEqualTo(tech.cwvermaak.weldforge.model.AdminRole.SUPER_ADMIN);
     }
 
     @Test

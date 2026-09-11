@@ -37,6 +37,7 @@ public class AdminService {
     private final AuditService auditService;
     private final PasswordResetService passwordResetService;
     private final TenantSeatService seatService;
+    private final tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership globalSuperAdmin;
 
     private static final SecureRandom RNG = new SecureRandom();
 
@@ -228,6 +229,11 @@ public class AdminService {
         userRepository.save(target);
 
         User actor = currentActor();
+        // Cross-tenant reach follows the role: granting SUPER_ADMIN grants the
+        // global membership, any other role removes it. Without this the new
+        // super-admin's portal offers a tenant picker the backend refuses, and
+        // a demoted one keeps administering every tenant.
+        globalSuperAdmin.sync(target, actor != null ? actor.getId() : null);
         auditService.recordAdmin("admin.role.assigned", actor,
                 AuditEventTypes.TARGET_USER, String.valueOf(target.getId()),
                 AuditService.meta(

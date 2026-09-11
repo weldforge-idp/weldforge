@@ -116,10 +116,12 @@ encountered.
 
 ### 6.1 Target-tenant selector
 
-Admin write endpoints gain an **explicit, optional** target tenant. Recommended:
-a request header `X-WF-Tenant: <slug>` (falls back to the caller's own tenant when
-absent). The chosen tenant is resolved, then `effectiveRole` is checked against it.
-`TenantAccessor.resolveCrossTenant` is finally wired up to back this.
+Admin write endpoints gain an **explicit, optional** target tenant: the request
+header `X-WF-Tenant: <slug>`. Absent, the call acts in the caller's own (JWT)
+tenant. Present, the tenant is resolved and `effectiveRole` is checked against
+it; a selector that cannot be honoured is **refused** (404 unknown tenant, 403 no
+membership) -- never quietly run in the home tenant instead. Every admin
+response carries `X-WF-Acting-Tenant: <slug>` naming the tenant it ran in. See §11.
 
 Affected: `POST /api/admin/users/invite`, `POST /api/admin/oidc/clients`,
 `POST /api/admin/service-accounts`, and the other `/api/admin/**` writes.
@@ -142,14 +144,13 @@ membership requires the caller to already hold one (no privilege escalation).
   straight off the token/user.
 - `wf_svc_*` service accounts may also be granted a global membership; a global
   service account can target any tenant via `X-WF-Tenant`.
-- Every **successful** cross-tenant switch emits an audit event
-  (`admin.cross_tenant.access`) recording actor, target tenant, and the
-  membership that authorised it. (Denied/unknown-tenant switch attempts are not
-  yet audited — see §7.)
+- Every cross-tenant switch is audited: `admin.cross_tenant.access` on success
+  (actor, target tenant, the selector channel used), `admin.cross_tenant.denied`
+  on refusal — see §7.
 
 ### 6.4 Admin-role assignment is tenant-scoped (shipped)
 
-`PUT /api/admin/users/{id}/admin-role` (SUPER_ADMIN-gated, `AdminService.setAdminRole`)
+`POST /api/admin/users/{id}/admin-role` (SUPER_ADMIN-gated, `AdminService.setAdminRole`)
 resolves the target user via `findByIdAndTenantId(userId, resolvedTenantId)`, where the
 resolved tenant honours the `X-WF-Tenant` selector. A super-admin therefore cannot mutate
 a role in tenant B without first performing the audited `X-WF-Tenant` switch to B — closing
@@ -157,6 +158,9 @@ a path that would otherwise grant cross-tenant role changes with **no**
 `admin.cross_tenant.access` record (the prior implementation used an unscoped `findById`).
 The mutation bumps `token_version` so the change takes effect on the target's next request,
 and emits an `admin.role.assigned` audit event carrying the target tenant slug.
+Since 2026-09-11 it also keeps the **global `SUPER_ADMIN` membership** in step
+(`GlobalSuperAdminMembership.sync`): granting `SUPER_ADMIN` grants the row, any
+other role revokes it — so a demoted super-admin loses cross-tenant reach at once.
 
 ## 7. Security considerations
 
@@ -172,8 +176,11 @@ and emits an `admin.role.assigned` audit event carrying the target tenant slug.
 - **Failed cross-tenant switch auditing (shipped).** `CrossTenantSelectorFilter` audits
   both outcomes: a successful switch emits `admin.cross_tenant.access` (SUCCESS), and a
   refused one emits `admin.cross_tenant.denied` (DENIED, with reason `unknown_tenant` for a
-  404 probe or `no_membership` for a 403). Cross-tenant access *attempts* are therefore
-  visible to a SOC (`B-TEN-2`, fixed).
+  404 probe, `no_membership` for a 403, `conflicting_selectors` for a 400). Cross-tenant
+  access *attempts* are therefore visible to a SOC (`B-TEN-2`, fixed).
+- **One selector, no silent fallback (2026-09-11).** `CrossTenantSelectorFilter` is the
+  only code that changes an admin call's tenant. The former super-admin
+  `X-Tenant-Slug` override in `JwtAuthenticationFilter` is gone — see §11.
 
 ## 8. Migration & backward compatibility
 
@@ -227,3 +234,63 @@ Two deviations from the draft, each resolving an internal gap:
 - **Phase 4 deferred.** The membership-management endpoints (§6.2) and admin-portal
   UI are not built yet; memberships are currently created only by the V34 seed.
   Granting a *new* cross-tenant membership to a human admin still needs phase 4.
+
+## 11. Incident fix: one audited selector, refuse don't fall back (2026-09-11)
+
+**What happened.** A super-admin created an OIDC client for `cwvermaak-tech` from
+the portal's Tenants page; it landed in `default` (the home tenant) with a 200.
+Two defects combined:
+
+1. *Portal.* The Tenants page listed OIDC clients / SAML SPs **once**, for
+   whatever tenant the request context resolved to, and drew that one list under
+   every row. The row's create button ignored its row (`createOidcClient(_t)`),
+   and the picker's selector came from a memoising `computed()` over a non-signal
+   (`isSuperAdmin()` reads localStorage) that could stay `null` for the life of
+   the page. The create went out with **no** tenant selector.
+2. *Backend.* A missing selector is indistinguishable from "act at home", and there
+   were two selector channels: this spec's `X-WF-Tenant` (membership-checked,
+   audited) and a super-admin `X-Tenant-Slug` override in `JwtAuthenticationFilter`
+   (eligibility from the `sa` claim, no audit, **silent fallback to the home tenant
+   for an unknown slug**). Production's `admin_membership` table was also empty —
+   the only super-admin was promoted after the V34 seed ran — so `X-WF-Tenant`
+   refused them outright.
+
+**Fix.**
+
+- `JwtAuthenticationFilter` no longer changes tenant for anyone: the JWT's tenant
+  is the request's tenant. The anti-spoofing invariant is unchanged —
+  non-super-admins still cannot change tenant via headers.
+- `CrossTenantSelectorFilter` is the single selector. It still reads `X-WF-Tenant`,
+  and for authenticated `/api/admin/**` calls also honours `X-Tenant-Slug` as a
+  **legacy alias** under exactly the same rules (membership check, audit, refusal),
+  so older clients keep working and nothing takes the old silent path. Both headers
+  present and disagreeing → 400 `tenant_selector_conflict`. Audit metadata records
+  which channel (`selector`) was used.
+- Refusals are problem documents: 404 `unknown_tenant`, 403 `tenant_access_denied`
+  ("the request was NOT run in your home tenant instead"), each audited.
+- Every successful admin response carries `X-WF-Acting-Tenant` (exposed via CORS).
+  The portal interceptor turns a response from any tenant other than the one it
+  named into a 409 `tenant_mismatch`, so a misdirected write can never render as
+  a success.
+- **One definition of super-admin.** A super-admin is `is_super_admin OR
+  admin_role = SUPER_ADMIN` (the JWT `sa`/`adm` claims — what the portal gates the
+  picker on), and cross-tenant reach is the global membership. They are kept equal:
+  `V57__backfill_global_super_admin_membership.sql` back-fills the row for every
+  flagged super-admin, and `SuperAdminBootstrap` and `setAdminRole` both go through
+  `GlobalSuperAdminMembership`. V57 grants no authority the flags did not already
+  claim; it makes the backend honour what the portal already showed.
+- Portal: the Tenants page is row-scoped — OIDC clients and SAML SPs load when a
+  row is expanded and every list/create/update/rotate/delete names that row's
+  tenant (`forTenant(t.slug)` → `X-WF-Tenant`), regardless of the picker. The
+  picker's `outgoingSlug` is a plain method. Non-admin `/api/**` calls no longer
+  carry the picker at all. The OIDC form gained a `clientId` field and a
+  public-client toggle.
+- Admin OIDC client create / rotate-secret / delete are now audited
+  (`oidc.client.create`, `oidc.client.rotate_secret`, `oidc.client.delete`).
+
+Tests: `AdminTenantSelectorIntegrationTest` (Testcontainers, real filter chain —
+unentitled 403 on both headers, `sa` flag alone refused, unknown tenant 404, an
+entitled client lands in the target and `/authorize` agrees, role change moves
+reach), `CrossTenantSelectorFilterTest`, `GlobalSuperAdminMembershipTest`, and the
+portal's `tenant.interceptor.spec.ts`, `tenant-picker.service.spec.ts`,
+`tenants.component.spec.ts`.

@@ -9,6 +9,7 @@
 - [Auth-form branding in docs](feedback_auth_form_branding_in_docs.md) — every tutorial/integration guide must document how operators brand the login + password-reset forms
 - [Deployment pipeline](deployment_pipeline.md) — GitHub Actions, not TeamCity; TEAMCITY.md / deploy.sh comments are stale
 - [Tenant-nesting WIP](tenant_nesting_wip.md) — feat/admin-rest-tenant-nesting@1ff7451 — 5 TS2554 errors in service-accounts.component.ts, thread tenantId via TenantPickerService.outgoingTenantId()
+- [Admin tenant selector](feedback_admin_tenant_selector.md) — one audited selector (X-WF-Tenant), refuse don't fall back; row-scoped portal screens pass forTenant(slug); 2026-09-11 misdirected-client incident
 - [Angular zoneless pitfalls](feedback_angular_zoneless_pitfalls.md) — computed() over a non-signal field freezes; template `!` on lazy-init objects throws at runtime and truncates CD
 - [Verify operator-asserted infra state](feedback_verify_operator_infra_assertions.md) — when the user says "DNS is live" / "cert is provisioned" / "secret is set", run the one-liner check before merging; we got burned by it on 2026-05-20
 - [SendGrid trial deadline](sendgrid_trial_deadline.md) — free trial ends 2026-07-16; downgrade to the free plan before then or transactional email silently stops

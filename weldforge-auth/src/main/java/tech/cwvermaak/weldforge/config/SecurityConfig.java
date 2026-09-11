@@ -76,6 +76,11 @@ public class SecurityConfig {
         corsConfig.addAllowedHeader("*");
         corsConfig.setAllowCredentials(true);
         corsConfig.setMaxAge(corsProperties.getMaxAge());
+        // The admin portal reads this to confirm an admin call acted in the
+        // tenant it asked for; cross-origin (local dev) it is invisible unless
+        // exposed.
+        corsConfig.addExposedHeader(
+                tech.cwvermaak.weldforge.config.tenant.CrossTenantSelectorFilter.ACTING_TENANT_HEADER);
         staticCors.registerCorsConfiguration("/**", corsConfig);
 
         // Composite CORS: the per-tenant OIDC surface (/t/{slug}/oauth2/* and

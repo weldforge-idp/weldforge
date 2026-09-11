@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { forTenant } from '../tenant-selector';
 
 export interface SamlIdpServiceProvider {
   id?: number;
@@ -28,25 +29,29 @@ export interface SamlIdpServiceProvider {
 export const AUTHN_CONTEXT_PASSWORD_PROTECTED =
   'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport';
 
+/**
+ * Every call takes the tenant it acts in; see OidcClientService and
+ * core/tenant-selector.ts for why row-scoped screens must pass it.
+ */
 @Injectable({ providedIn: 'root' })
 export class SamlIdpService {
   private url = `${environment.apiBaseUrl}/api/admin/saml/service-providers`;
 
   constructor(private http: HttpClient) {}
 
-  list(): Observable<SamlIdpServiceProvider[]> {
-    return this.http.get<SamlIdpServiceProvider[]>(this.url);
+  list(tenantSlug?: string): Observable<SamlIdpServiceProvider[]> {
+    return this.http.get<SamlIdpServiceProvider[]>(this.url, forTenant(tenantSlug));
   }
 
-  create(sp: SamlIdpServiceProvider): Observable<SamlIdpServiceProvider> {
-    return this.http.post<SamlIdpServiceProvider>(this.url, sp);
+  create(sp: SamlIdpServiceProvider, tenantSlug?: string): Observable<SamlIdpServiceProvider> {
+    return this.http.post<SamlIdpServiceProvider>(this.url, sp, forTenant(tenantSlug));
   }
 
-  update(id: number, sp: Partial<SamlIdpServiceProvider>): Observable<SamlIdpServiceProvider> {
-    return this.http.put<SamlIdpServiceProvider>(`${this.url}/${id}`, sp);
+  update(id: number, sp: Partial<SamlIdpServiceProvider>, tenantSlug?: string): Observable<SamlIdpServiceProvider> {
+    return this.http.put<SamlIdpServiceProvider>(`${this.url}/${id}`, sp, forTenant(tenantSlug));
   }
 
-  delete(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.url}/${id}`);
+  delete(id: number, tenantSlug?: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/${id}`, forTenant(tenantSlug));
   }
 }

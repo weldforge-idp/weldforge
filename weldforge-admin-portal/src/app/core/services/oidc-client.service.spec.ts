@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HttpClient } from '@angular/common/http';
 import { of } from 'rxjs';
 import { OidcClientService, OidcClient } from './oidc-client.service';
+import { TARGET_TENANT } from '../tenant-selector';
 
 describe('OidcClientService', () => {
   let http: { post: any; get: any; delete: any; put: any };
@@ -22,7 +23,7 @@ describe('OidcClientService', () => {
       let observed: OidcClient[] | undefined;
       service.list().subscribe(r => (observed = r));
 
-      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('/api/admin/oidc/clients'));
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('/api/admin/oidc/clients'), expect.anything());
       expect(observed).toEqual(clients);
     });
   });
@@ -44,7 +45,8 @@ describe('OidcClientService', () => {
 
       expect(http.post).toHaveBeenCalledWith(
         expect.stringContaining('/api/admin/oidc/clients'),
-        input
+        input,
+        expect.anything()
       );
       expect(observed!.clientSecret).toBe('secret-abc');
     });
@@ -63,7 +65,8 @@ describe('OidcClientService', () => {
 
       expect(http.post).toHaveBeenCalledWith(
         expect.stringContaining('/api/admin/oidc/clients/1/rotate-secret'),
-        {}
+        {},
+        expect.anything()
       );
       expect(observed!.clientSecret).toBe('new-secret');
     });
@@ -75,7 +78,37 @@ describe('OidcClientService', () => {
 
       service.delete(99).subscribe();
 
-      expect(http.delete).toHaveBeenCalledWith(expect.stringContaining('/api/admin/oidc/clients/99'));
+      expect(http.delete).toHaveBeenCalledWith(expect.stringContaining('/api/admin/oidc/clients/99'), expect.anything());
+    });
+  });
+
+  describe('names the tenant it acts in (2026-09-11)', () => {
+    const tenantOf = (call: unknown[]) =>
+      (call[call.length - 1] as { context: { get(t: unknown): unknown } }).context.get(TARGET_TENANT);
+
+    it('carries the given tenant on every call', () => {
+      http.get.mockReturnValue(of([]));
+      http.post.mockReturnValue(of({}));
+      http.delete.mockReturnValue(of(undefined));
+
+      service.list('cwvermaak-tech').subscribe();
+      service.create({ clientId: '', redirectUris: ['https://x/cb'], scopes: ['openid'], grantTypes: ['authorization_code'] },
+        'cwvermaak-tech').subscribe();
+      service.rotateSecret(1, 'cwvermaak-tech').subscribe();
+      service.delete(2, 'cwvermaak-tech').subscribe();
+
+      expect(tenantOf(http.get.mock.calls[0])).toBe('cwvermaak-tech');
+      expect(tenantOf(http.post.mock.calls[0])).toBe('cwvermaak-tech');
+      expect(tenantOf(http.post.mock.calls[1])).toBe('cwvermaak-tech');
+      expect(tenantOf(http.delete.mock.calls[0])).toBe('cwvermaak-tech');
+    });
+
+    it('leaves the tenant unset when none is given, so the picker decides', () => {
+      http.get.mockReturnValue(of([]));
+
+      service.list().subscribe();
+
+      expect(tenantOf(http.get.mock.calls[0])).toBeNull();
     });
   });
 });

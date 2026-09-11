@@ -22,7 +22,7 @@ describe('SamlIdpService', () => {
       let observed: SamlIdpServiceProvider[] | undefined;
       service.list().subscribe(r => (observed = r));
 
-      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('/api/admin/saml/service-providers'));
+      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('/api/admin/saml/service-providers'), expect.anything());
       expect(observed).toEqual(sps);
     });
   });
@@ -42,7 +42,8 @@ describe('SamlIdpService', () => {
 
       expect(http.post).toHaveBeenCalledWith(
         expect.stringContaining('/api/admin/saml/service-providers'),
-        input
+        input,
+        expect.anything()
       );
       expect(observed).toEqual(created);
     });
@@ -61,7 +62,8 @@ describe('SamlIdpService', () => {
 
       expect(http.put).toHaveBeenCalledWith(
         expect.stringContaining('/api/admin/saml/service-providers/5'),
-        updated
+        updated,
+        expect.anything()
       );
     });
   });
@@ -75,7 +77,8 @@ describe('SamlIdpService', () => {
       // '' is the API's "clear the pin" signal; null would mean "leave it".
       expect(http.put).toHaveBeenCalledWith(
         expect.stringContaining('/api/admin/saml/service-providers/7'),
-        { authnContextOverride: '' }
+        { authnContextOverride: '' },
+        expect.anything()
       );
     });
   });
@@ -87,7 +90,8 @@ describe('SamlIdpService', () => {
       service.delete(12).subscribe();
 
       expect(http.delete).toHaveBeenCalledWith(
-        expect.stringContaining('/api/admin/saml/service-providers/12')
+        expect.stringContaining('/api/admin/saml/service-providers/12'),
+        expect.anything()
       );
     });
   });

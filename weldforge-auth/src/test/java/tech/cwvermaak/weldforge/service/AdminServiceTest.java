@@ -39,6 +39,8 @@ class AdminServiceTest {
     private AuditService auditService;
     private tech.cwvermaak.weldforge.service.PasswordResetService passwordResetService;
 
+    private tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership globalSuperAdmin;
+
     private AdminService admin;
     private Tenant tenant;
 
@@ -52,10 +54,11 @@ class AdminServiceTest {
         mfaService = mock(MfaService.class);
         auditService = mock(AuditService.class);
         passwordResetService = mock(tech.cwvermaak.weldforge.service.PasswordResetService.class);
+        globalSuperAdmin = mock(tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership.class);
 
         admin = new AdminService(tenantAccessor, roleRepo, userRepo, envRepo,
                 appClientRepo, mfaService, auditService, passwordResetService,
-                new TenantSeatService(userRepo));
+                new TenantSeatService(userRepo), globalSuperAdmin);
 
         tenant = Tenant.builder().id(7L).slug("acme").name("Acme").build();
     }
@@ -197,6 +200,41 @@ class AdminServiceTest {
         assertThat(target.getTokenVersion()).isEqualTo(3);
         verify(userRepo).save(target);
         verify(auditService).recordAdmin(eq("admin.role.assigned"), any(), any(), eq("42"), any());
+    }
+
+    @Test
+    @DisplayName("setAdminRole keeps the global SUPER_ADMIN membership in step with the role (2026-09-11)")
+    void setAdminRole_syncsGlobalMembership() {
+        // The portal offers the tenant picker on the JWT's adm claim; the
+        // backend honours it on admin_membership. Both follow this call.
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").tokenVersion(0).build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // The target is one mutable object, so check its state after each call.
+        admin.setAdminRole(42L, tech.cwvermaak.weldforge.model.AdminRole.SUPER_ADMIN);
+        verify(globalSuperAdmin).sync(same(target), any());
+        assertThat(target.isSuperAdmin()).isTrue();
+        clearInvocations(globalSuperAdmin);
+
+        admin.setAdminRole(42L, tech.cwvermaak.weldforge.model.AdminRole.TENANT_ADMIN);
+        verify(globalSuperAdmin).sync(same(target), any());
+        assertThat(target.isSuperAdmin()).isFalse();
+    }
+
+    @Test
+    @DisplayName("setAdminRole refused for another tenant's user touches no membership")
+    void setAdminRole_crossTenant_noMembershipChange() {
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(999L, 7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> admin.setAdminRole(999L,
+                tech.cwvermaak.weldforge.model.AdminRole.SUPER_ADMIN))
+                .isInstanceOf(EntityNotFoundException.class);
+
+        verifyNoInteractions(globalSuperAdmin);
     }
 
     @Test
