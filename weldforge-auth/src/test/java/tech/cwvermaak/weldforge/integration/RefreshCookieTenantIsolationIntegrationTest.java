@@ -179,14 +179,35 @@ class RefreshCookieTenantIsolationIntegrationTest {
     }
 
     @Test
-    @DisplayName("a browser refresh does not rewrite the legacy cookie")
-    void per_tenant_refresh_leaves_legacy_alone() throws Exception {
+    @DisplayName("a browser refresh never rewrites a legacy cookie holding another tenant's session")
+    void refresh_leaves_another_tenants_legacy_cookie_alone() throws Exception {
         login(home, alice);
+        login(other, bob);   // the legacy cookie now holds bob's session
 
         MvcResult r = refresh("default");
 
         assertThat(setCookieNames(r)).contains(AuthService.refreshCookieName("default"))
                 .doesNotContain(AuthService.REFRESH_COOKIE);
+        // bob's session, still in the legacy cookie, is untouched and usable.
+        assertThat(legacyRefresh(other.getSlug(), jar.get(AuthService.REFRESH_COOKIE))
+                .getResponse().getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("a legacy cookie holding the same session follows its rotation, so it never goes stale")
+    void legacy_cookie_of_the_same_session_stays_in_step() throws Exception {
+        login(home, alice);   // both cookies hold the same token
+
+        MvcResult r = refresh("default");
+
+        Cookie own = r.getResponse().getCookie(AuthService.refreshCookieName("default"));
+        Cookie legacy = r.getResponse().getCookie(AuthService.REFRESH_COOKIE);
+        assertThat(legacy).isNotNull();
+        assertThat(legacy.getValue()).isEqualTo(own.getValue());
+        // A replay of the rotated-out value would trip reuse detection; the
+        // jar no longer holds one, so a legacy-only refresh still works.
+        assertThat(legacyRefresh("default", jar.get(AuthService.REFRESH_COOKIE))
+                .getResponse().getStatus()).isEqualTo(200);
     }
 
     @Test

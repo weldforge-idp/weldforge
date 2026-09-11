@@ -343,10 +343,12 @@ public class AuthService {
         Issued issued = refreshTokenService.rotateForTenant(
                 presented.rawToken(), tenant.getId(), clientIp(request), userAgent(request));
         User user = issued.row().getUser();
-        // Rewrite the legacy cookie only for a client that uses it; a browser
-        // presenting its per-tenant cookie must not clobber another tenant's
-        // legacy session.
-        writeRefreshCookies(response, issued.rawToken(), tenant, presented.legacy());
+        // The legacy cookie follows this session only when it IS this session
+        // (a proxy that sends only it, or a browser whose legacy cookie holds
+        // the same token). Holding another tenant's session, it is left
+        // alone; left stale, a later replay of it would trip reuse detection
+        // and revoke this family.
+        writeRefreshCookies(response, issued.rawToken(), tenant, presented.rewriteLegacy());
 
         String refreshAdminRole = user.getAdminRole() != null ? user.getAdminRole().name() : "NONE";
         String accessToken = jwtService.generateAccessToken(
@@ -614,8 +616,11 @@ public class AuthService {
         response.addCookie(cookie);
     }
 
-    /** The refresh token a request carried, and whether it came in the legacy cookie. */
-    record PresentedRefresh(String rawToken, boolean legacy) {}
+    /**
+     * The refresh token a request carried, and whether the legacy cookie
+     * belongs to this same session and should follow its rotation.
+     */
+    record PresentedRefresh(String rawToken, boolean rewriteLegacy) {}
 
     /**
      * The tenant's own refresh cookie if present, else the legacy one. Package-
@@ -623,14 +628,17 @@ public class AuthService {
      */
     static PresentedRefresh readRefreshCookie(HttpServletRequest request, String tenantSlug) {
         if (request.getCookies() == null) return new PresentedRefresh(null, false);
-        String own = refreshCookieName(tenantSlug);
+        String ownName = refreshCookieName(tenantSlug);
+        String own = null;
         String legacy = null;
         for (Cookie c : request.getCookies()) {
-            if (own.equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) {
-                return new PresentedRefresh(c.getValue(), false);
+            if (ownName.equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) {
+                own = c.getValue();
+            } else if (REFRESH_COOKIE.equals(c.getName())) {
+                legacy = c.getValue();
             }
-            if (REFRESH_COOKIE.equals(c.getName())) legacy = c.getValue();
         }
+        if (own != null) return new PresentedRefresh(own, own.equals(legacy));
         return new PresentedRefresh(legacy, legacy != null);
     }
 
