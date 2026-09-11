@@ -253,7 +253,9 @@ Safe Space backend). `POST /api/auth/refresh` answers for the tenant the
 tenant's own cookie first and the legacy one only when it is absent. A
 refresh token whose family belongs to another tenant is refused (401,
 audited `auth.refresh.tenant_mismatch`) and is **not** consumed. The legacy
-cookie is rewritten on refresh only for a client that presented it. Before
+cookie follows a refresh only when it holds that same session (a proxy
+that sends only it, or a browser whose legacy cookie carries the same
+token); holding another tenant's session, it is left alone. Before
 this, one cookie name served every tenant: the last sign-in anywhere
 overwrote the rest, and the admin portal's refresh on the apex came back as
 whichever tenant the browser had visited last. Login, registration,
