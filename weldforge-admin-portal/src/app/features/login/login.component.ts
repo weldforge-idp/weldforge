@@ -14,6 +14,7 @@ import { of } from 'rxjs';
 import { forwardOidcParams, resolvePostAuthTarget } from '../../core/oidc-continuation';
 import { ExternalNavigator } from '../../core/external-navigator';
 import { apiErrorMessage } from '../../core/api-error';
+import { PasswordToggleComponent } from '../../shared/password-toggle/password-toggle.component';
 
 type Step = 'credentials' | 'mfa';
 
@@ -21,6 +22,7 @@ type Step = 'credentials' | 'mfa';
   selector: 'app-login',
   standalone: true,
   imports: [
+    PasswordToggleComponent,
     CommonModule, FormsModule, RouterLink,
     MatCardModule, MatFormFieldModule, MatInputModule,
     MatButtonModule, MatProgressSpinnerModule
@@ -46,7 +48,8 @@ type Step = 'credentials' | 'mfa';
 
           <mat-form-field appearance="outline" class="wf-field">
             <mat-label>Password</mat-label>
-            <input matInput [(ngModel)]="password" name="password" required type="password" autocomplete="current-password">
+            <input matInput #pw [(ngModel)]="password" name="password" required type="password" autocomplete="current-password">
+            <wf-password-toggle matIconSuffix [for]="pw" />
           </mat-form-field>
 
           <p class="wf-error" *ngIf="error()">{{ error() }}</p>

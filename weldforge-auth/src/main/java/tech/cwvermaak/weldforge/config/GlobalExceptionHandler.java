@@ -61,11 +61,59 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex,
                                                                  HttpServletRequest request) {
-        String message = ex.getBindingResult().getFieldErrors().stream()
-                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+        // B-API-2: runs now that a Bean Validation provider is on the
+        // classpath. `errors` lists every failing field, so a client can mark
+        // each one rather than parse the summary.
+        java.util.List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> Map.of("field", fe.getField(),
+                        "message", fe.getDefaultMessage() == null ? "is invalid" : fe.getDefaultMessage()))
+                .toList();
+        String message = errors.stream()
+                .map(e -> e.get("field") + ": " + e.get("message"))
                 .reduce((a, b) -> a + "; " + b)
                 .orElse("Validation failed");
-        return respond(HttpStatus.BAD_REQUEST, "validation_error", message, request);
+        return respond(HttpStatus.BAD_REQUEST, "validation_error", message, request,
+                Map.of("errors", errors));
+    }
+
+    /**
+     * A security key's response that failed WebAuthn verification: the
+     * client's credential, not our fault.
+     */
+    @ExceptionHandler({com.yubico.webauthn.exception.RegistrationFailedException.class,
+            com.yubico.webauthn.exception.AssertionFailedException.class})
+    public ResponseEntity<Map<String, Object>> handleWebAuthn(Exception ex, HttpServletRequest request) {
+        log.debug("WebAuthn verification failed on {} {}: {}", request.getMethod(),
+                request.getRequestURI(), ex.getMessage());
+        return respond(HttpStatus.BAD_REQUEST, "webauthn_failed",
+                "The security key's response could not be verified", request);
+    }
+
+    /**
+     * Safety net for a constraint the request layer did not check (B-API-2):
+     * a missing required value is the client's 400, anything else -- a
+     * duplicate, a dangling reference -- a 409. Never the SQL or the column.
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrity(
+            org.springframework.dao.DataIntegrityViolationException ex, HttpServletRequest request) {
+        log.warn("Data integrity violation on {} {} (a validation gap): {}", request.getMethod(),
+                request.getRequestURI(), ex.getMostSpecificCause().getMessage());
+        if (isMissingValue(ex)) {
+            return respond(HttpStatus.BAD_REQUEST, "missing_value",
+                    "A required value is missing from the request", request);
+        }
+        return respond(HttpStatus.CONFLICT, "conflict",
+                "The request conflicts with existing data", request);
+    }
+
+    private static boolean isMissingValue(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (t instanceof org.hibernate.PropertyValueException) return true;
+            if (t instanceof java.sql.SQLException sql && "23502".equals(sql.getSQLState())) return true;
+            if (t.getCause() == t) break;
+        }
+        return false;
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)

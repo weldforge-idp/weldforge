@@ -103,7 +103,8 @@ public class WebAuthnService {
                     }
                 });
         if (request == null) {
-            throw new IllegalStateException("Unknown or expired WebAuthn registration challenge");
+            // The client's ceremony key is stale or made up: a 400, not a 500.
+            throw new IllegalArgumentException("Unknown or expired WebAuthn registration challenge");
         }
 
         PublicKeyCredential<AuthenticatorAttestationResponse, ClientRegistrationExtensionOutputs> pkc =

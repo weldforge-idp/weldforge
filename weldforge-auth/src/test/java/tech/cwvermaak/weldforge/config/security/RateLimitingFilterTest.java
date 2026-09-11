@@ -56,6 +56,24 @@ class RateLimitingFilterTest {
     }
 
     @Test
+    @DisplayName("the anonymous order funnel routes to its own PUBLIC_ORDER bucket, and a depleted one is a 429")
+    void publicOrdersAreLimited() throws Exception {
+        when(service.tryConsume(eq(Bucket4jEndpoint.PUBLIC_ORDER), any()))
+                .thenReturn(ConsumptionProbe.consumed(1L, 0L))
+                .thenReturn(ConsumptionProbe.rejected(0L, 60_000_000_000L, 60_000_000_000L));
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilterInternal(req("/api/public/orders"), mock(HttpServletResponse.class), chain);
+        HttpServletResponse limited = mock(HttpServletResponse.class);
+        when(limited.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+        filter.doFilterInternal(req("/api/public/orders"), limited, chain);
+
+        verify(chain, times(1)).doFilter(any(), any());
+        verify(limited).setStatus(429);
+        verify(service, never()).tryConsume(eq(Bucket4jEndpoint.REGISTER), any());
+    }
+
+    @Test
     @DisplayName("an unlisted endpoint is not rate-limited")
     void unlistedEndpointPassesThrough() throws Exception {
         FilterChain chain = mock(FilterChain.class);

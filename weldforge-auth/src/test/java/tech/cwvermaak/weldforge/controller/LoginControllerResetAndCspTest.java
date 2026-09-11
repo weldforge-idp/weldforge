@@ -28,8 +28,9 @@ import static org.mockito.Mockito.*;
  * characters" rule and to report every failure -- a breached password
  * included -- as an expired link. It now defers to the policy and says why.
  *
- * <p>CONF-7.2: every page renders through one shell whose only inline block is
- * the stylesheet, and it must carry the response's CSP nonce.
+ * <p>CONF-7.2: every page renders through one shell whose inline blocks -- the
+ * stylesheet, and the password-toggle script on pages with a password field --
+ * must carry the response's CSP nonce.
  */
 class LoginControllerResetAndCspTest {
 
@@ -147,10 +148,62 @@ class LoginControllerResetAndCspTest {
                 c.resetForm("tok", null).getBody())) {
             assertThat(html).contains("<style nonce=\"" + nonce + "\">");
             assertThat(html).doesNotContainPattern("<style>");
-            assertThat(html).doesNotContain("<script");
+            // The only script is the password toggle's, and it carries the nonce.
+            assertThat(count(html, "<script"))
+                    .isEqualTo(count(html, "<script nonce=\"" + nonce + "\">"));
             assertThat(html).doesNotContainPattern("\\son[a-z]+\\s*=");
             assertThat(html).doesNotContainPattern("\\sstyle\\s*=");
         }
+    }
+
+    // ---- show / hide password -----------------------------------------------
+
+    @Test
+    @DisplayName("Every password field on the hosted pages has a show / hide button")
+    void password_fields_have_a_toggle() {
+        LoginController c = controller();
+        String signIn = c.form(null, null).getBody();
+        String reset = c.resetForm("tok", null).getBody();
+
+        assertThat(count(signIn, "type='password'")).isEqualTo(1);
+        assertThat(count(signIn, "class='wf-pw-toggle'")).isEqualTo(1);
+        assertThat(count(reset, "type='password'")).isEqualTo(2);
+        assertThat(count(reset, "class='wf-pw-toggle'")).isEqualTo(2);
+        for (String html : List.of(signIn, reset)) {
+            // A button that cannot submit the form, labelled for screen readers,
+            // starting masked; and the script that drives it.
+            assertThat(html)
+                    .contains("<button type='button' class='wf-pw-toggle' data-wf-pw-toggle "
+                            + "aria-label='Show password' aria-pressed='false'")
+                    .contains("i.type=show?'text':'password'");
+        }
+    }
+
+    @Test
+    @DisplayName("A page without a password field carries no script at all")
+    void no_password_field_no_script() {
+        LoginController c = controller();
+        assertThat(c.forgotForm(null).getBody()).doesNotContain("<script");
+        assertThat(c.forgotForm("1").getBody()).doesNotContain("<script");
+    }
+
+    @Test
+    @DisplayName("The toggle keeps the field's attributes -- autocomplete and the policy limits")
+    void toggle_keeps_field_attributes() {
+        policy.setMinLength(14);
+        String reset = controller().resetForm("tok", null).getBody();
+
+        assertThat(reset)
+                .contains("<input type='password' name='newPassword' minlength='14' maxlength='72' "
+                        + "autocomplete='new-password' required autofocus>")
+                .contains("<input type='password' name='confirmPassword' minlength='14' "
+                        + "autocomplete='new-password' required>");
+        assertThat(controller().form(null, null).getBody())
+                .contains("<input type='password' name='password' autocomplete='current-password' required>");
+    }
+
+    private static int count(String haystack, String needle) {
+        return haystack.split(java.util.regex.Pattern.quote(needle), -1).length - 1;
     }
 
     @Test

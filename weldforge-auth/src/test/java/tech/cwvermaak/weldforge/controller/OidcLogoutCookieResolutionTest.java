@@ -151,6 +151,23 @@ class OidcLogoutCookieResolutionTest {
     }
 
     @Test
+    @DisplayName("Logout clears this tenant's own refresh cookie as well as the legacy one (B-TEN-7)")
+    void logout_clears_the_tenants_refresh_cookie() {
+        MockHttpServletResponse response = logoutWithCookie(null);
+
+        Cookie own = response.getCookie(AuthService.refreshCookieName("leap"));
+        Cookie legacy = response.getCookie(AuthService.REFRESH_COOKIE);
+        org.assertj.core.api.Assertions.assertThat(own).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(own.getMaxAge()).isZero();
+        org.assertj.core.api.Assertions.assertThat(own.getPath()).isEqualTo("/api/auth");
+        org.assertj.core.api.Assertions.assertThat(legacy).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(legacy.getMaxAge()).isZero();
+        // Another tenant's session is not this logout's to end.
+        org.assertj.core.api.Assertions.assertThat(response.getCookie(AuthService.refreshCookieName("intellisuite")))
+                .isNull();
+    }
+
+    @Test
     @DisplayName("No cookie at all is a no-op, not a failure")
     void no_cookie_is_a_noop() {
         logoutWithCookie(null);

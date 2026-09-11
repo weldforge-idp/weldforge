@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
+import tech.cwvermaak.weldforge.model.MfaFactor;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.model.dto.*;
 import tech.cwvermaak.weldforge.repository.UserRepository;
@@ -107,9 +108,7 @@ public class MfaController {
     public ResponseEntity<MfaFactorDto> activateTotp(@AuthenticationPrincipal String email,
                                                      @RequestBody Map<String, Object> body) {
         User user = requireUser(email);
-        Long factorId = ((Number) body.get("factorId")).longValue();
-        String code = (String) body.get("code");
-        return ResponseEntity.ok(mfaService.activateTotp(user, factorId, code));
+        return ResponseEntity.ok(mfaService.activateTotp(user, factorId(body), string(body, "code")));
     }
 
     // SMS --------------------------------------------------------------
@@ -127,17 +126,14 @@ public class MfaController {
     public ResponseEntity<MfaFactorDto> activateSms(@AuthenticationPrincipal String email,
                                                      @RequestBody Map<String, Object> body) {
         User user = requireUser(email);
-        Long factorId = ((Number) body.get("factorId")).longValue();
-        String code = (String) body.get("code");
-        return ResponseEntity.ok(mfaService.activateSms(user, factorId, code));
+        return ResponseEntity.ok(mfaService.activateSms(user, factorId(body), string(body, "code")));
     }
 
     @PostMapping("/sms/send")
     public ResponseEntity<Void> sendSmsChallenge(@AuthenticationPrincipal String email,
                                                   @RequestBody Map<String, Object> body) {
         User user = requireUser(email);
-        Long factorId = ((Number) body.get("factorId")).longValue();
-        mfaService.sendSmsChallenge(user, factorId);
+        mfaService.sendSmsChallenge(user, factorId(body));
         return ResponseEntity.noContent().build();
     }
 
@@ -193,10 +189,16 @@ public class MfaController {
             @AuthenticationPrincipal String email,
             @RequestBody Map<String, String> body) throws RegistrationFailedException, IOException {
         User user = requireUser(email);
-        String ceremonyKey = body.get("ceremonyKey");
-        String publicKeyCredentialJson = body.get("publicKeyCredential");
+        String ceremonyKey = AuthController.required(body, "ceremonyKey");
+        String publicKeyCredentialJson = AuthController.required(body, "publicKeyCredential");
         String label = body.getOrDefault("label", "Security key");
-        var factor = webAuthnService.finishRegistration(user, ceremonyKey, publicKeyCredentialJson, label);
+        MfaFactor factor;
+        try {
+            factor = webAuthnService.finishRegistration(user, ceremonyKey, publicKeyCredentialJson, label);
+        } catch (IOException e) {
+            // Unparseable credential JSON from the browser: the client's fault.
+            throw new IllegalArgumentException("publicKeyCredential is not a valid WebAuthn response");
+        }
         return ResponseEntity.ok(MfaFactorDto.builder()
                 .id(factor.getId())
                 .type(factor.getType())
@@ -208,6 +210,25 @@ public class MfaController {
     }
 
     // -- helpers -------------------------------------------------------
+
+    /**
+     * The required numeric {@code factorId}. These handlers used to cast
+     * {@code body.get("factorId")} straight to {@code Number}, so a missing or
+     * mistyped id was a NullPointer / ClassCast 500 (B-API-2).
+     */
+    static long factorId(Map<String, Object> body) {
+        Object v = body == null ? null : body.get("factorId");
+        if (v instanceof Number n) return n.longValue();
+        if (v instanceof String s && s.matches("\\d{1,18}")) return Long.parseLong(s);
+        throw new IllegalArgumentException("factorId is required and must be a number");
+    }
+
+    /** An optional string member; present but not a string is a 400. */
+    static String string(Map<String, Object> body, String field) {
+        Object v = body == null ? null : body.get(field);
+        if (v == null || v instanceof String) return (String) v;
+        throw new IllegalArgumentException(field + " must be a string");
+    }
 
     private User requireUser(String email) {
         String tenantSlug = TenantContext.get();

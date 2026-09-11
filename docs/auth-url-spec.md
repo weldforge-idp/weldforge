@@ -240,10 +240,25 @@ the [threat model](threat-model.md) scenario S6.
 
 ## Cookies
 
-Both `wf_session` (access JWT) and `refresh_token` cookies are written
+Both `wf_session` (access JWT) and the refresh cookies are written
 with `Domain=<base-domain>` (e.g. `sso.weldforge.org`). The browser
 therefore sends them on every `*.sso.weldforge.org` host, **not** just
 the tenant subdomain that set them.
+
+**Refresh cookies are per tenant (B-TEN-7, 2026-09-11).** A sign-in sets
+`wf_refresh_<slug>` — the cookie browsers refresh with — and the legacy
+`refresh_token`, which server-side proxies read by that exact name (the
+Safe Space backend). `POST /api/auth/refresh` answers for the tenant the
+*request* names (`X-Tenant-Slug`, host or path — never a JWT's), using that
+tenant's own cookie first and the legacy one only when it is absent. A
+refresh token whose family belongs to another tenant is refused (401,
+audited `auth.refresh.tenant_mismatch`) and is **not** consumed. The legacy
+cookie is rewritten on refresh only for a client that presented it. Before
+this, one cookie name served every tenant: the last sign-in anywhere
+overwrote the rest, and the admin portal's refresh on the apex came back as
+whichever tenant the browser had visited last. Login, registration,
+forgot-password and resend-verification likewise act in the tenant the
+request names, not in a leftover session cookie's tenant.
 
 **Why this is needed.** The OIDC unauthenticated-redirect from
 `https://sso.weldforge.org/t/<slug>/oauth2/authorize` sends the user to

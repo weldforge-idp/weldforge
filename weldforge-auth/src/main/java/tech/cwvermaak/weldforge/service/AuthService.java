@@ -40,7 +40,27 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthService {
 
+    /**
+     * The legacy, tenant-agnostic refresh cookie. Browsers no longer rely on
+     * it (see {@link #refreshCookieName}); it is still written at sign-in and
+     * accepted on refresh because server-side proxies read it by this exact
+     * name -- the Safe Space backend extracts {@code refresh_token=} from our
+     * Set-Cookie and sends it back as a Cookie header.
+     */
     public static final String REFRESH_COOKIE = "refresh_token";
+
+    /** Prefix of the per-tenant refresh cookie, {@code wf_refresh_<slug>} (B-TEN-7). */
+    public static final String REFRESH_COOKIE_PREFIX = "wf_refresh_";
+
+    /**
+     * The refresh cookie for one tenant. One cookie per tenant, because the
+     * cookie is scoped to the whole base domain: with a single name, a
+     * browser could hold one session at a time across every tenant, and the
+     * last sign-in anywhere overwrote the rest.
+     */
+    public static String refreshCookieName(String tenantSlug) {
+        return REFRESH_COOKIE_PREFIX + tenantSlug;
+    }
 
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
@@ -63,7 +83,7 @@ public class AuthService {
     @Transactional
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
                                     HttpServletResponse response) {
-        Tenant tenant = currentTenant();
+        Tenant tenant = requestedTenant(httpRequest);
 
         // Per-tenant feature flag: when registration is disabled the endpoint
         // should look like it doesn't exist. EntityNotFoundException is mapped
@@ -146,7 +166,7 @@ public class AuthService {
 
     public AuthResponseDto login(LoginRequestDto request, HttpServletRequest httpRequest,
                                  HttpServletResponse response) {
-        Tenant tenant = currentTenant();
+        Tenant tenant = requestedTenant(httpRequest);
 
         // PRD DIR-01 / DIR-02: if the tenant has an enabled LDAP/AD
         // provider, try upstream authentication first. A success gets
@@ -306,14 +326,27 @@ public class AuthService {
                 AuthenticationMethods.passwordAnd(factor, backupCode));
     }
 
-    /** Exchange a refresh token cookie for a fresh access token (rotating the refresh token). */
+    /**
+     * Exchange a refresh token cookie for a fresh access token (rotating the
+     * refresh token) -- for the tenant this request is for, and only that one.
+     *
+     * <p>B-TEN-7: the tenant comes from the request (X-Tenant-Slug, host or
+     * path, as for every other call), not from whichever cookie arrived. The
+     * tenant's own cookie is used first; the legacy {@code refresh_token}
+     * only when that is absent, and a family from another tenant is refused
+     * without being consumed.
+     */
     @Transactional
     public AuthResponseDto refresh(HttpServletRequest request, HttpServletResponse response) {
-        String raw = readRefreshCookie(request);
-        Issued issued = refreshTokenService.rotate(raw, clientIp(request), userAgent(request));
+        Tenant tenant = requestedTenant(request);
+        PresentedRefresh presented = readRefreshCookie(request, tenant.getSlug());
+        Issued issued = refreshTokenService.rotateForTenant(
+                presented.rawToken(), tenant.getId(), clientIp(request), userAgent(request));
         User user = issued.row().getUser();
-        Tenant tenant = user.getTenant();
-        writeRefreshCookie(response, issued.rawToken(), tenant.getRefreshTtlMs());
+        // Rewrite the legacy cookie only for a client that uses it; a browser
+        // presenting its per-tenant cookie must not clobber another tenant's
+        // legacy session.
+        writeRefreshCookies(response, issued.rawToken(), tenant, presented.legacy());
 
         String refreshAdminRole = user.getAdminRole() != null ? user.getAdminRole().name() : "NONE";
         String accessToken = jwtService.generateAccessToken(
@@ -443,6 +476,24 @@ public class AuthService {
         return origin + "/t/" + tenant.getSlug();
     }
 
+    /**
+     * The tenant a pre-sign-in operation (login, register, refresh) is for:
+     * the one the request names, never a JWT's. A browser sends every
+     * tenant's base-domain session cookie to the apex, and letting that
+     * cookie pick the tenant sent a sign-in, a registration or a refresh to
+     * whichever tenant the user last visited (B-TEN-7).
+     */
+    private Tenant requestedTenant(HttpServletRequest request) {
+        String slug = tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter.requestedTenant(request);
+        if (slug == null || slug.isBlank()) {
+            slug = tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter.requestedTenantOrContext();
+        }
+        if (slug == null || slug.isBlank()) return currentTenant();
+        final String resolved = slug;
+        return tenantRepository.findBySlug(resolved)
+                .orElseThrow(() -> new EntityNotFoundException("Unknown tenant: " + resolved));
+    }
+
     private Tenant currentTenant() {
         String slug = TenantContext.get();
         if (slug == null || slug.isBlank()) {
@@ -487,7 +538,9 @@ public class AuthService {
                 amr,
                 refresh.row().getFamilyId().toString());
 
-        writeRefreshCookie(response, refresh.rawToken(), tenant.getRefreshTtlMs());
+        // Both cookies at sign-in: the per-tenant one browsers refresh with,
+        // and the legacy one server-side proxies read by name.
+        writeRefreshCookies(response, refresh.rawToken(), tenant, true);
 
         // Also set the access token as an HttpOnly cookie so server-side
         // browser-redirect flows (like OIDC /authorize) can authenticate
@@ -505,12 +558,17 @@ public class AuthService {
                 .build();
     }
 
-    private void writeRefreshCookie(HttpServletResponse response, String rawToken) {
-        writeRefreshCookie(response, rawToken, null);
+    private void writeRefreshCookies(HttpServletResponse response, String rawToken, Tenant tenant,
+                                     boolean legacyToo) {
+        writeRefreshCookie(response, refreshCookieName(tenant.getSlug()), rawToken, tenant.getRefreshTtlMs());
+        if (legacyToo) {
+            writeRefreshCookie(response, REFRESH_COOKIE, rawToken, tenant.getRefreshTtlMs());
+        }
     }
 
-    private void writeRefreshCookie(HttpServletResponse response, String rawToken, Long tenantRefreshTtlMs) {
-        Cookie cookie = new Cookie(REFRESH_COOKIE, rawToken);
+    private void writeRefreshCookie(HttpServletResponse response, String name, String rawToken,
+                                    Long tenantRefreshTtlMs) {
+        Cookie cookie = new Cookie(name, rawToken);
         cookie.setHttpOnly(true);
         cookie.setSecure(publicHost.isSecureCookies());
         cookie.setPath("/api/auth");
@@ -556,12 +614,24 @@ public class AuthService {
         response.addCookie(cookie);
     }
 
-    private static String readRefreshCookie(HttpServletRequest request) {
-        if (request.getCookies() == null) return null;
+    /** The refresh token a request carried, and whether it came in the legacy cookie. */
+    record PresentedRefresh(String rawToken, boolean legacy) {}
+
+    /**
+     * The tenant's own refresh cookie if present, else the legacy one. Package-
+     * private for testing.
+     */
+    static PresentedRefresh readRefreshCookie(HttpServletRequest request, String tenantSlug) {
+        if (request.getCookies() == null) return new PresentedRefresh(null, false);
+        String own = refreshCookieName(tenantSlug);
+        String legacy = null;
         for (Cookie c : request.getCookies()) {
-            if (REFRESH_COOKIE.equals(c.getName())) return c.getValue();
+            if (own.equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) {
+                return new PresentedRefresh(c.getValue(), false);
+            }
+            if (REFRESH_COOKIE.equals(c.getName())) legacy = c.getValue();
         }
-        return null;
+        return new PresentedRefresh(legacy, legacy != null);
     }
 
     private static String clientIp(HttpServletRequest request) {

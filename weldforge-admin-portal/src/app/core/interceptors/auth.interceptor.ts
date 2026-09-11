@@ -12,8 +12,8 @@ import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { catchError, Observable, ReplaySubject, switchMap, take, throwError } from 'rxjs';
 
-import { environment } from '../../../environments/environment';
 import { TokenRefreshScheduler } from '../services/token-refresh.scheduler';
+import { refreshSession } from '../session-refresh';
 
 // x-app-authorization is injected by the nginx reverse proxy on the
 // admin.weldforge.org vhost using a value read from the
@@ -134,12 +134,7 @@ function refreshAndReplay(
   const subject = new ReplaySubject<string>(1);
   refreshInFlight$ = subject;
 
-  return http
-    .post<{ token: string; expiresIn: number }>(
-      `${environment.apiBaseUrl}/api/auth/refresh`,
-      null,
-      { withCredentials: true },
-    )
+  return refreshSession(http)
     .pipe(
       switchMap(res => {
         localStorage.setItem('access_token', res.token);

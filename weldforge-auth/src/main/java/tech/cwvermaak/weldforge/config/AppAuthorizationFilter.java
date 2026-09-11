@@ -86,6 +86,15 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
                 || path.startsWith("/t/")          // per-tenant OIDC + SAML IdP
                 || path.startsWith("/saml2/")      // SAML SP login
                 || path.startsWith("/scim/v2/")    // SCIM (has its own auth filter)
+                // The order funnel is called by a browser on www.weldforge.org
+                // and payment webhooks by the gateway; neither can hold an
+                // app-client key. SecurityConfig has always permitted both, but
+                // until 2026-09-11 this filter still demanded the header, so
+                // every self-serve order and every gateway webhook got a 403.
+                // Webhooks are authenticated by their signature header; orders
+                // are validated (B-API-2) and rate limited per IP.
+                || path.equals("/api/public/orders") || path.startsWith("/api/public/orders/")
+                || path.startsWith("/api/webhooks/")
                 || path.startsWith("/webjars/")) {
             filterChain.doFilter(request, response);
             return;

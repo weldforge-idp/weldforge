@@ -9,11 +9,13 @@ import { catchError, of, tap } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { AuthShellComponent } from './auth-shell.component';
 import { apiErrorMessage } from '../../core/api-error';
+import { PasswordToggleComponent } from '../../shared/password-toggle/password-toggle.component';
 
 @Component({
   selector: 'app-reset-password',
   standalone: true,
   imports: [
+    PasswordToggleComponent,
     CommonModule, FormsModule, RouterLink,
     MatFormFieldModule, MatInputModule, MatButtonModule,
     AuthShellComponent,
@@ -24,14 +26,16 @@ import { apiErrorMessage } from '../../core/api-error';
       <form *ngIf="!done()" (ngSubmit)="submit()" class="wf-form">
         <mat-form-field appearance="outline" class="wf-field">
           <mat-label>New password</mat-label>
-          <input matInput [(ngModel)]="newPassword" name="newPassword" required type="password" autocomplete="new-password">
+          <input matInput #pw [(ngModel)]="newPassword" name="newPassword" required type="password" autocomplete="new-password">
+          <wf-password-toggle matIconSuffix [for]="pw" />
           <!-- CONF-7.1: length, not character classes. -->
           <mat-hint>Use a long passphrase: a few unrelated words work well. Passwords found in known data breaches are refused.</mat-hint>
         </mat-form-field>
 
         <mat-form-field appearance="outline" class="wf-field">
           <mat-label>Confirm new password</mat-label>
-          <input matInput [(ngModel)]="confirm" name="confirm" required type="password" autocomplete="new-password">
+          <input matInput #pwConfirm [(ngModel)]="confirm" name="confirm" required type="password" autocomplete="new-password">
+          <wf-password-toggle matIconSuffix [for]="pwConfirm" />
         </mat-form-field>
 
         <p class="wf-error" *ngIf="error()">{{ error() }}</p>

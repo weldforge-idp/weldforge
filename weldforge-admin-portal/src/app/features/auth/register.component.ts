@@ -11,11 +11,13 @@ import { AuthShellComponent } from './auth-shell.component';
 import { forwardOidcParams, readOidcReturnTo, safeOidcReturnUrl } from '../../core/oidc-continuation';
 import { ExternalNavigator } from '../../core/external-navigator';
 import { apiErrorMessage } from '../../core/api-error';
+import { PasswordToggleComponent } from '../../shared/password-toggle/password-toggle.component';
 
 @Component({
   selector: 'app-register',
   standalone: true,
   imports: [
+    PasswordToggleComponent,
     CommonModule, FormsModule, RouterLink,
     MatFormFieldModule, MatInputModule, MatButtonModule,
     AuthShellComponent,
@@ -36,7 +38,8 @@ import { apiErrorMessage } from '../../core/api-error';
 
         <mat-form-field appearance="outline" class="wf-field">
           <mat-label>Password</mat-label>
-          <input matInput [(ngModel)]="password" name="password" required type="password" autocomplete="new-password">
+          <input matInput #pw [(ngModel)]="password" name="password" required type="password" autocomplete="new-password">
+          <wf-password-toggle matIconSuffix [for]="pw" />
           <!-- CONF-7.1: length, not character classes. The server states the
                exact rule it enforces in its error if this one is not met. -->
           <mat-hint>Use a long passphrase: a few unrelated words work well. Passwords found in known data breaches are refused.</mat-hint>

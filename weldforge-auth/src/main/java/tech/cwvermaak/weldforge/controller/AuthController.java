@@ -2,8 +2,10 @@ package tech.cwvermaak.weldforge.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
@@ -41,7 +43,7 @@ public class AuthController {
     private final TenantVerificationService tenantVerificationService;
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponseDto> register(@RequestBody RegisterRequestDto request,
+    public ResponseEntity<AuthResponseDto> register(@Valid @RequestBody RegisterRequestDto request,
                                                     HttpServletRequest httpRequest,
                                                     HttpServletResponse response) {
         return ResponseEntity.ok(authService.register(request, httpRequest, response));
@@ -101,56 +103,41 @@ public class AuthController {
     public ResponseEntity<UserResponseDto> updateMe(@AuthenticationPrincipal String email,
                                                      @RequestBody Map<String, String> body) {
         if (isAnonymous(email)) {
-            return ResponseEntity.status(401).build();
+            throw new BadCredentialsException("Not signed in");
         }
-        try {
-            User user = authService.updateMe(email,
-                    body.get("name"), body.get("email"), body.get("cellPhoneNumber"));
-            return ResponseEntity.ok(UserResponseDto.builder()
-                    .id(user.getId())
-                    .name(user.getName())
-                    .email(user.getEmail())
-                    .imageUrl(user.getImageUrl())
-                    .provider(user.getProvider())
-                    .role(user.getRole() != null ? user.getRole().getName() : null)
-                    .build());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(400)
-                    .body(UserResponseDto.builder().email(e.getMessage()).build());
-        }
+        // An IllegalArgumentException from the service is a 400 problem
+        // document via GlobalExceptionHandler. It used to come back as a
+        // UserResponseDto with the error message in its `email` field.
+        User user = authService.updateMe(email,
+                body.get("name"), body.get("email"), body.get("cellPhoneNumber"));
+        return ResponseEntity.ok(UserResponseDto.builder()
+                .id(user.getId())
+                .name(user.getName())
+                .email(user.getEmail())
+                .imageUrl(user.getImageUrl())
+                .provider(user.getProvider())
+                .role(user.getRole() != null ? user.getRole().getName() : null)
+                .build());
     }
 
     @PostMapping("/change-password")
     public ResponseEntity<Map<String, String>> changePassword(@AuthenticationPrincipal String email,
                                                                @RequestBody Map<String, String> body) {
         if (isAnonymous(email)) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not signed in"));
+            throw new BadCredentialsException("Not signed in");
         }
-        String current = body.get("currentPassword");
-        String next = body.get("newPassword");
-        if (current == null || next == null) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "currentPassword and newPassword are required"));
-        }
-        try {
-            authService.changePassword(email, current, next);
-            return ResponseEntity.ok(Map.of("message", "Password changed."));
-        } catch (org.springframework.security.authentication.BadCredentialsException e) {
-            return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        String current = required(body, "currentPassword");
+        String next = required(body, "newPassword");
+        // Wrong current password -> 401, policy failure -> 400: both problem
+        // documents from GlobalExceptionHandler (CONF-7.3).
+        authService.changePassword(email, current, next);
+        return ResponseEntity.ok(Map.of("message", "Password changed."));
     }
 
     @PostMapping("/verify-email")
     public ResponseEntity<Map<String, String>> verifyEmail(@RequestBody Map<String, String> body) {
-        String token = body.get("token");
-        try {
-            emailVerificationService.verify(token);
-            return ResponseEntity.ok(Map.of("message", "Email verified successfully."));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        emailVerificationService.verify(required(body, "token"));
+        return ResponseEntity.ok(Map.of("message", "Email verified successfully."));
     }
 
     @PostMapping("/resend-verification")
@@ -173,19 +160,27 @@ public class AuthController {
 
     @PostMapping("/reset-password")
     public ResponseEntity<Map<String, String>> resetPassword(@RequestBody Map<String, String> body) {
-        String token = body.get("token");
-        String newPassword = body.get("newPassword");
-        try {
-            String returnTo = passwordResetService.resetPassword(token, newPassword);
-            Map<String, String> resp = new HashMap<>();
-            resp.put("message", "Password has been reset successfully.");
-            // Present only when the reset began inside an app flow — the SPA
-            // sends the user back to the sign-in screen with this continuation.
-            if (returnTo != null) resp.put("returnTo", returnTo);
-            return ResponseEntity.ok(resp);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        String returnTo = passwordResetService.resetPassword(
+                required(body, "token"), required(body, "newPassword"));
+        Map<String, String> resp = new HashMap<>();
+        resp.put("message", "Password has been reset successfully.");
+        // Present only when the reset began inside an app flow — the SPA
+        // sends the user back to the sign-in screen with this continuation.
+        if (returnTo != null) resp.put("returnTo", returnTo);
+        return ResponseEntity.ok(resp);
+    }
+
+    /**
+     * A required string member of a JSON object body. Missing or blank is a
+     * 400 problem document naming the field -- these endpoints used to hash a
+     * null token and answer 500 (B-API-2).
+     */
+    static String required(Map<String, String> body, String field) {
+        String v = body == null ? null : body.get(field);
+        if (v == null || v.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
         }
+        return v;
     }
 
     @GetMapping("/tenants/{slug}/branding")

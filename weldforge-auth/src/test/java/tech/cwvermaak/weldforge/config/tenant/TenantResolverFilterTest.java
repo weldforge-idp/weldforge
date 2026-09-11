@@ -161,6 +161,43 @@ class TenantResolverFilterTest {
                 .isEqualTo("https://sso.weldforge.org");
     }
 
+    // ── B-TEN-7: the request's own tenant survives the JWT filter ──────────
+
+    @Test
+    @DisplayName("the resolver records its pick on the request, and it outlives a JWT's context change")
+    void requestedTenantRecorded() throws Exception {
+        org.springframework.mock.web.MockHttpServletRequest req =
+                new org.springframework.mock.web.MockHttpServletRequest("POST", "/api/auth/refresh");
+        req.setServerName("sso.weldforge.org");
+        req.addHeader(TenantResolverFilter.HEADER, "Default");
+
+        AtomicReference<String> requested = new AtomicReference<>();
+        filter.doFilter(req, mock(HttpServletResponse.class), (r, s) -> {
+            // What JwtAuthenticationFilter does with a session cookie's JWT.
+            TenantContext.set("intellisuite", 6L, null);
+            requested.set(TenantResolverFilter.requestedTenant((HttpServletRequest) r));
+        });
+
+        assertThat(requested.get()).isEqualTo("default");
+    }
+
+    @Test
+    @DisplayName("requestedTenantOrContext reads the current request, else falls back to the context")
+    void requestedTenantOrContext() {
+        org.springframework.mock.web.MockHttpServletRequest req =
+                new org.springframework.mock.web.MockHttpServletRequest("POST", "/api/auth/forgot-password");
+        req.setAttribute(TenantResolverFilter.REQUESTED_TENANT_ATTRIBUTE, "leap");
+        TenantContext.set("intellisuite");
+        try {
+            org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                    new org.springframework.web.context.request.ServletRequestAttributes(req));
+            assertThat(TenantResolverFilter.requestedTenantOrContext()).isEqualTo("leap");
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+        assertThat(TenantResolverFilter.requestedTenantOrContext()).isEqualTo("intellisuite");
+    }
+
     // ── helpers ──────────────────────────────────────────────────────
 
     private static PublicHostProperties publicHost() {

@@ -201,4 +201,60 @@ class GlobalExceptionHandlerTest {
         List<String> echoed = (List<String>) resp.getBody().get("reasons");
         assertThat(echoed).containsExactlyElementsOf(reasons);
     }
+
+    // ---- B-API-2 -------------------------------------------------------------
+
+    @Test
+    void validationFailureListsEveryField() {
+        ResponseEntity<Map<String, Object>> resp = handler.handleValidation(validationFailure(), request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> errors = (List<Map<String, String>>) resp.getBody().get("errors");
+        assertThat(errors).containsExactly(Map.of("field", "email", "message", "must not be blank"));
+        assertThat(resp.getBody().get("detail")).isEqualTo("email: must not be blank");
+    }
+
+    @Test
+    void missingValueAtTheDatabaseIsA400ThatLeaksNoSchema() {
+        var cause = new org.hibernate.PropertyValueException(
+                "not-null property references a null or transient value",
+                "tech.cwvermaak.weldforge.model.User", "username");
+        ResponseEntity<Map<String, Object>> resp = handler.handleDataIntegrity(
+                new org.springframework.dao.DataIntegrityViolationException("x", cause), request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getBody()).containsEntry("error", "missing_value");
+        assertThat(resp.getBody().toString()).doesNotContain("username").doesNotContain("model.User");
+    }
+
+    @Test
+    void notNullViolationBySqlStateIsA400() {
+        var sql = new java.sql.SQLException("null value in column \"email\"", "23502");
+        ResponseEntity<Map<String, Object>> resp = handler.handleDataIntegrity(
+                new org.springframework.dao.DataIntegrityViolationException("x", sql), request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getBody().toString()).doesNotContain("column");
+    }
+
+    @Test
+    void otherIntegrityViolationsAreA409ThatLeaksNoSql() {
+        var sql = new java.sql.SQLException("duplicate key value violates unique constraint \"uk_users_email\"", "23505");
+        ResponseEntity<Map<String, Object>> resp = handler.handleDataIntegrity(
+                new org.springframework.dao.DataIntegrityViolationException("x", sql), request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(resp.getBody()).containsEntry("error", "conflict");
+        assertThat(resp.getBody().toString()).doesNotContain("uk_users_email").doesNotContain("duplicate key");
+    }
+
+    @Test
+    void failedWebAuthnVerificationIsA400() {
+        ResponseEntity<Map<String, Object>> resp = handler.handleWebAuthn(
+                new IllegalStateException("stand-in for RegistrationFailedException"), request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getBody()).containsEntry("error", "webauthn_failed");
+    }
 }

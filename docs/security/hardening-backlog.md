@@ -80,6 +80,9 @@ single-use**, and (3) **governance documentation**.
 | F52 | **Tenant verification page answered 400 in production** — `String.formatted` over CSS containing `100%;` threw, so every emailed ownership-verification link failed. Escaped, and covered by a regression test. | `controller/AuthController.java` |
 | F53 | **Hosted reset reported policy failures as an expired link** — and pre-checked a stale 8-character rule. It now shows the policy's reasons; the token survives the failed attempt. | `controller/LoginController.java` |
 | F54 | **Admin tenant selector refuses instead of falling back (2026-09-11 incident)** — an admin write aimed at `cwvermaak-tech` landed in the home tenant with a 200: the portal's Tenants page sent no selector, and the backend had a second, unaudited super-admin `X-Tenant-Slug` override that fell back to the home tenant silently. `CrossTenantSelectorFilter` is now the only selector (`X-Tenant-Slug` a legacy alias under the same membership check + audit; 404/403/400 refusals); every admin response names its tenant in `X-WF-Acting-Tenant` and the portal rejects a mismatch; `V57` + `GlobalSuperAdminMembership` keep the global membership equal to the super-admin flags; the Tenants page is row-scoped; OIDC client create/rotate/delete audited. `cross-tenant-admin-spec.md` §11. | `config/tenant/CrossTenantSelectorFilter.java`, `config/JwtAuthenticationFilter.java`, `config/tenant/GlobalSuperAdminMembership.java`, `V57__backfill_global_super_admin_membership.sql`, portal `core/interceptors/tenant.interceptor.ts`, `features/tenants/tenants.component.ts` |
+| F55 | **Refresh bound to its tenant; one refresh cookie per tenant (B-TEN-7)** — the base-domain `refresh_token` served every tenant, so the last sign-in anywhere overwrote the rest and an apex refresh rotated another tenant's session (observed 2026-09-11). Sign-in now sets `wf_refresh_<slug>` plus the legacy cookie (kept: the Safe Space proxy reads it by name); refresh acts for the tenant the request names, prefers that tenant's cookie, and refuses — without consuming — a family from another tenant (`auth.refresh.tenant_mismatch`). Login, register, forgot-password and resend-verification use the requested tenant, not a leftover session cookie's. Portal refreshes name their session's tenant. | `service/AuthService.java`, `service/security/RefreshTokenService.java`, `config/tenant/TenantResolverFilter.java`, portal `core/session-refresh.ts` |
+| F56 | **Request validation enforced; no 500 for a bad body (B-API-2)** — `spring-boot-starter-validation` added, so `@Valid` finally runs (register, public orders, payment gateways); validation failures list every field (`errors`). Missing-field NPEs in email verification, password reset and MFA activation, an unknown WebAuthn challenge, and a failed security-key verification are 400s; hand-built error bodies on `/api/auth/*` are problem documents; a database integrity violation is a 400/409 that names no column. `MalformedInputIntegrationTest` feeds 16 bad-body shapes to 19 endpoints and fails on any 5xx. | `config/GlobalExceptionHandler.java`, `controller/AuthController.java`, `controller/MfaController.java`, `model/dto/RegisterRequestDto.java` |
+| F57 | **Self-serve orders and payment webhooks were refused in production** — `SecurityConfig` permits `/api/public/orders/**` and `/api/webhooks/**`, but `AppAuthorizationFilter` still demanded an `x-app-authorization` key neither a browser nor a payment gateway can hold, so every order (silently falling back to an email enquiry) and every gateway webhook got a 403. Both are exempt now; webhooks stay authenticated by their signatures, and orders get their own per-IP rate limit. Found by the F56 suite. | `config/AppAuthorizationFilter.java`, `config/security/RateLimitingFilter.java`, `service/security/RateLimitingService.java` |
 
 ---
 
@@ -298,18 +301,15 @@ are anonymous — likely intended for the pre-auth login screen). Reconcile the 
 rate-limiting the anonymous tenant-metadata disclosure. Also rename the unscoped PKI
 `findBySerial` to signal its intentional cross-tenant (OCSP) use.
 
-**B-TEN-7 · Medium · One refresh cookie for every tenant under the base domain.**
-`AuthService.writeRefreshCookie` scopes `refresh_token` to the public base domain (so a
-login on `{slug}.sso…` can refresh from the apex). The cookie has one name, so the browser
-holds **one** refresh session for all tenants: the last sign-in anywhere wins, and a refresh
-on the apex — the admin portal's — rotates that tenant's family and hands the portal
-another tenant's session. Observed in production on 2026-09-11: an apex `auth.refresh.rotate`
-for an `intellisuite` family eight seconds before the operator's `default` sign-in. Tenant
-isolation holds (the JWT is authoritative and `/api/admin/**` authorises on it), but the
-portal's identity can flip under the user, and any UI state derived from the token mid-flip
-is wrong. Remediation: name the cookie per tenant (`refresh_token.{slug}`) or bind the refresh
-call to an expected tenant and refuse a family from any other; the portal should say which
-tenant it expects.
+**B-TEN-7 · Medium · One refresh cookie for every tenant under the base domain. ✅ FIXED (F55).**
+One cookie name meant one refresh session per browser across all tenants, and an apex
+refresh could hand the portal another tenant's session. Refresh cookies are now per tenant
+(`wf_refresh_<slug>`), a refresh is bound to the tenant the request names and refuses another
+tenant's family without consuming it, and pre-sign-in operations no longer take their tenant
+from a leftover session cookie. The legacy `refresh_token` stays for the Safe Space proxy —
+retire it only once that proxy reads `wf_refresh_techmetropolis`. Residual: `wf_session` is
+still one cookie across tenants, so signing in to tenant B ends tenant A's browser session
+for OIDC `/authorize` (a re-login, never a cross-tenant session — JWT tenant binding holds).
 
 ### Previously-reported findings not yet remediated (from SECURITY_AUDIT / VALIDATION_REPORT)
 
@@ -339,14 +339,11 @@ strings remain in the tree/history. Redact the literals (history rewrite is sepa
 role-gating in `SecurityConfig` for defense-in-depth. Also `server_tokens off;` and remove
 deprecated `X-XSS-Protection` header in the nginx configmap.
 
-**B-API-2 · Medium · Bean validation is not enforced anywhere.** Found 2026-09-10 while
-writing the Sprint 6 tests. The build has `jakarta.validation-api` but no provider
-(`hibernate-validator` / `spring-boot-starter-validation`), so every `@Valid` is silently
-a no-op. The DTOs on `PaymentGatewayAdminController` are accepted unvalidated, and
-`GlobalExceptionHandler.handleValidation` never runs in production. Add
-`spring-boot-starter-validation`, then audit each `@Valid` DTO's constraints: turning
-validation on may start refusing requests that are accepted today, so treat it as an
-outward-facing change.
+**B-API-2 · Medium · Bean validation is not enforced anywhere. ✅ FIXED (F56).**
+The provider is on the classpath and every `@Valid` DTO was audited: `CreateOrderRequest`'s
+constraints match what www.weldforge.org sends, `PaymentGatewayDto` has none, and
+`RegisterRequestDto` refuses only what used to fail at the database, plus a non-email address.
+`MalformedInputIntegrationTest` keeps the anonymous and self-service surface free of 5xx.
 
 ### Governance / documentation (delivered alongside this backlog)
 

@@ -42,6 +42,36 @@ public class TenantResolverFilter extends OncePerRequestFilter {
     public static final String DEFAULT_TENANT = "default";
 
     /**
+     * Request attribute holding this filter's pick -- the tenant the request
+     * itself names (header, path or host), before {@code JwtAuthenticationFilter}
+     * replaces it with a JWT's tenant. Operations that run before sign-in
+     * (login, register, refresh) must use this: a session cookie is scoped to
+     * the whole base domain, so a leftover one from another tenant must not
+     * decide which tenant a sign-in or a refresh is for (B-TEN-7).
+     */
+    public static final String REQUESTED_TENANT_ATTRIBUTE = TenantResolverFilter.class.getName() + ".requested";
+
+    /** The tenant the request names, or null outside a resolved request. */
+    public static String requestedTenant(HttpServletRequest request) {
+        Object v = request == null ? null : request.getAttribute(REQUESTED_TENANT_ATTRIBUTE);
+        return v == null ? null : v.toString();
+    }
+
+    /**
+     * {@link #requestedTenant} for the request in progress, falling back to
+     * {@link TenantContext} outside one (tests, background work). For
+     * services that run before sign-in and have no request in hand.
+     */
+    public static String requestedTenantOrContext() {
+        var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servlet) {
+            String requested = requestedTenant(servlet.getRequest());
+            if (requested != null) return requested;
+        }
+        return TenantContext.get();
+    }
+
+    /**
      * {@code /t/{slug}/...} path-prefix matcher. Exposed package-public so
      * downstream filters ({@code JwtAuthenticationFilter}) can compute the
      * same "implicit tenant" (host or path) they need to enforce against
@@ -81,6 +111,7 @@ public class TenantResolverFilter extends OncePerRequestFilter {
         try {
             String slug = resolve(request);
             TenantContext.set(slug);
+            request.setAttribute(REQUESTED_TENANT_ATTRIBUTE, slug);
             chain.doFilter(request, response);
         } finally {
             TenantContext.clear();

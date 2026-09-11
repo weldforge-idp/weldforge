@@ -179,4 +179,33 @@ public class RefreshTokenRotationSteps {
                             .isEqualTo(AuditEvent.Outcome.DENIED);
                 });
     }
+
+    // ---- B-TEN-7 -------------------------------------------------------------
+
+    /** Tenant ids for the scenarios: alice lives in acme (1). */
+    private static final Map<String, Long> TENANT_IDS = Map.of("acme", 1L, "intellisuite", 6L);
+
+    @When("{string} is presented to a refresh for tenant {string}")
+    public void presentedForTenant(String alias, String tenantSlug) {
+        String raw = "A".equals(alias) ? tokenA : tokenB;
+        world.lastResult = null;
+        world.lastError = null;
+        try {
+            RefreshTokenService.Issued issued = service.rotateForTenant(
+                    raw, TENANT_IDS.get(tenantSlug), "1.2.3.4", "ua");
+            if (tokenB == null) tokenB = issued.rawToken();
+            world.lastResult = "rotated";
+        } catch (BadCredentialsException e) {
+            world.lastError = e;
+        }
+    }
+
+    @Then("{string} is still unused and unrevoked")
+    public void stillIntact(String alias) {
+        String raw = "A".equals(alias) ? tokenA : tokenB;
+        RefreshToken row = rowsByHash.get(RefreshTokenService.hash(raw));
+        assertThat(row.getUsedAt()).isNull();
+        assertThat(row.getRevokedAt()).isNull();
+        assertThat(familyRevokeCounts).isEmpty();
+    }
 }

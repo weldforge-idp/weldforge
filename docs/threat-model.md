@@ -126,7 +126,8 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | **S** | Spoofed `Host` to resolve a different tenant | `TenantResolverFilter` validates subdomain against slug regex + base-domain suffix; JWT binding still gates auth |
 | **E** | `X-WF-Tenant` / `X-Tenant-Slug` to cross tenants | One selector: `CrossTenantSelectorFilter` on authenticated `/api/admin/**` (`X-Tenant-Slug` a legacy alias). Requires an effective role in the target via `admin_membership` (a super-admin's global row, kept equal to the flags by `GlobalSuperAdminMembership`/V57); success audited `admin.cross_tenant.access`, refusal `admin.cross_tenant.denied` |
 | **T** | Admin write silently lands in the wrong tenant (2026-09-11) | A selector that cannot be honoured is refused (404/403/400), never run in the home tenant; responses carry `X-WF-Acting-Tenant` and the portal rejects a mismatch as 409; row-scoped admin screens name their tenant per call (F54). **Residual:** a request that sends *no* selector acts at home by design — only the portal's per-call tenant and the echo check catch that |
-| **S** | Base-domain `refresh_token` cookie shared across tenants — apex refresh rotates another tenant's session | **Open** (`B-TEN-7`) |
+| **S** | Base-domain refresh cookie shared across tenants — apex refresh rotates another tenant's session | One refresh cookie per tenant (`wf_refresh_<slug>`); refresh bound to the tenant the request names, another tenant's family refused unconsumed and audited; login/register/recovery take the requested tenant, never a leftover session cookie's (`B-TEN-7`, F55) |
+| **E** | Anonymous public endpoints (order funnel, payment webhooks) | Exempt from the app-key gate by design (F57): webhooks authenticated by gateway signature, orders validated (F56) and rate limited per IP |
 
 ### TB3 — App ⇄ DB (tenant isolation)
 
