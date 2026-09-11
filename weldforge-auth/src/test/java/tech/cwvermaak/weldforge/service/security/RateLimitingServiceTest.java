@@ -73,4 +73,16 @@ class RateLimitingServiceTest {
             assertThat(service.tryConsume(Bucket4jEndpoint.LOGIN, "1.2.3.4").isConsumed()).isTrue();
         }
     }
+
+    @Test
+    @DisplayName("the public-order bucket is its own: sign-ups and orders from one IP don't starve each other")
+    void publicOrderBucket_isIndependent() {
+        String key = "5.6.7.8";
+        // register capacity is 1 in this setup, and PUBLIC_ORDER uses the same cadence
+        assertThat(service.tryConsume(Bucket4jEndpoint.REGISTER, key).isConsumed()).isTrue();
+        assertThat(service.tryConsume(Bucket4jEndpoint.REGISTER, key).isConsumed()).isFalse();
+
+        assertThat(service.tryConsume(Bucket4jEndpoint.PUBLIC_ORDER, key).isConsumed()).isTrue();
+        assertThat(service.tryConsume(Bucket4jEndpoint.PUBLIC_ORDER, key).isConsumed()).isFalse();
+    }
 }

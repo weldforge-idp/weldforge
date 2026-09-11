@@ -208,7 +208,7 @@ public class SamlIdpController {
         if (outcome.currentSessionEnded()) {
             // The browser presenting this request is signed out too; without
             // clearing the cookie it would keep offering a dead session.
-            clearSessionCookies(servletResponse);
+            clearSessionCookies(servletResponse, tenant.getSlug());
         }
 
         String response = samlSloService.buildLogoutResponse(tenant, sp, parsed.messageId(), binding);
@@ -236,9 +236,11 @@ public class SamlIdpController {
 
     // Written with the same Domain and flags the login set, or the browser
     // treats the deletion as a different cookie and keeps the original.
-    private void clearSessionCookies(jakarta.servlet.http.HttpServletResponse response) {
+    private void clearSessionCookies(jakarta.servlet.http.HttpServletResponse response, String tenantSlug) {
         clearCookie(response, tech.cwvermaak.weldforge.config.JwtAuthenticationFilter.SESSION_COOKIE, "/");
         clearCookie(response, tech.cwvermaak.weldforge.service.AuthService.REFRESH_COOKIE, "/api/auth");
+        // B-TEN-7: this tenant's own refresh cookie; other tenants' stay.
+        clearCookie(response, tech.cwvermaak.weldforge.service.AuthService.refreshCookieName(tenantSlug), "/api/auth");
     }
 
     private void clearCookie(jakarta.servlet.http.HttpServletResponse response, String name, String path) {

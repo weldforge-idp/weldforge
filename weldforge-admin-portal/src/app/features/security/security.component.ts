@@ -12,6 +12,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { create as webauthnCreate, supported as webauthnSupported } from '@github/webauthn-json';
 import { MfaFactor, MfaService, TotpEnrollResponse } from '../../core/services/mfa.service';
 import { apiErrorMessage } from '../../core/api-error';
+import { PasswordToggleComponent } from '../../shared/password-toggle/password-toggle.component';
 
 type TotpStep = 'idle' | 'scan' | 'verify';
 
@@ -19,6 +20,7 @@ type TotpStep = 'idle' | 'scan' | 'verify';
   selector: 'app-security',
   standalone: true,
   imports: [
+    PasswordToggleComponent,
     CommonModule, FormsModule,
     MatCardModule, MatButtonModule, MatIconModule,
     MatFormFieldModule, MatInputModule, MatDividerModule,
@@ -153,8 +155,9 @@ type TotpStep = 'idle' | 'scan' | 'verify';
         <div class="reset-row">
           <mat-form-field appearance="outline" class="pwd-field">
             <mat-label>Current password</mat-label>
-            <input matInput type="password" [(ngModel)]="resetPassword" name="resetPassword"
+            <input matInput #pw type="password" [(ngModel)]="resetPassword" name="resetPassword"
                    autocomplete="current-password">
+            <wf-password-toggle matIconSuffix [for]="pw" />
           </mat-form-field>
           <button mat-raised-button color="warn" [disabled]="!resetPassword" (click)="confirmSelfReset()">
             Reset MFA

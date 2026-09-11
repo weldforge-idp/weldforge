@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
-import { environment } from '../../../environments/environment';
+import { refreshSession } from '../session-refresh';
 
 /**
  * Proactively rotates the access JWT just before it expires.
@@ -100,13 +100,7 @@ export class TokenRefreshScheduler {
     }
 
     try {
-      const res = await firstValueFrom(
-        this.http.post<{ token: string; expiresIn: number }>(
-          `${environment.apiBaseUrl}/api/auth/refresh`,
-          null,
-          { withCredentials: true },
-        ),
-      );
+      const res = await firstValueFrom(refreshSession(this.http));
       localStorage.setItem('access_token', res.token);
       this.broadcastNewToken(res.token);
       this.scheduleFromToken(res.token);

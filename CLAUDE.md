@@ -48,6 +48,14 @@ each consumer's `WELDFORGE_JWT_SECRET` env via GCP Secret Manager
 `wf-jwt-secret`. Rotating it requires rotating every consumer at the
 same time, since they all verify with the same key.
 
+**Refresh-cookie contract.** The Safe Space backend reads WeldForge's
+refresh cookie by its exact name, `refresh_token` (extracted from Set-Cookie
+on login/register, sent back as `Cookie: refresh_token=…` with
+`X-Tenant-Slug: techmetropolis`). Browsers now use per-tenant
+`wf_refresh_<slug>` cookies (B-TEN-7), but keep writing and accepting the
+legacy `refresh_token` until that proxy reads `wf_refresh_techmetropolis`:
+its fallback is to silently stop renewing sessions.
+
 Known consumer-side bug worth knowing about (out of scope for
 weldforge-auth itself but planned): failed-login audit + lockout
 counter writes happen inside `AuthService.login`'s `@Transactional`;

@@ -43,6 +43,7 @@ public class RefreshTokenService {
 
     public static final String AUDIT_REFRESH_REUSE = "auth.refresh.reuse_detected";
     public static final String AUDIT_REFRESH_CLIENT_MISMATCH = "auth.refresh.client_mismatch";
+    public static final String AUDIT_REFRESH_TENANT_MISMATCH = "auth.refresh.tenant_mismatch";
     public static final String AUDIT_REFRESH_ROTATE = "auth.refresh.rotate";
 
     private static final SecureRandom RNG = new SecureRandom();
@@ -162,6 +163,47 @@ public class RefreshTokenService {
                             "presented_by_client_id", String.valueOf(client.getId()),
                             "revoked_count", revoked)));
             throw new BadCredentialsException("Refresh token was not issued to this client");
+        }
+        return rotate(rawToken, ipAddress, userAgent);
+    }
+
+    /**
+     * Rotate a browser-session refresh token, but only for the tenant the
+     * request is for (B-TEN-7).
+     *
+     * <p>The refresh cookie is scoped to the public base domain, so a browser
+     * signed in to two tenants sends one tenant's cookie to the other's
+     * refresh. Rotating it there handed the caller the other tenant's
+     * session: on 2026-09-11 the admin portal's refresh rotated an
+     * {@code intellisuite} family. A family from another tenant is now
+     * refused -- and deliberately <i>not</i> rotated or revoked: it is not
+     * stolen, just the wrong cookie, and its own tenant's session must keep
+     * working.
+     */
+    @Transactional
+    public Issued rotateForTenant(String rawToken, Long expectedTenantId,
+                                  String ipAddress, String userAgent) {
+        if (rawToken == null || rawToken.isBlank()) {
+            throw new BadCredentialsException("Missing refresh token");
+        }
+        RefreshToken row = repository.findByTokenHash(hash(rawToken))
+                .orElseThrow(() -> new BadCredentialsException("Unknown refresh token"));
+        Long owner = row.getUser().getTenant() == null ? null : row.getUser().getTenant().getId();
+        if (owner == null || !owner.equals(expectedTenantId)) {
+            log.warn("Refresh token presented for another tenant: user_id={} family_id={} "
+                            + "family_tenant_id={} requested_tenant_id={}",
+                    row.getUser().getId(), row.getFamilyId(), owner, expectedTenantId);
+            auditService.log(AuditEvent.builder()
+                    .eventType(AUDIT_REFRESH_TENANT_MISMATCH)
+                    .outcome(AuditEvent.Outcome.DENIED)
+                    .tenant(row.getUser().getTenant())
+                    .actorUser(row.getUser())
+                    .actorEmail(row.getUser().getEmail())
+                    .targetType("refresh_token_family")
+                    .targetId(row.getFamilyId().toString())
+                    .metadata(AuditService.meta(
+                            "requested_tenant_id", String.valueOf(expectedTenantId))));
+            throw new BadCredentialsException("Refresh token belongs to another tenant");
         }
         return rotate(rawToken, ipAddress, userAgent);
     }

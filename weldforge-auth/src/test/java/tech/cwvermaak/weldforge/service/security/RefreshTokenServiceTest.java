@@ -170,4 +170,68 @@ class RefreshTokenServiceTest {
 
         assertThat(revoked).isEqualTo(3);
     }
+
+    // ---- B-TEN-7: a browser session's refresh is bound to its tenant ----------
+
+    private RefreshToken liveRow(String raw) {
+        RefreshToken row = RefreshToken.builder()
+                .id(200L).user(user).tenant(user.getTenant())
+                .familyId(UUID.randomUUID())
+                .tokenHash(RefreshTokenService.hash(raw))
+                .issuedAt(LocalDateTime.now().minusMinutes(1))
+                .expiresAt(LocalDateTime.now().plusDays(7))
+                .build();
+        when(repo.findByTokenHash(RefreshTokenService.hash(raw))).thenReturn(Optional.of(row));
+        return row;
+    }
+
+    @Test
+    @DisplayName("rotateForTenant rotates a family that belongs to the requested tenant")
+    void rotateForTenant_sameTenant() {
+        RefreshToken row = liveRow("acme-raw");
+
+        RefreshTokenService.Issued issued = service.rotateForTenant("acme-raw", 1L, "1.2.3.4", "ua");
+
+        assertThat(issued.row().getFamilyId()).isEqualTo(row.getFamilyId());
+        assertThat(row.getUsedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("rotateForTenant refuses another tenant's family -- without consuming or revoking it")
+    void rotateForTenant_otherTenant_refusedUntouched() {
+        RefreshToken row = liveRow("acme-raw");
+
+        assertThatThrownBy(() -> service.rotateForTenant("acme-raw", 99L, "1.2.3.4", "ua"))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("another tenant");
+
+        // Still valid for its own tenant: not marked used, family not revoked.
+        assertThat(row.getUsedAt()).isNull();
+        assertThat(row.getRevokedAt()).isNull();
+        verify(revoker, never()).revoke(any(), anyString());
+        verify(repo, never()).save(any());
+        // And the refusal is on the record.
+        ArgumentCaptor<tech.cwvermaak.weldforge.model.AuditEvent.AuditEventBuilder> event =
+                ArgumentCaptor.forClass(tech.cwvermaak.weldforge.model.AuditEvent.AuditEventBuilder.class);
+        verify(auditService).log(event.capture());
+        tech.cwvermaak.weldforge.model.AuditEvent built = event.getValue().build();
+        assertThat(built.getEventType()).isEqualTo(RefreshTokenService.AUDIT_REFRESH_TENANT_MISMATCH);
+        assertThat(built.getOutcome()).isEqualTo(tech.cwvermaak.weldforge.model.AuditEvent.Outcome.DENIED);
+
+        // ...and its own tenant can still use it.
+        service.rotateForTenant("acme-raw", 1L, "1.2.3.4", "ua");
+        assertThat(row.getUsedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("rotateForTenant: missing and unknown tokens are refused as before")
+    void rotateForTenant_missingOrUnknown() {
+        assertThatThrownBy(() -> service.rotateForTenant(null, 1L, null, null))
+                .isInstanceOf(BadCredentialsException.class);
+        assertThatThrownBy(() -> service.rotateForTenant("", 1L, null, null))
+                .isInstanceOf(BadCredentialsException.class);
+        when(repo.findByTokenHash(anyString())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.rotateForTenant("nope", 1L, null, null))
+                .isInstanceOf(BadCredentialsException.class);
+    }
 }

@@ -38,7 +38,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             "/api/auth/forgot-password",      Bucket4jEndpoint.RECOVERY,
             "/api/auth/reset-password",       Bucket4jEndpoint.RECOVERY,
             "/api/auth/resend-verification",  Bucket4jEndpoint.RECOVERY,
-            "/api/auth/mfa/sms/send",         Bucket4jEndpoint.RECOVERY
+            "/api/auth/mfa/sms/send",         Bucket4jEndpoint.RECOVERY,
+            // Anonymous: one pending order + one gateway checkout per call.
+            "/api/public/orders",             Bucket4jEndpoint.PUBLIC_ORDER
     );
 
     private final RateLimitingService rateLimitingService;

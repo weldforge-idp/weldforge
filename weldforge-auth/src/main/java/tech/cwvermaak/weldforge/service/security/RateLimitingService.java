@@ -24,7 +24,7 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class RateLimitingService {
 
-    public enum Bucket4jEndpoint { LOGIN, REGISTER, MFA_VERIFY, RECOVERY }
+    public enum Bucket4jEndpoint { LOGIN, REGISTER, MFA_VERIFY, RECOVERY, PUBLIC_ORDER }
 
     private final RateLimitProperties properties;
 
@@ -35,6 +35,10 @@ public class RateLimitingService {
     // (password reset, email re-verification, SMS OTP send), keyed per IP. Uses
     // the register cadence (low-frequency, sensitive) without a separate config.
     private final ConcurrentMap<String, Bucket> recoveryBuckets = new ConcurrentHashMap<>();
+    // The anonymous order funnel writes a pending_orders row and opens a
+    // payment-gateway checkout per call: its own bucket, register cadence, so
+    // an order and a sign-up from the same office do not starve each other.
+    private final ConcurrentMap<String, Bucket> orderBuckets    = new ConcurrentHashMap<>();
 
     /**
      * Try to consume one token from the caller's bucket.
@@ -59,6 +63,7 @@ public class RateLimitingService {
             case REGISTER   -> key -> registerBuckets.computeIfAbsent(key, k -> newRegisterBucket());
             case MFA_VERIFY -> key -> mfaBuckets.computeIfAbsent(key, k -> newMfaBucket());
             case RECOVERY   -> key -> recoveryBuckets.computeIfAbsent(key, k -> newRecoveryBucket());
+            case PUBLIC_ORDER -> key -> orderBuckets.computeIfAbsent(key, k -> newRecoveryBucket());
         };
     }
 

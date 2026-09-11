@@ -146,6 +146,9 @@ public class OidcLogoutController {
         // Clear cookies so the browser doesn't re-present them on the next request.
         clearCookie(response, SESSION_COOKIE, "/", publicHost.isSecureCookies());
         clearCookie(response, REFRESH_COOKIE, "/api/auth", publicHost.isSecureCookies());
+        // B-TEN-7: this tenant's own refresh cookie; other tenants' stay.
+        clearCookie(response, AuthService.refreshCookieName(tenant.getSlug()), "/api/auth",
+                publicHost.isSecureCookies());
 
         if (validatedRedirect != null) {
             String location = validatedRedirect;

@@ -50,3 +50,12 @@ scope for `weldforge-auth` itself but planned. If you touch
   heads-up draft in `/tmp/wf-techmetropolis-update.md` is held until the
   wildcard DNS+TLS is live on `*.sso.weldforge.org` (runbook in
   `docs/runbooks/wildcard-tls-setup.md`).
+- **The Safe Space backend reads the refresh cookie by its exact name,
+  `refresh_token`** (`safe_space_backend/.../AuthProxyService.java`: pulls
+  `refresh_token=` from our Set-Cookie on login/register, sends it back as
+  `Cookie: refresh_token=…` to `/api/auth/refresh` with
+  `X-Tenant-Slug: techmetropolis`). Browsers now use per-tenant
+  `wf_refresh_<slug>` cookies (B-TEN-7, 2026-09-11), but WeldForge must keep
+  writing and accepting the legacy `refresh_token` until that proxy reads
+  `wf_refresh_techmetropolis` — its fallback is to silently stop renewing
+  sessions, so a rename would break it with no error anywhere.

@@ -262,7 +262,7 @@ public class LoginController {
             + "    <label><span>Email or username</span>\n"
             + "      <input type='text' name='identifier' autocomplete='username' required autofocus></label>\n"
             + "    <label><span>Password</span>\n"
-            + "      <input type='password' name='password' autocomplete='current-password' required></label>\n"
+            + "      " + passwordInput("name='password' autocomplete='current-password' required") + "</label>\n"
             + "    <button type='submit'>Sign in</button>\n"
             + "  </form>\n"
             + "  <p class='wf-link'><a href='/login/forgot'>Forgot your password?</a></p>\n"
@@ -322,11 +322,12 @@ public class LoginController {
           + "<form method='post' action='/login/reset' autocomplete='on'>"
           + "  <input type='hidden' name='token' value='" + safeToken + "'>"
           + "  <label><span>New password</span>"
-          + "    <input type='password' name='newPassword' minlength='" + minLength
-          + "' maxlength='" + passwordPolicy.getMaxLength() + "' autocomplete='new-password' required autofocus></label>"
+          + "    " + passwordInput("name='newPassword' minlength='" + minLength
+          + "' maxlength='" + passwordPolicy.getMaxLength() + "' autocomplete='new-password' required autofocus")
+          + "</label>"
           + "  <label><span>Confirm password</span>"
-          + "    <input type='password' name='confirmPassword' minlength='" + minLength
-          + "' autocomplete='new-password' required></label>"
+          + "    " + passwordInput("name='confirmPassword' minlength='" + minLength
+          + "' autocomplete='new-password' required") + "</label>"
           + "  <button type='submit'>Set new password</button>"
           + "</form>"
           + "</section>");
@@ -344,15 +345,32 @@ public class LoginController {
             + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             + "<title>" + title + "</title>"
             + (look.syne() ? FONT_LINK : "")
-            // CONF-7.2: the only inline block on these pages; it carries the
-            // response's CSP nonce.
+            // CONF-7.2: every inline block on these pages -- this stylesheet and
+            // the password-toggle script below -- carries the response's CSP nonce.
             + "<style" + ContentSecurityPolicy.nonceAttribute() + ">:root{" + look.rootCss() + "}"
             + BASE_CSS + "</style>"
             + "</head><body>"
             + "<div class='wf-logo'>" + look.logoHtml() + "</div>"
             + inner
             + "<p class='wf-foot'>Powered by <strong>WeldForge</strong></p>"
+            + (inner.contains(PASSWORD_TOGGLE_ATTR)
+                    ? "<script" + ContentSecurityPolicy.nonceAttribute() + ">" + PASSWORD_TOGGLE_JS + "</script>"
+                    : "")
             + "</body></html>";
+    }
+
+    /**
+     * A password input with a show / hide button beside it. The button is a
+     * real {@code <button type='button'>}: it never submits the form, stays in
+     * the tab order, and reports its state through {@code aria-pressed}. It is
+     * wired by {@link #PASSWORD_TOGGLE_JS} -- the CSP allows no inline event
+     * handlers -- so without script it does nothing and the field stays masked.
+     */
+    private static String passwordInput(String attributes) {
+        return "<span class='wf-pw'><input type='password' " + attributes + ">"
+            + "<button type='button' class='wf-pw-toggle' " + PASSWORD_TOGGLE_ATTR
+            + " aria-label='Show password' aria-pressed='false' title='Show password'>"
+            + EYE_SVG + EYE_OFF_SVG + "</button></span>";
     }
 
     private static String escape(String s) {
@@ -585,7 +603,50 @@ public class LoginController {
         }
         .wf-foot { color: var(--wf-muted); font-size: 12px; margin: 1.5rem 0 2.5rem; }
         .wf-foot strong { color: var(--wf-foot-strong); font-weight: 600; }
+        .wf-pw { position: relative; display: flex; }
+        .wf-pw input { flex: 1; min-width: 0; padding-right: 2.75rem; }
+        .wf-pw .wf-pw-toggle {
+          position: absolute; right: .3rem; top: 50%; transform: translateY(-50%);
+          margin: 0; padding: .4rem; line-height: 0;
+          background: transparent; color: var(--wf-muted);
+          border-radius: 7px;
+        }
+        .wf-pw .wf-pw-toggle:hover { background: transparent; color: var(--wf-text); }
+        .wf-pw .wf-pw-toggle:focus-visible { outline: 2px solid var(--wf-primary); outline-offset: 1px; }
+        .wf-pw-toggle svg { width: 18px; height: 18px; }
+        .wf-pw-toggle .wf-eye-off, .wf-pw-toggle.on .wf-eye { display: none; }
+        .wf-pw-toggle.on .wf-eye-off { display: inline; }
         """;
+
+    /** Marks a show / hide button; also how {@link #chrome} knows a page needs the script. */
+    private static final String PASSWORD_TOGGLE_ATTR = "data-wf-pw-toggle";
+
+    /** Flips the preceding input between password and text. Nonce'd by {@link #chrome}. */
+    private static final String PASSWORD_TOGGLE_JS =
+        "document.querySelectorAll('[" + PASSWORD_TOGGLE_ATTR + "]').forEach(function(b){"
+      + "b.addEventListener('click',function(){"
+      + "var i=b.previousElementSibling,show=i.type==='password';"
+      + "i.type=show?'text':'password';"
+      + "b.classList.toggle('on',show);"
+      + "b.setAttribute('aria-pressed',String(show));"
+      + "var l=show?'Hide password':'Show password';"
+      + "b.setAttribute('aria-label',l);b.title=l;"
+      + "});});";
+
+    private static final String EYE_SVG =
+        "<svg class='wf-eye' viewBox='0 0 24 24' aria-hidden='true' focusable='false'>"
+      + "<path fill='currentColor' d='M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 "
+      + "11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'/>"
+      + "</svg>";
+
+    private static final String EYE_OFF_SVG =
+        "<svg class='wf-eye-off' viewBox='0 0 24 24' aria-hidden='true' focusable='false'>"
+      + "<path fill='currentColor' d='M12 7a5 5 0 0 1 5 5c0 .65-.13 1.26-.36 1.83l2.92 2.92A11.82 11.82 0 0 0 "
+      + "23 12c-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 "
+      + "2.28.46.46A11.8 11.8 0 0 0 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 "
+      + "20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55A2.82 2.82 0 0 0 9 12a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 "
+      + "1.55A4.97 4.97 0 0 1 12 17a5 5 0 0 1-5-5c0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16a3 3 0 0 0-3-3l-.17.01z'/>"
+      + "</svg>";
 
     /** WeldForge shield wordmark, inlined so the default page has no asset dependency. */
     private static final String LOGO_SVG = """

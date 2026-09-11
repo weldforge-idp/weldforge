@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.EmailVerificationToken;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.EmailVerificationTokenRepository;
@@ -106,7 +105,8 @@ public class EmailVerificationService {
      */
     @Transactional
     public void resendVerification(String email) {
-        String slug = TenantContext.get();
+        // The tenant the request names, not a leftover session cookie's (B-TEN-7).
+        String slug = tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter.requestedTenantOrContext();
         if (slug == null || slug.isBlank()) return;
 
         var tenantOpt = tenantRepository.findBySlug(slug);

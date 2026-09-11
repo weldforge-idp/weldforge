@@ -7,7 +7,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
-import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.model.PasswordResetToken;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
@@ -66,7 +65,7 @@ public class PasswordResetService {
      */
     @Transactional
     public void requestReset(String email, String returnTo) {
-        Tenant tenant = currentTenant();
+        Tenant tenant = requestedTenant();
 
         // Per-tenant feature flag: when password recovery is disabled the
         // endpoint should look like it doesn't exist. 404 (via GlobalExceptionHandler)
@@ -242,8 +241,13 @@ public class PasswordResetService {
                 .replace(">", "&gt;").replace("\"", "&quot;");
     }
 
-    private Tenant currentTenant() {
-        String slug = TenantContext.get();
+    /**
+     * The tenant a forgot-password request names -- not a JWT's: a leftover
+     * base-domain session cookie from another tenant must not decide whose
+     * account is reset (B-TEN-7).
+     */
+    private Tenant requestedTenant() {
+        String slug = tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter.requestedTenantOrContext();
         if (slug == null || slug.isBlank()) {
             throw new IllegalStateException("No tenant in request context");
         }
