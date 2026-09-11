@@ -116,7 +116,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | **R** | User denies an action | Per-action audit events (`AuditService`) on login/MFA/reset/profile/OIDC |
 | **I** | Tenant existence / branding enumeration | Tenant subdomains `noindex` (`TenantSubdomainNoIndexFilter` + nginx); generic errors |
 | **D** | Credential stuffing / brute force | `RateLimitingFilter` (login 10/15m, register 5/60m) + per-user lockout 5/15m; **open:** XFF spoof + in-memory buckets (`B-AUTH-1`) |
-| **E** | Header-swap to fake cross-tenant access | JWT is authoritative over the resolver's `X-Tenant-Slug` pick; only `sa=true` JWTs honour the override |
+| **E** | Header-swap to fake cross-tenant access | JWT is authoritative over the resolver's `X-Tenant-Slug` pick, for everyone — no header changes the JWT's tenant in `JwtAuthenticationFilter` (the former `sa=true` override was removed 2026-09-11, F54); acting in another tenant goes only through `CrossTenantSelectorFilter` (TB2) |
 
 ### TB2 — Edge ⇄ app (forwarding headers, host)
 
@@ -124,7 +124,9 @@ subdomains `https://{slug}.sso.weldforge.org`.
 |--------|--------|------------------|
 | **S** | Spoofed `X-Forwarded-For` to evade IP rate-limit / poison audit IP | Tomcat `remoteip` configured; **open:** no trusted-proxy boundary, first XFF hop trusted (`B-AUTH-1`) |
 | **S** | Spoofed `Host` to resolve a different tenant | `TenantResolverFilter` validates subdomain against slug regex + base-domain suffix; JWT binding still gates auth |
-| **E** | `X-WF-Tenant` / `X-Tenant-Slug` to cross tenants | Cross-tenant switch requires `SUPER_ADMIN` effective role; `CrossTenantSelectorFilter` audits the switch |
+| **E** | `X-WF-Tenant` / `X-Tenant-Slug` to cross tenants | One selector: `CrossTenantSelectorFilter` on authenticated `/api/admin/**` (`X-Tenant-Slug` a legacy alias). Requires an effective role in the target via `admin_membership` (a super-admin's global row, kept equal to the flags by `GlobalSuperAdminMembership`/V57); success audited `admin.cross_tenant.access`, refusal `admin.cross_tenant.denied` |
+| **T** | Admin write silently lands in the wrong tenant (2026-09-11) | A selector that cannot be honoured is refused (404/403/400), never run in the home tenant; responses carry `X-WF-Acting-Tenant` and the portal rejects a mismatch as 409; row-scoped admin screens name their tenant per call (F54). **Residual:** a request that sends *no* selector acts at home by design — only the portal's per-call tenant and the echo check catch that |
+| **S** | Base-domain `refresh_token` cookie shared across tenants — apex refresh rotates another tenant's session | **Open** (`B-TEN-7`) |
 
 ### TB3 — App ⇄ DB (tenant isolation)
 

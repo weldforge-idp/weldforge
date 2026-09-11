@@ -86,6 +86,10 @@ public final class AuditEventTypes {
     public static final String SAML_SP_DELETE            = "saml_idp.sp.delete";
 
     // OIDC dynamic registration
+    /** Admin-API client lifecycle; unaudited until 2026-09-11. */
+    public static final String OIDC_CLIENT_CREATE           = "oidc.client.create";
+    public static final String OIDC_CLIENT_ROTATE_SECRET    = "oidc.client.rotate_secret";
+    public static final String OIDC_CLIENT_DELETE           = "oidc.client.delete";
     public static final String OIDC_CLIENT_DYNAMIC_REGISTER = "oidc.client.dynamic_register";
     /** A client deleted its own registration through RFC 7592 (CONF-4.3). */
     public static final String OIDC_CLIENT_DYNAMIC_DELETE   = "oidc.client.dynamic_delete";

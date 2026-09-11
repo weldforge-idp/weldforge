@@ -181,8 +181,9 @@ public class EpicDRbacSteps {
         adminService = new AdminService(tenantAccessor, roleRepository, userRepository,
                 envRepo, appClientRepo, mfaService, auditService,
                 mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),
-                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepository));
-        oidcClientService = new OidcClientService(tenantAccessor, oidcClientRepository);
+                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepository),
+                mock(tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership.class));
+        oidcClientService = new OidcClientService(tenantAccessor, oidcClientRepository, auditService);
     }
 
     private Tenant tenant(String slug) {

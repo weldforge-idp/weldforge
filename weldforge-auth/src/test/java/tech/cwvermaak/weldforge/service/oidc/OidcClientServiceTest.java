@@ -26,12 +26,14 @@ class OidcClientServiceTest {
     private TenantAccessor tenantAccessor;
     private OidcClientRepository repository;
     private OidcClientService service;
+    private tech.cwvermaak.weldforge.service.audit.AuditService auditService;
 
     @BeforeEach
     void setUp() {
         tenantAccessor = mock(TenantAccessor.class);
         repository = mock(OidcClientRepository.class);
-        service = new OidcClientService(tenantAccessor, repository);
+        auditService = mock(tech.cwvermaak.weldforge.service.audit.AuditService.class);
+        service = new OidcClientService(tenantAccessor, repository, auditService);
         when(tenantAccessor.requireTenant()).thenReturn(Tenant.builder().id(1L).slug("acme").name("Acme").build());
         when(repository.findByTenantIdAndClientId(anyLong(), anyString())).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -77,5 +79,35 @@ class OidcClientServiceTest {
         assertThatThrownBy(() -> service.create(dto("/callback")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("absolute");
+    }
+
+    // ---- audit (2026-09-11) ------------------------------------------
+
+    @Test
+    @DisplayName("create is audited with the tenant it landed in")
+    void createIsAudited() {
+        OidcClientDto in = dto("https://app.acme.test/cb");
+        in.setClientId("keycrypt");
+
+        service.create(in);
+
+        verify(auditService).recordAdmin(eq("oidc.client.create"), isNull(), eq("oidc_client"), eq("keycrypt"),
+                argThat(m -> "acme".equals(m.get("tenant"))));
+    }
+
+    @Test
+    @DisplayName("delete is audited with the tenant it was removed from")
+    void deleteIsAudited() {
+        tech.cwvermaak.weldforge.model.OidcClient c = tech.cwvermaak.weldforge.model.OidcClient.builder()
+                .id(5L).clientId("stray").name("Stray")
+                .tenant(Tenant.builder().id(1L).slug("default").name("Default").build()).build();
+        when(tenantAccessor.requireTenantId()).thenReturn(1L);
+        when(repository.findByIdAndTenantId(5L, 1L)).thenReturn(Optional.of(c));
+
+        service.delete(5L);
+
+        verify(repository).delete(c);
+        verify(auditService).recordAdmin(eq("oidc.client.delete"), isNull(), eq("oidc_client"), eq("stray"),
+                argThat(m -> "default".equals(m.get("tenant"))));
     }
 }

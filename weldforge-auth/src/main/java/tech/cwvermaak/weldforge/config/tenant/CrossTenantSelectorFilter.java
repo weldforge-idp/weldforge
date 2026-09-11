@@ -7,9 +7,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import tech.cwvermaak.weldforge.config.ApiProblem;
 import tech.cwvermaak.weldforge.model.AdminRole;
 import tech.cwvermaak.weldforge.model.AuditEvent;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
@@ -34,8 +39,23 @@ import java.io.IOException;
  * all for the target is rejected here, up front, with 403.
  *
  * <p>Runs after the authentication filters so the caller's identity and home
- * tenant are already in {@link TenantContext}. Every successful cross-tenant
- * switch is audited.
+ * tenant are already in {@link TenantContext}. Every cross-tenant switch is
+ * audited, successful and refused alike.
+ *
+ * <p><b>The only place an admin call changes tenant.</b> Until 2026-09-11 a
+ * second channel existed: {@code JwtAuthenticationFilter} let an {@code sa}
+ * token switch via {@code X-Tenant-Slug}, with a different eligibility rule, no
+ * audit event, and a silent fall back to the home tenant for an unknown slug.
+ * The admin portal used that channel, and a write aimed at one tenant landed
+ * in another with no error. So on an <i>authenticated</i> admin call,
+ * {@code X-Tenant-Slug} is now read here as an alias of {@code X-WF-Tenant}:
+ * one rule (memberships), one audit trail, and a refusal instead of a fallback.
+ * Before authentication {@code X-Tenant-Slug} keeps its other meaning -- the
+ * tenant a sign-in or sign-up is for -- and this filter ignores it.
+ *
+ * <p>Every admin response carries {@value #ACTING_TENANT_HEADER}, the tenant
+ * the request actually acted in, so a client can check it got what it asked
+ * for instead of trusting that it did.
  */
 @Component
 @RequiredArgsConstructor
@@ -43,6 +63,10 @@ import java.io.IOException;
 public class CrossTenantSelectorFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-WF-Tenant";
+    /** Honoured as an alias of {@link #HEADER} on authenticated admin calls only. */
+    public static final String LEGACY_HEADER = TenantResolverFilter.HEADER;
+    /** Response header: the tenant this admin request acted in. */
+    public static final String ACTING_TENANT_HEADER = "X-WF-Acting-Tenant";
 
     private final TenantAccessor tenantAccessor;
     private final AuditService auditService;
@@ -52,43 +76,63 @@ public class CrossTenantSelectorFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String path = request.getRequestURI();
-        String target = request.getHeader(HEADER);
-
-        // Only admin endpoints honour the selector, and only when it is present.
-        if (path == null || !path.startsWith("/api/admin/")
-                || target == null || target.isBlank()) {
+        if (path == null || !path.startsWith("/api/admin/")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String targetSlug = target.trim().toLowerCase();
+        String explicit = normalized(request.getHeader(HEADER));
+        String legacy = authenticated() ? normalized(request.getHeader(LEGACY_HEADER)) : null;
         String homeSlug = TenantContext.get();
-        if (targetSlug.equals(homeSlug)) {
-            // Selecting your own tenant is a no-op — nothing to re-resolve.
-            filterChain.doFilter(request, response);
+
+        if (explicit != null && legacy != null && !explicit.equals(legacy)) {
+            // Two selectors naming different tenants: guessing which one was
+            // meant is exactly the failure this filter exists to prevent.
+            auditDenied(homeSlug, explicit, "conflicting_selectors");
+            ApiProblem.write(response, ApiProblem.body(HttpStatus.BAD_REQUEST, "tenant_selector_conflict",
+                    HEADER + " names '" + explicit + "' but " + LEGACY_HEADER + " names '" + legacy
+                            + "'; send one tenant selector", request));
             return;
         }
 
-        try {
-            AdminRole role = tenantAccessor.switchToTenant(targetSlug);
-            audit(homeSlug, targetSlug, role);
-        } catch (EntityNotFoundException e) {
-            // B-TEN-2: record refused switches so cross-tenant probing /
-            // lateral-movement reconnaissance leaves an audit trail.
-            auditDenied(homeSlug, targetSlug, "unknown_tenant");
-            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-            response.getWriter().write("Unknown X-WF-Tenant: " + targetSlug);
-            return;
-        } catch (AccessDeniedException e) {
-            auditDenied(homeSlug, targetSlug, "no_membership");
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.getWriter().write(e.getMessage());
-            return;
+        String targetSlug = explicit != null ? explicit : legacy;
+        String channel = explicit != null ? HEADER : LEGACY_HEADER;
+        if (targetSlug != null && !targetSlug.equals(homeSlug)) {
+            try {
+                AdminRole role = tenantAccessor.switchToTenant(targetSlug);
+                audit(homeSlug, targetSlug, role, channel);
+            } catch (EntityNotFoundException e) {
+                // B-TEN-2: record refused switches so cross-tenant probing /
+                // lateral-movement reconnaissance leaves an audit trail.
+                auditDenied(homeSlug, targetSlug, "unknown_tenant");
+                ApiProblem.write(response, ApiProblem.body(HttpStatus.NOT_FOUND, "unknown_tenant",
+                        "Unknown tenant '" + targetSlug + "' in " + channel, request));
+                return;
+            } catch (AccessDeniedException e) {
+                auditDenied(homeSlug, targetSlug, "no_membership");
+                ApiProblem.write(response, ApiProblem.body(HttpStatus.FORBIDDEN, "tenant_access_denied",
+                        e.getMessage() + " -- the request was NOT run in your home tenant instead", request));
+                return;
+            }
+        }
+
+        String acting = TenantContext.get();
+        if (acting != null) {
+            response.setHeader(ACTING_TENANT_HEADER, acting);
         }
         filterChain.doFilter(request, response);
     }
 
-    private void audit(String homeSlug, String targetSlug, AdminRole role) {
+    private static String normalized(String header) {
+        return header == null || header.isBlank() ? null : header.trim().toLowerCase();
+    }
+
+    private static boolean authenticated() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken);
+    }
+
+    private void audit(String homeSlug, String targetSlug, AdminRole role, String channel) {
         Long userId = TenantContext.getActorUserId();
         Long svcId = TenantContext.getActorServiceAccountId();
         String actor = userId != null ? "user:" + userId
@@ -102,9 +146,10 @@ public class CrossTenantSelectorFilter extends OncePerRequestFilter {
                         "home_tenant", homeSlug == null ? "unknown" : homeSlug,
                         "target_tenant", targetSlug,
                         "effective_role", role.name(),
+                        "selector", channel,
                         "actor", actor)));
-        log.info("cross_tenant_admin home={} target={} role={} actor={}",
-                homeSlug, targetSlug, role, actor);
+        log.info("cross_tenant_admin home={} target={} role={} selector={} actor={}",
+                homeSlug, targetSlug, role, channel, actor);
     }
 
     private void auditDenied(String homeSlug, String targetSlug, String reason) {

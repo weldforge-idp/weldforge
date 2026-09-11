@@ -79,6 +79,7 @@ single-use**, and (3) **governance documentation**.
 | F51 | **RFC 9457 Problem Details on `/api/**` (CONF-7.3)** — one error contract from the exception handler, the 401 entry point and the 403/415/429 filters; legacy members kept as extensions. | `config/ApiProblem.java`, `config/GlobalExceptionHandler.java` |
 | F52 | **Tenant verification page answered 400 in production** — `String.formatted` over CSS containing `100%;` threw, so every emailed ownership-verification link failed. Escaped, and covered by a regression test. | `controller/AuthController.java` |
 | F53 | **Hosted reset reported policy failures as an expired link** — and pre-checked a stale 8-character rule. It now shows the policy's reasons; the token survives the failed attempt. | `controller/LoginController.java` |
+| F54 | **Admin tenant selector refuses instead of falling back (2026-09-11 incident)** — an admin write aimed at `cwvermaak-tech` landed in the home tenant with a 200: the portal's Tenants page sent no selector, and the backend had a second, unaudited super-admin `X-Tenant-Slug` override that fell back to the home tenant silently. `CrossTenantSelectorFilter` is now the only selector (`X-Tenant-Slug` a legacy alias under the same membership check + audit; 404/403/400 refusals); every admin response names its tenant in `X-WF-Acting-Tenant` and the portal rejects a mismatch; `V57` + `GlobalSuperAdminMembership` keep the global membership equal to the super-admin flags; the Tenants page is row-scoped; OIDC client create/rotate/delete audited. `cross-tenant-admin-spec.md` §11. | `config/tenant/CrossTenantSelectorFilter.java`, `config/JwtAuthenticationFilter.java`, `config/tenant/GlobalSuperAdminMembership.java`, `V57__backfill_global_super_admin_membership.sql`, portal `core/interceptors/tenant.interceptor.ts`, `features/tenants/tenants.component.ts` |
 
 ---
 
@@ -296,6 +297,19 @@ row's digest, or stream to append-only external storage.
 are anonymous — likely intended for the pre-auth login screen). Reconcile the doc; consider
 rate-limiting the anonymous tenant-metadata disclosure. Also rename the unscoped PKI
 `findBySerial` to signal its intentional cross-tenant (OCSP) use.
+
+**B-TEN-7 · Medium · One refresh cookie for every tenant under the base domain.**
+`AuthService.writeRefreshCookie` scopes `refresh_token` to the public base domain (so a
+login on `{slug}.sso…` can refresh from the apex). The cookie has one name, so the browser
+holds **one** refresh session for all tenants: the last sign-in anywhere wins, and a refresh
+on the apex — the admin portal's — rotates that tenant's family and hands the portal
+another tenant's session. Observed in production on 2026-09-11: an apex `auth.refresh.rotate`
+for an `intellisuite` family eight seconds before the operator's `default` sign-in. Tenant
+isolation holds (the JWT is authoritative and `/api/admin/**` authorises on it), but the
+portal's identity can flip under the user, and any UI state derived from the token mid-flip
+is wrong. Remediation: name the cookie per tenant (`refresh_token.{slug}`) or bind the refresh
+call to an expected tenant and refuse a family from any other; the portal should say which
+tenant it expects.
 
 ### Previously-reported findings not yet remediated (from SECURITY_AUDIT / VALIDATION_REPORT)
 

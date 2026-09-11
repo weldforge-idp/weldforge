@@ -53,7 +53,8 @@ public class TenantIsolationSteps {
         admin = new AdminService(tenantAccessor, roleRepo, userRepo, envRepo,
                 appClientRepo, mfaService, auditService,
                 mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),
-                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepo));
+                new tech.cwvermaak.weldforge.service.TenantSeatService(userRepo),
+                mock(tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership.class));
     }
 
     @Given("tenants {string} and {string} exist")

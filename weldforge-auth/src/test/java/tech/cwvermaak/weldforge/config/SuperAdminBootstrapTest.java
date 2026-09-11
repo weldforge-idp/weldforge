@@ -13,7 +13,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 /**
@@ -25,13 +27,17 @@ import static org.mockito.Mockito.*;
 class SuperAdminBootstrapTest {
 
     private UserRepository users;
+    private tech.cwvermaak.weldforge.repository.AdminMembershipRepository memberships;
     private SuperAdminBootstrap bootstrap;
     private User alice;
 
     @BeforeEach
     void setUp() {
         users = mock(UserRepository.class);
-        bootstrap = new SuperAdminBootstrap(users);
+        memberships = mock(tech.cwvermaak.weldforge.repository.AdminMembershipRepository.class);
+        when(memberships.findByUser_Id(anyLong())).thenReturn(java.util.List.of());
+        bootstrap = new SuperAdminBootstrap(users,
+                new tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership(memberships));
 
         Tenant t = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         alice = User.builder().id(42L).tenant(t).email("alice@acme.test")
@@ -70,8 +76,39 @@ class SuperAdminBootstrapTest {
     }
 
     @Test
-    @DisplayName("an already-promoted user is left alone")
+    @DisplayName("an already-promoted user with a global membership is left alone")
     void isIdempotent() {
+        alice.setSuperAdmin(true);
+        alice.setAdminRole(AdminRole.SUPER_ADMIN);
+        alice.setTokenVersion(7);
+        when(users.findFirstByEmailIgnoreCase(anyString())).thenReturn(Optional.of(alice));
+        when(memberships.findByUser_Id(42L)).thenReturn(java.util.List.of(
+                tech.cwvermaak.weldforge.model.AdminMembership.builder()
+                        .user(alice).tenant(null).adminRole(AdminRole.SUPER_ADMIN).build()));
+
+        runWith("alice@acme.test");
+
+        assertThat(alice.getTokenVersion()).isEqualTo(7);
+        verify(users, never()).save(any());
+        verify(memberships, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("promotion grants the global membership that cross-tenant reach is decided by")
+    void grantsGlobalMembership() {
+        when(users.findFirstByEmailIgnoreCase(anyString())).thenReturn(Optional.of(alice));
+
+        runWith("alice@acme.test");
+
+        verify(memberships).save(argThat(m -> m.getUser() == alice
+                && m.getTenant() == null && m.getAdminRole() == AdminRole.SUPER_ADMIN));
+    }
+
+    @Test
+    @DisplayName("a super admin promoted before memberships existed gets the missing row, and nothing else changes")
+    void repairsMissingMembership() {
+        // Production on 2026-09-11: flags set, zero membership rows, so every
+        // cross-tenant switch was refused and the portal fell back silently.
         alice.setSuperAdmin(true);
         alice.setAdminRole(AdminRole.SUPER_ADMIN);
         alice.setTokenVersion(7);
@@ -79,6 +116,8 @@ class SuperAdminBootstrapTest {
 
         runWith("alice@acme.test");
 
+        verify(memberships).save(argThat(m -> m.getTenant() == null
+                && m.getAdminRole() == AdminRole.SUPER_ADMIN));
         assertThat(alice.getTokenVersion()).isEqualTo(7);
         verify(users, never()).save(any());
     }
@@ -103,6 +142,7 @@ class SuperAdminBootstrapTest {
         runWith(null);
 
         verifyNoInteractions(users);
+        verifyNoInteractions(memberships);
     }
 
     @Test

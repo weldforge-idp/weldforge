@@ -375,26 +375,27 @@ interface TenantRow extends Tenant {
 
             <!-- ==================== OIDC clients ==================== -->
             <section class="wf-section">
-              <h4>OIDC relying parties</h4>
-              <p class="sub">Apps that authenticate <em>via</em> WeldForge as their OpenID Connect identity provider. Each client gets its own secret and may register multiple redirect URIs.</p>
+              <h4>OIDC relying parties <span class="mono tenant-tag">{{ t.slug }}</span></h4>
+              <p class="sub">Apps that authenticate <em>via</em> WeldForge as their OpenID Connect identity provider. Each client gets its own secret and may register multiple redirect URIs. Everything here is read from and written to <code>{{ t.slug }}</code>, whatever the "Acting as tenant" picker says.</p>
 
-              <table *ngIf="oidcClients().length" class="wf-table">
+              <table *ngIf="oidcClientsFor(t).length" class="wf-table">
                 <thead>
-                  <tr><th>client_id</th><th>Name</th><th>Redirect URIs</th><th>Scopes</th><th>Grants</th><th>PKCE</th><th></th></tr>
+                  <tr><th>client_id</th><th>Name</th><th>Type</th><th>Redirect URIs</th><th>Scopes</th><th>Grants</th><th>PKCE</th><th></th></tr>
                 </thead>
                 <tbody>
-                  <tr *ngFor="let c of oidcClients()">
+                  <tr *ngFor="let c of oidcClientsFor(t)">
                     <td class="mono trunc">{{ c.clientId }}</td>
                     <td>{{ c.name || '—' }}</td>
+                    <td>{{ c.publicClient ? 'public' : 'confidential' }}</td>
                     <td class="mono trunc">{{ (c.redirectUris || []).join(', ') }}</td>
                     <td class="mono">{{ (c.scopes || []).join(' ') }}</td>
                     <td class="mono">{{ (c.grantTypes || []).join(' ') }}</td>
                     <td>{{ c.requirePkce ? 'yes' : 'no' }}</td>
                     <td>
-                      <button mat-icon-button (click)="rotateOidcSecret(c)" title="Rotate secret">
+                      <button mat-icon-button *ngIf="!c.publicClient" (click)="rotateOidcSecret(t, c)" title="Rotate secret">
                         <mat-icon>refresh</mat-icon>
                       </button>
-                      <button mat-icon-button color="warn" (click)="removeOidcClient(c)">
+                      <button mat-icon-button color="warn" (click)="removeOidcClient(t, c)">
                         <mat-icon>delete</mat-icon>
                       </button>
                     </td>
@@ -402,16 +403,20 @@ interface TenantRow extends Tenant {
                 </tbody>
               </table>
 
-              <div *ngIf="!oidcClients().length" class="empty mono">
-                // no OIDC clients configured for this tenant yet
+              <div *ngIf="!oidcClientsFor(t).length" class="empty mono">
+                // no OIDC clients configured for {{ t.slug }} yet
               </div>
 
               <div class="wf-add-provider">
-                <h5>Register a new OIDC client</h5>
+                <h5>Register a new OIDC client in {{ t.slug }}</h5>
                 <div class="wf-grid">
                   <mat-form-field appearance="outline">
                     <mat-label>Client name</mat-label>
                     <input matInput [(ngModel)]="newOidcClient.name" placeholder="Acme dashboard">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>client_id (optional)</mat-label>
+                    <input matInput [(ngModel)]="newOidcClientId" placeholder="generated if blank, e.g. keycrypt">
                   </mat-form-field>
                   <mat-form-field appearance="outline">
                     <mat-label>Redirect URIs (space-separated)</mat-label>
@@ -431,17 +436,21 @@ interface TenantRow extends Tenant {
                   </mat-form-field>
                 </div>
                 <div class="wf-actions">
-                  <mat-slide-toggle [(ngModel)]="newOidcRequirePkce">Require PKCE</mat-slide-toggle>
+                  <mat-slide-toggle [(ngModel)]="newOidcPublic"
+                                    title="Browser SPAs and native apps: PKCE only, no client secret">Public client</mat-slide-toggle>
+                  <mat-slide-toggle [ngModel]="newOidcRequirePkce || newOidcPublic"
+                                    (ngModelChange)="newOidcRequirePkce = $event"
+                                    [disabled]="newOidcPublic">Require PKCE</mat-slide-toggle>
                   <mat-slide-toggle [(ngModel)]="newOidcRequireMfa">Require MFA</mat-slide-toggle>
                   <span class="spacer"></span>
-                  <button mat-raised-button color="primary" (click)="createOidcClient(t)">Create Client</button>
+                  <button mat-raised-button color="primary" (click)="createOidcClient(t)">Create client in {{ t.slug }}</button>
                 </div>
               </div>
             </section>
 
             <!-- ==================== SAML IdP service providers ==================== -->
             <section class="wf-section">
-              <h4>SAML IdP — downstream service providers</h4>
+              <h4>SAML IdP — downstream service providers <span class="mono tenant-tag">{{ t.slug }}</span></h4>
               <p class="sub">Apps that receive SAML assertions from WeldForge. Register each SP's entity ID and Assertion Consumer Service URL.</p>
 
               <div class="wf-toggle-row">
@@ -452,7 +461,7 @@ interface TenantRow extends Tenant {
                 <p class="sub">Published as <code>WantAuthnRequestsSigned</code>. This states intent only; it does not enforce anything. Turn it on first, let each SP start signing, then enable <em>Signed requests</em> on that SP. Enforcing before the SP signs breaks its login.</p>
               </div>
 
-              <table *ngIf="samlIdpSps().length" class="wf-table">
+              <table *ngIf="samlSpsFor(t).length" class="wf-table">
                 <thead>
                   <tr><th>Entity ID</th><th>Name</th><th>ACS URL</th><th>Status</th>
                       <th title="Verify this SP's request signatures">Signed requests</th>
@@ -461,7 +470,7 @@ interface TenantRow extends Tenant {
                       <th>IdP metadata</th><th></th></tr>
                 </thead>
                 <tbody>
-                  <tr *ngFor="let sp of samlIdpSps()">
+                  <tr *ngFor="let sp of samlSpsFor(t)">
                     <td class="mono trunc">{{ sp.entityId }}</td>
                     <td>{{ sp.name || '—' }}</td>
                     <td class="mono trunc">{{ sp.acsUrl }}</td>
@@ -472,7 +481,7 @@ interface TenantRow extends Tenant {
                       <mat-slide-toggle [checked]="!!sp.wantAuthnRequestSigned"
                                         [disabled]="!sp.spCertificate"
                                         [title]="sp.spCertificate ? 'Reject unsigned or badly signed requests' : 'Upload the SP certificate first'"
-                                        (change)="setSpRequiresSignedRequests(sp, $event)">
+                                        (change)="setSpRequiresSignedRequests(t, sp, $event)">
                       </mat-slide-toggle>
                     </td>
                     <td>
@@ -485,7 +494,7 @@ interface TenantRow extends Tenant {
                     <td>
                       <mat-slide-toggle [checked]="!sp.authnContextOverride"
                                         [title]="sp.authnContextOverride ? 'Pinned to ' + sp.authnContextOverride : 'Reports how the user actually signed in'"
-                                        (change)="setSpContextFromSession(sp, $event)">
+                                        (change)="setSpContextFromSession(t, sp, $event)">
                         {{ sp.authnContextOverride ? 'pinned' : 'from session' }}
                       </mat-slide-toggle>
                     </td>
@@ -495,7 +504,7 @@ interface TenantRow extends Tenant {
                       </button>
                     </td>
                     <td>
-                      <button mat-icon-button color="warn" (click)="removeSamlIdpSp(sp)">
+                      <button mat-icon-button color="warn" (click)="removeSamlIdpSp(t, sp)">
                         <mat-icon>delete</mat-icon>
                       </button>
                     </td>
@@ -503,12 +512,12 @@ interface TenantRow extends Tenant {
                 </tbody>
               </table>
 
-              <div *ngIf="!samlIdpSps().length" class="empty mono">
-                // no downstream SAML service providers configured yet
+              <div *ngIf="!samlSpsFor(t).length" class="empty mono">
+                // no downstream SAML service providers configured for {{ t.slug }} yet
               </div>
 
               <div class="wf-add-provider">
-                <h5>Register a new SAML service provider</h5>
+                <h5>Register a new SAML service provider in {{ t.slug }}</h5>
                 <div class="wf-grid">
                   <mat-form-field appearance="outline">
                     <mat-label>Entity ID</mat-label>
@@ -542,7 +551,7 @@ interface TenantRow extends Tenant {
                 <div class="wf-actions">
                   <mat-slide-toggle [(ngModel)]="samlIdpDraft.enabled">Enabled</mat-slide-toggle>
                   <span class="spacer"></span>
-                  <button mat-raised-button color="primary" (click)="createSamlIdpSp()">Register SP</button>
+                  <button mat-raised-button color="primary" (click)="createSamlIdpSp(t)">Register SP in {{ t.slug }}</button>
                 </div>
               </div>
             </section>
@@ -699,6 +708,17 @@ interface TenantRow extends Tenant {
       color: var(--wf-amber);
     }
     .sub { color: var(--wf-text-2); font-size: 13px; margin: 0; }
+
+    /* Names the tenant a row-scoped section acts in. */
+    .tenant-tag {
+      margin-left: 8px;
+      padding: 1px 8px;
+      border: 1px solid var(--wf-amber);
+      border-radius: 10px;
+      color: var(--wf-amber);
+      font-size: 11px;
+      font-weight: normal;
+    }
 
     .wf-card { padding: 20px; margin-bottom: 20px; }
     .wf-create-card h3 {
@@ -889,8 +909,16 @@ interface TenantRow extends Tenant {
 })
 export class TenantsComponent implements OnInit {
   tenants = signal<TenantRow[]>([]);
-  oidcClients = signal<OidcClient[]>([]);
-  samlIdpSps = signal<SamlIdpServiceProvider[]>([]);
+  /**
+   * OIDC clients and SAML SPs, keyed by tenant id and loaded per expanded row.
+   * Until 2026-09-11 each was ONE list, loaded once in ngOnInit for whatever
+   * tenant the request context resolved to, and drawn under every row -- so
+   * the row you were looking at was not the tenant you were editing. Signals,
+   * not plain row fields, because this page is zoneless: an HTTP callback that
+   * only mutates an object field schedules no change detection.
+   */
+  oidcByTenant = signal<Record<number, OidcClient[]>>({});
+  samlSpsByTenant = signal<Record<number, SamlIdpServiceProvider[]>>({});
   creating = signal(false);
   providerTypes = SUPPORTED_PROVIDERS;
 
@@ -912,6 +940,10 @@ export class TenantsComponent implements OnInit {
   newOidcRequirePkce = true;
   newOidcRequireMfa = false;
   newOidcMaxAge = 0;
+  /** Blank lets the server generate `wf_client_…`; apps usually want a readable id. */
+  newOidcClientId = '';
+  /** SPA / native app: PKCE only, no secret. */
+  newOidcPublic = false;
 
   // SAML IdP SP draft
   samlIdpDraft: SamlIdpServiceProvider = this.freshSamlIdpDraft();
@@ -926,8 +958,6 @@ export class TenantsComponent implements OnInit {
 
   ngOnInit() {
     this.refresh();
-    this.refreshOidcClients();
-    this.refreshSamlIdpSps();
   }
 
   refresh() {
@@ -943,18 +973,34 @@ export class TenantsComponent implements OnInit {
     });
   }
 
-  refreshOidcClients() {
-    this.oidcApi.list().subscribe({
-      next: cs => this.oidcClients.set(cs),
-      error: err => this.err('Failed to load OIDC clients', err),
+  oidcClientsFor(t: TenantRow): OidcClient[] {
+    return this.oidcByTenant()[t.id] ?? [];
+  }
+
+  samlSpsFor(t: TenantRow): SamlIdpServiceProvider[] {
+    return this.samlSpsByTenant()[t.id] ?? [];
+  }
+
+  loadOidcClients(t: TenantRow) {
+    this.oidcApi.list(t.slug).subscribe({
+      next: cs => this.setOidc(t, cs),
+      error: err => this.err(`Failed to load OIDC clients for ${t.slug}`, err),
     });
   }
 
-  refreshSamlIdpSps() {
-    this.samlIdpApi.list().subscribe({
-      next: sps => this.samlIdpSps.set(sps),
-      error: err => this.err('Failed to load SAML IdP service providers', err),
+  loadSamlIdpSps(t: TenantRow) {
+    this.samlIdpApi.list(t.slug).subscribe({
+      next: sps => this.setSamlSps(t, sps),
+      error: err => this.err(`Failed to load SAML service providers for ${t.slug}`, err),
     });
+  }
+
+  private setOidc(t: TenantRow, clients: OidcClient[]) {
+    this.oidcByTenant.update(m => ({ ...m, [t.id]: clients }));
+  }
+
+  private setSamlSps(t: TenantRow, sps: SamlIdpServiceProvider[]) {
+    this.samlSpsByTenant.update(m => ({ ...m, [t.id]: sps }));
   }
 
   private freshDraft(): SocialProvider {
@@ -1091,7 +1137,8 @@ export class TenantsComponent implements OnInit {
         error: err => this.err('Failed to load MFA policy', err),
       });
     }
-    this.refreshSamlIdpSps();
+    this.loadOidcClients(t);
+    this.loadSamlIdpSps(t);
   }
 
   private freshMfaPolicy(): MfaPolicy {
@@ -1199,14 +1246,14 @@ export class TenantsComponent implements OnInit {
     };
   }
 
-  createSamlIdpSp() {
+  createSamlIdpSp(t: TenantRow) {
     if (!this.samlIdpDraft.entityId) { this.err('Entity ID is required', null); return; }
     if (!this.samlIdpDraft.acsUrl) { this.err('ACS URL is required', null); return; }
-    this.samlIdpApi.create(this.samlIdpDraft).subscribe({
+    this.samlIdpApi.create(this.samlIdpDraft, t.slug).subscribe({
       next: created => {
-        this.samlIdpSps.update(sps => [...sps, created]);
+        this.setSamlSps(t, [...this.samlSpsFor(t), created]);
         this.samlIdpDraft = this.freshSamlIdpDraft();
-        this.ok(`SAML SP ${created.entityId} registered`);
+        this.ok(`SAML SP ${created.entityId} registered in ${t.slug}`);
       },
       error: err => this.err('Create failed', err),
     });
@@ -1217,12 +1264,12 @@ export class TenantsComponent implements OnInit {
    * On failure the toggle is put back, since its visual state has already
    * flipped and would otherwise disagree with the server.
    */
-  private updateSamlIdpSp(sp: SamlIdpServiceProvider, patch: Partial<SamlIdpServiceProvider>,
-                          event?: MatSlideToggleChange) {
+  private updateSamlIdpSp(t: TenantRow, sp: SamlIdpServiceProvider,
+                          patch: Partial<SamlIdpServiceProvider>, event?: MatSlideToggleChange) {
     if (!sp.id) return;
-    this.samlIdpApi.update(sp.id, patch).subscribe({
+    this.samlIdpApi.update(sp.id, patch, t.slug).subscribe({
       next: saved => {
-        this.samlIdpSps.update(sps => sps.map(x => x.id === saved.id ? saved : x));
+        this.setSamlSps(t, this.samlSpsFor(t).map(x => x.id === saved.id ? saved : x));
         this.ok(`SP ${saved.entityId} updated`);
       },
       error: err => {
@@ -1232,14 +1279,16 @@ export class TenantsComponent implements OnInit {
     });
   }
 
-  setSpRequiresSignedRequests(sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
+  setSpRequiresSignedRequests(t: TenantRow, sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
     if (event.checked && !confirm(
-        `Require signed AuthnRequests from ${sp.entityId}?\n\n`
+        `Require signed AuthnRequests from ${sp.entityId}?
+
+`
         + 'Unsigned requests from this SP will be rejected from now on. Confirm the SP already signs.')) {
       event.source.checked = false;
       return;
     }
-    this.updateSamlIdpSp(sp, { wantAuthnRequestSigned: event.checked }, event);
+    this.updateSamlIdpSp(t, sp, { wantAuthnRequestSigned: event.checked }, event);
   }
 
   setSpEntityIdIssuer(t: TenantRow, sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
@@ -1253,21 +1302,23 @@ export class TenantsComponent implements OnInit {
       event.source.checked = !event.checked;
       return;
     }
-    this.updateSamlIdpSp(sp, { useEntityIdAsIssuer: event.checked }, event);
+    this.updateSamlIdpSp(t, sp, { useEntityIdAsIssuer: event.checked }, event);
   }
 
-  setSpContextFromSession(sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
+  setSpContextFromSession(t: TenantRow, sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
     // On: clear the pin so the SP is told how the user really signed in.
     // Off: pin the legacy password value. An SP that only accepts that value
     // breaks the first time one of its users signs in with a security key.
     if (event.checked && !confirm(
-        `Report the real sign-in method to ${sp.entityId}?\n\n`
+        `Report the real sign-in method to ${sp.entityId}?
+
+`
         + 'Users who sign in with MFA will be sent a stronger authentication context than '
         + 'PasswordProtectedTransport. Confirm the SP accepts it.')) {
       event.source.checked = false;
       return;
     }
-    this.updateSamlIdpSp(sp,
+    this.updateSamlIdpSp(t, sp,
       { authnContextOverride: event.checked ? '' : AUTHN_CONTEXT_PASSWORD_PROTECTED }, event);
   }
 
@@ -1281,12 +1332,12 @@ export class TenantsComponent implements OnInit {
     });
   }
 
-  removeSamlIdpSp(sp: SamlIdpServiceProvider) {
+  removeSamlIdpSp(t: TenantRow, sp: SamlIdpServiceProvider) {
     if (!sp.id) return;
-    if (!confirm(`Remove SAML service provider ${sp.entityId}?`)) return;
-    this.samlIdpApi.delete(sp.id).subscribe({
+    if (!confirm(`Remove SAML service provider ${sp.entityId} from ${t.slug}?`)) return;
+    this.samlIdpApi.delete(sp.id, t.slug).subscribe({
       next: () => {
-        this.samlIdpSps.update(sps => sps.filter(x => x.id !== sp.id));
+        this.setSamlSps(t, this.samlSpsFor(t).filter(x => x.id !== sp.id));
         this.ok(`SP ${sp.entityId} removed`);
       },
       error: err => this.err('Delete failed', err),
@@ -1299,55 +1350,78 @@ export class TenantsComponent implements OnInit {
   }
 
   // ---- OIDC clients -----------------------------------------------
+  // Every call names the row's tenant (t.slug). The page-level picker is not
+  // consulted: a client drawn under a tenant's row is created in that tenant.
 
-  createOidcClient(_t: TenantRow) {
+  createOidcClient(t: TenantRow) {
     const dto: OidcClient = {
-      clientId: '', // server generates
-      name: this.newOidcClient.name,
+      clientId:     this.newOidcClientId.trim(), // blank = server generates
+      name:         this.newOidcClient.name,
       redirectUris: this.splitWords(this.newOidcRedirects),
       scopes:       this.splitWords(this.newOidcScopes),
       grantTypes:   this.splitWords(this.newOidcGrants),
-      requirePkce:  this.newOidcRequirePkce,
+      // A public client has no secret; PKCE is its only proof of possession.
+      requirePkce:  this.newOidcPublic || this.newOidcRequirePkce,
       requireMfa:   this.newOidcRequireMfa,
       maxAuthenticationAgeSeconds: this.newOidcMaxAge,
+      publicClient: this.newOidcPublic,
     };
     if (!dto.redirectUris.length) { this.err('At least one redirect URI is required', null); return; }
-    this.oidcApi.create(dto).subscribe({
+    this.oidcApi.create(dto, t.slug).subscribe({
       next: created => {
-        this.oidcClients.update(cs => [...cs, created]);
+        this.setOidc(t, [...this.oidcClientsFor(t), created]);
         this.newOidcClient = { name: '' };
+        this.newOidcClientId = '';
+        this.newOidcPublic = false;
         this.newOidcRedirects = '';
         this.newOidcRequireMfa = false;
         this.newOidcMaxAge = 0;
         // Show the secret in a modal-style alert so the admin captures it once.
-        const message = `OIDC client created.\n\n`
-          + `client_id:     ${created.clientId}\n`
-          + `client_secret: ${created.clientSecret}\n\n`
-          + `Save the secret now — it will not be shown again.`;
+        const message = created.clientSecret
+          ? `OIDC client created in ${t.slug}.
+
+`
+            + `client_id:     ${created.clientId}
+`
+            + `client_secret: ${created.clientSecret}
+
+`
+            + `Save the secret now — it will not be shown again.`
+          : `Public OIDC client created in ${t.slug}.
+
+`
+            + `client_id: ${created.clientId}
+
+`
+            + `No secret was issued; the app must use PKCE.`;
         window.alert(message);
       },
       error: err => this.err('Create failed', err),
     });
   }
 
-  rotateOidcSecret(c: OidcClient) {
+  rotateOidcSecret(t: TenantRow, c: OidcClient) {
     if (!c.id) return;
-    if (!confirm(`Rotate the secret for ${c.clientId}? Existing integrations will stop working until updated.`)) return;
-    this.oidcApi.rotateSecret(c.id).subscribe({
+    if (!confirm(`Rotate the secret for ${c.clientId} in ${t.slug}? Existing integrations will stop working until updated.`)) return;
+    this.oidcApi.rotateSecret(c.id, t.slug).subscribe({
       next: rotated => {
-        const message = `New client_secret for ${c.clientId}:\n\n${rotated.clientSecret}\n\nSave it now.`;
+        const message = `New client_secret for ${c.clientId}:
+
+${rotated.clientSecret}
+
+Save it now.`;
         window.alert(message);
       },
       error: err => this.err('Rotate failed', err),
     });
   }
 
-  removeOidcClient(c: OidcClient) {
+  removeOidcClient(t: TenantRow, c: OidcClient) {
     if (!c.id) return;
-    if (!confirm(`Delete OIDC client ${c.clientId}? Tokens issued to it will continue to verify until they expire.`)) return;
-    this.oidcApi.delete(c.id).subscribe({
+    if (!confirm(`Delete OIDC client ${c.clientId} from ${t.slug}? Tokens issued to it will continue to verify until they expire.`)) return;
+    this.oidcApi.delete(c.id, t.slug).subscribe({
       next: () => {
-        this.oidcClients.update(cs => cs.filter(x => x.id !== c.id));
+        this.setOidc(t, this.oidcClientsFor(t).filter(x => x.id !== c.id));
         this.ok('Client deleted');
       },
       error: err => this.err('Delete failed', err),

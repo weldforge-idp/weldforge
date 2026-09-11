@@ -9,6 +9,8 @@ import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.dto.OidcClientDto;
 import tech.cwvermaak.weldforge.repository.OidcClientRepository;
+import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
+import tech.cwvermaak.weldforge.service.audit.AuditService;
 
 import java.net.URI;
 import java.security.SecureRandom;
@@ -33,6 +35,12 @@ public class OidcClientService {
 
     private final TenantAccessor tenantAccessor;
     private final OidcClientRepository repository;
+    /**
+     * Admin create/rotate/delete were never audited. When a client landed in
+     * the wrong tenant on 2026-09-11 there was no record of who created it,
+     * in which tenant, or through which selector.
+     */
+    private final AuditService auditService;
 
     public List<OidcClientDto> list() {
         tenantAccessor.requireAnyAdmin();
@@ -94,6 +102,10 @@ public class OidcClientService {
                 .tokenEndpointAuthMethod(isPublic ? "none" : "client_secret_basic")
                 .build();
         OidcClient saved = repository.save(client);
+        auditService.recordAdmin(AuditEventTypes.OIDC_CLIENT_CREATE, null,
+                AuditEventTypes.TARGET_OIDC_CLIENT, saved.getClientId(),
+                AuditService.meta("tenant", tenant.getSlug(), "name", saved.getName(),
+                        "public_client", isPublic));
 
         OidcClientDto out = toDto(saved, true);
         // A public client has no usable secret — never hand one back.
@@ -113,6 +125,9 @@ public class OidcClientService {
         }
         String newSecret = generateSecret();
         client.setClientSecret(newSecret);
+        auditService.recordAdmin(AuditEventTypes.OIDC_CLIENT_ROTATE_SECRET, null,
+                AuditEventTypes.TARGET_OIDC_CLIENT, client.getClientId(),
+                AuditService.meta("tenant", client.getTenant().getSlug()));
         OidcClientDto out = toDto(client, true);
         out.setClientSecret(newSecret);
         return out;
@@ -125,6 +140,9 @@ public class OidcClientService {
         OidcClient client = repository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("OIDC client " + id + " not found"));
         repository.delete(client);
+        auditService.recordAdmin(AuditEventTypes.OIDC_CLIENT_DELETE, null,
+                AuditEventTypes.TARGET_OIDC_CLIENT, client.getClientId(),
+                AuditService.meta("tenant", client.getTenant().getSlug(), "name", client.getName()));
     }
 
     // ---- Helpers ----------------------------------------------------

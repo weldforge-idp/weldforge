@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
+import tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership;
 import tech.cwvermaak.weldforge.model.AdminRole;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.UserRepository;
@@ -39,6 +40,7 @@ public class SuperAdminBootstrap implements ApplicationRunner {
     private String bootstrapEmail;
 
     private final UserRepository userRepository;
+    private final GlobalSuperAdminMembership globalMembership;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -52,16 +54,32 @@ public class SuperAdminBootstrap implements ApplicationRunner {
     }
 
     private void promote(User user) {
-        if (user.isSuperAdmin() && user.getAdminRole() == AdminRole.SUPER_ADMIN) return;
-        user.setSuperAdmin(true);
-        user.setAdminRole(AdminRole.SUPER_ADMIN);
-        // Any token minted before this carries adm=NONE, so invalidate them
-        // rather than leave the user signed in without the authority they
-        // were just granted.
-        user.setTokenVersion(user.getTokenVersion() + 1);
-        userRepository.save(user);
-        log.info("Promoted {} (tenant={}) to super admin via bootstrap",
-                user.getEmail(),
-                user.getTenant() != null ? user.getTenant().getSlug() : "<none>");
+        if (!(user.isSuperAdmin() && user.getAdminRole() == AdminRole.SUPER_ADMIN)) {
+            user.setSuperAdmin(true);
+            user.setAdminRole(AdminRole.SUPER_ADMIN);
+            // Any token minted before this carries adm=NONE, so invalidate them
+            // rather than leave the user signed in without the authority they
+            // were just granted.
+            user.setTokenVersion(user.getTokenVersion() + 1);
+            userRepository.save(user);
+            log.info("Promoted {} (tenant={}) to super admin via bootstrap",
+                    user.getEmail(),
+                    user.getTenant() != null ? user.getTenant().getSlug() : "<none>");
+        }
+        ensureGlobalMembership(user);
+    }
+
+    /**
+     * Cross-tenant admin reach is decided by {@code admin_membership}
+     * ({@code TenantAccessor.effectiveRole}), not by the user flags. A
+     * super-admin without the global row can administer only their home
+     * tenant, and every cross-tenant switch is refused -- which is exactly
+     * what production had on 2026-09-11. Idempotent, so it also repairs a user
+     * promoted by an earlier version of this class.
+     */
+    private void ensureGlobalMembership(User user) {
+        if (globalMembership.grant(user, null)) {
+            log.info("Granted global SUPER_ADMIN membership to bootstrap super admin {}", user.getEmail());
+        }
     }
 }

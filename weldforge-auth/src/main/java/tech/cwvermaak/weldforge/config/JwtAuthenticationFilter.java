@@ -17,7 +17,6 @@ import tech.cwvermaak.weldforge.config.tenant.TenantContext;
 import tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter;
 import tech.cwvermaak.weldforge.model.AdminRole;
 import tech.cwvermaak.weldforge.repository.RefreshTokenRepository;
-import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.JwtService;
 
@@ -55,7 +54,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
-    private final TenantRepository tenantRepository;
     private final TenantResolverFilter tenantResolver;
     private final RefreshTokenRepository refreshTokenRepository;
 
@@ -175,7 +173,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // which is the explicit cross-tenant channel reserved for super-
         // admins. We refuse to authenticate the JWT when its tenant_id
         // doesn't match the implicit target. Super-admins are exempt — they
-        // legitimately cross tenant boundaries via the picker.
+        // legitimately reach every tenant's subdomain; which tenant an admin
+        // call ACTS in is decided by CrossTenantSelectorFilter, not by host.
         if (slug != null && !slug.isBlank() && !sa) {
             String implicit = tenantResolver.implicitTenantSlug(request);
             if (implicit != null && !implicit.equalsIgnoreCase(slug)) {
@@ -186,31 +185,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
 
+        // The JWT's tenant is the request's tenant -- for everyone, super-admins
+        // included. Acting in another tenant is CrossTenantSelectorFilter's job
+        // alone: it is membership-checked, audited, and refuses what it cannot
+        // honour.
+        //
+        // This filter used to let an `sa` token switch tenant via X-Tenant-Slug.
+        // That second channel had its own eligibility rule (the `sa` claim, not
+        // memberships), wrote no audit event, and fell back to the home tenant
+        // SILENTLY for an unknown slug. On 2026-09-11 an admin write aimed at
+        // another tenant landed in the home tenant with no error, and nothing
+        // on the server could tell it had been meant for anywhere else.
         if (slug != null && !slug.isBlank()) {
             TenantContext.set(slug, tid, adminRole);
-        }
-
-        // Super-admin tenant impersonation: a SUPER_ADMIN can scope the
-        // request to a tenant other than their JWT's home tenant by
-        // sending an explicit X-Tenant-Slug header. This drives the
-        // admin-portal "select tenant" dropdown so a super-admin can
-        // manage users/roles in other tenants without re-issuing a JWT.
-        // The privilege is gated strictly on the JWT's `sa` claim — any
-        // non-super-admin sending the same header keeps their home
-        // tenant (the original "JWT is authoritative" rule), so the
-        // header cannot be used to fake cross-tenant access.
-        if (sa) {
-            String overrideSlug = request.getHeader(TenantResolverFilter.HEADER);
-            if (overrideSlug != null && !overrideSlug.isBlank()) {
-                String normalized = overrideSlug.trim().toLowerCase();
-                if (slug == null || !normalized.equals(slug)) {
-                    tenantRepository.findBySlug(normalized).ifPresent(t -> {
-                        TenantContext.set(t.getSlug(), t.getId(), AdminRole.SUPER_ADMIN);
-                        log.info("super_admin_tenant_override actor={} home={} acting={}",
-                                email, slug, t.getSlug());
-                    });
-                }
-            }
         }
 
         // Expose the login's authentication methods (RFC 8176 amr) for the

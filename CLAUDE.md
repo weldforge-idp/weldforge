@@ -434,6 +434,31 @@ draft eagerly in the data-load callback, or guard with `@if (t.x) { ... }`.
 *(Bit us in PR #23.)* When you see "only the first iteration works", check the
 DevTools console for a runtime throw before assuming a CD/iteration bug.
 
+### Admin calls: one tenant selector, refuse don't fall back
+Which tenant an admin call acts in has exactly **one** answer: the JWT's tenant,
+unless `CrossTenantSelectorFilter` switches it on `X-WF-Tenant` (or the legacy alias
+`X-Tenant-Slug`) — membership-checked, audited, and **refused** (404/403/400) when it
+cannot be honoured. Never add a second path that changes `TenantContext` for admin
+calls, and never fall back to the home tenant when a named tenant is unusable. A
+request with *no* selector acts at home by design, so the server cannot catch a lost
+selector — the portal must name the tenant.
+
+**Why:** on 2026-09-11 a KeyCrypt OIDC client created from the `cwvermaak-tech` row
+landed in `default` with a 200. The Tenants page drew one tenant's list under every
+row and sent no selector; the backend had a second, unaudited super-admin override
+that fell back silently. Fixed in F54 / `docs/cross-tenant-admin-spec.md` §11.
+
+**How to apply:**
+- Portal screens drawn under a specific tenant's row pass `forTenant(t.slug)`
+  (`core/tenant-selector.ts`) on every call — list, create, update, delete. Don't
+  load row-scoped lists once in `ngOnInit`.
+- Admin responses carry `X-WF-Acting-Tenant`; the interceptor turns a mismatch into a
+  409. Keep new admin endpoints under `/api/admin/**` so they get both.
+- "Is super-admin" is `sa OR adm=SUPER_ADMIN`, and cross-tenant reach is the global
+  `admin_membership` row. Anything that grants or removes super-admin goes through
+  `GlobalSuperAdminMembership` so the two stay equal.
+- Don't test cross-tenant writes against production tenants; staging uses `default`.
+
 ### Document auth-form branding in all docs/tutorials
 Whenever writing or editing any tutorial, README section, integration guide, or
 onboarding runbook for WeldForge, include an explicit *"Customising the login and
