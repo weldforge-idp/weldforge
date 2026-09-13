@@ -221,6 +221,21 @@ class AdminTenantSelectorIntegrationTest {
         assertThat(existsIn(homeTenant(), clientId)).isFalse();
     }
 
+    // ---- signed out is 401, not 403 ------------------------------------------
+
+    @org.junit.jupiter.params.ParameterizedTest(name = "an unauthenticated admin call carrying {0} is 401")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"X-WF-Tenant", "X-Tenant-Slug"})
+    @DisplayName("A signed-out caller with a tenant selector is told to sign in, not that access is denied")
+    void unauthenticated_selector_is_401(String header) throws Exception {
+        Tenant target = newTenant();
+
+        MvcResult r = mvc.perform(get("/api/admin/oidc/clients").header(header, target.getSlug()))
+                .andReturn();
+
+        assertThat(r.getResponse().getStatus()).isEqualTo(401);
+        assertThat(r.getResponse().getContentAsString()).doesNotContain("tenant_access_denied");
+    }
+
     // ---- one definition: the role that shows the picker is the role that works --
 
     @Test

@@ -268,6 +268,14 @@ Two defects combined:
   which channel (`selector`) was used.
 - Refusals are problem documents: 404 `unknown_tenant`, 403 `tenant_access_denied`
   ("the request was NOT run in your home tenant instead"), each audited.
+- **A signed-out caller is 401, not 403** (2026-09-13). The filter only reads a
+  selector once the caller is authenticated; anonymous `/api/admin/**` calls fall
+  through to Spring Security, which is what the admin portal retries on. Refusing
+  them here answered an expired session with "you have no membership for tenant
+  X" -- wrong, and unactionable: the portal retries on 401 and never on 403, so a
+  stale session with a tenant picked sat on a dead page instead of returning to
+  the sign-in screen. An anonymous caller reaches no tenant either way, and an
+  anonymous probe is not a cross-tenant event worth auditing.
 - Every successful admin response carries `X-WF-Acting-Tenant` (exposed via CORS).
   The portal interceptor turns a response from any tenant other than the one it
   named into a 409 `tenant_mismatch`, so a misdirected write can never render as

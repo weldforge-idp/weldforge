@@ -68,6 +68,7 @@ class CrossTenantSelectorFilterTest {
     @Test
     @DisplayName("a successful switch is audited as cross_tenant.access and proceeds")
     void success_audited() throws Exception {
+        signIn();   // the selector only applies to a signed-in caller
         when(tenantAccessor.switchToTenant("globex")).thenReturn(AdminRole.TENANT_ADMIN);
         FilterChain chain = mock(FilterChain.class);
 
@@ -80,6 +81,7 @@ class CrossTenantSelectorFilterTest {
     @Test
     @DisplayName("an unknown target tenant is audited as cross_tenant.denied and 404s")
     void unknownTenant_auditedDenied() throws Exception {
+        signIn();   // the selector only applies to a signed-in caller
         when(tenantAccessor.switchToTenant("globex")).thenThrow(new EntityNotFoundException("nope"));
         FilterChain chain = mock(FilterChain.class);
         HttpServletResponse res = resp();
@@ -94,6 +96,7 @@ class CrossTenantSelectorFilterTest {
     @Test
     @DisplayName("a switch with no membership reach is audited as cross_tenant.denied and 403s")
     void noMembership_auditedDenied() throws Exception {
+        signIn();   // the selector only applies to a signed-in caller
         when(tenantAccessor.switchToTenant("globex")).thenThrow(new AccessDeniedException("no reach"));
         FilterChain chain = mock(FilterChain.class);
         HttpServletResponse res = resp();
@@ -217,6 +220,27 @@ class CrossTenantSelectorFilterTest {
 
         verifyNoInteractions(tenantAccessor);
         verify(chain).doFilter(any(), any());
+    }
+
+    @Test
+    @DisplayName("An expired session gets the chain's 401, not a cross-tenant 403 (2026-09-13)")
+    void unauthenticatedSelectorDefersToTheChain() throws Exception {
+        // The admin portal retries on 401 and never on 403. Refusing an
+        // anonymous caller here left an expired session on a dead page instead
+        // of sending it back to sign in -- and told it that it lacked tenant
+        // access, which was not why the call failed.
+        var request = adminCall();
+        request.addHeader("X-WF-Tenant", "globex");
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilterInternal(request, response, chain);
+
+        verify(chain).doFilter(any(), any());
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getHeader(CrossTenantSelectorFilter.ACTING_TENANT_HEADER)).isNull();
+        // Nothing switched, and an anonymous probe is not a cross-tenant event.
+        verifyNoInteractions(tenantAccessor, auditService);
     }
 
     @Test
