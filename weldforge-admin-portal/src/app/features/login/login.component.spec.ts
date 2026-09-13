@@ -8,6 +8,8 @@ import { LoginComponent } from './login.component';
 import { AuthService } from '../../core/services/auth.service';
 import { TenantBrandingService } from '../../core/services/tenant-branding.service';
 import { ExternalNavigator } from '../../core/external-navigator';
+import { MfaService } from '../../core/services/mfa.service';
+import { WebAuthnCeremony } from '../../core/webauthn-ceremony';
 
 /**
  * The FIRST component spec in this codebase — the conventions here are meant to
@@ -193,5 +195,94 @@ describe('LoginComponent — post-authentication redirect', () => {
       expect(externalNav.go).not.toHaveBeenCalled();
       expect(router.navigate).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * 2026-09-13: a user whose only factor was a passkey could not sign in at all.
+ * This step only ever asked for a 6-digit code, so the passkey was unusable and
+ * an account with no backup codes was locked out. KeyCrypt's desktop login
+ * needs exactly this path, since it demands a phishing-resistant sign-in.
+ */
+describe('LoginComponent — second factor options', () => {
+  let auth: { login: ReturnType<typeof vi.fn>; verifyMfa: ReturnType<typeof vi.fn> };
+  let mfa: { startWebauthnAssertion: ReturnType<typeof vi.fn> };
+  let ceremony: { available: () => boolean; get: ReturnType<typeof vi.fn> };
+  let router: { navigate: ReturnType<typeof vi.fn> };
+
+  function challengedWith(factors: string[]): LoginComponent {
+    TestBed.resetTestingModule();
+    auth = {
+      login: vi.fn().mockReturnValue(of({
+        mfaRequired: true, mfaChallengeToken: 'challenge-1', availableFactors: factors,
+      })),
+      verifyMfa: vi.fn().mockReturnValue(of({ token: 'test-token' })),
+    };
+    mfa = {
+      startWebauthnAssertion: vi.fn().mockReturnValue(
+        of({ publicKey: JSON.stringify({ publicKey: { challenge: 'abc' } }) })),
+    };
+    ceremony = {
+      available: () => true,
+      get: vi.fn(async () => ({ id: 'cred-1', type: 'public-key', response: {} })),
+    };
+    router = { navigate: vi.fn() };
+    TestBed.configureTestingModule({
+      imports: [LoginComponent],
+      providers: [
+        { provide: AuthService, useValue: auth },
+        { provide: MfaService, useValue: mfa },
+        { provide: WebAuthnCeremony, useValue: ceremony },
+        { provide: TenantBrandingService, useValue: { current: signal(null), slugFromHost: () => null, load: () => of(null) } },
+        { provide: Router, useValue: router },
+        { provide: ExternalNavigator, useValue: { go: vi.fn() } },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams: {} } } },
+      ],
+    });
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.detectChanges();   // ngOnInit picks up ceremony availability
+    const c = fixture.componentInstance as LoginComponent;
+    c.submitCredentials();
+    return c;
+  }
+
+  it('leads with the passkey when the account has one', () => {
+    const c = challengedWith(['WEBAUTHN']);
+    expect(c.mode()).toBe('passkey');
+    expect(c.hasPasskey()).toBe(true);
+  });
+
+  it('asks for a code when that is the only factor', () => {
+    expect(challengedWith(['TOTP']).mode()).toBe('totp');
+  });
+
+  it('completes the passkey ceremony and signs in', async () => {
+    const c = challengedWith(['WEBAUTHN']);
+
+    await c.verifyWithPasskey();
+
+    expect(mfa.startWebauthnAssertion).toHaveBeenCalledWith('challenge-1');
+    expect(auth.verifyMfa).toHaveBeenCalledWith(expect.objectContaining({
+      challengeToken: 'challenge-1',
+      type: 'WEBAUTHN',
+      webauthnResponse: expect.stringContaining('cred-1'),
+    }));
+    expect(router.navigate).toHaveBeenCalled();
+  });
+
+  it('always offers a backup code as the way out', () => {
+    const c = challengedWith(['WEBAUTHN']);
+
+    c.setMode('backup');
+    c.backupCode = 'abcd-efgh';
+    c.submitMfa();
+
+    expect(c.mode()).toBe('backup');
+    expect(auth.verifyMfa).toHaveBeenCalledWith(expect.objectContaining({ backupCode: 'abcd-efgh' }));
+  });
+
+  it('offers the authenticator only when the account has one', () => {
+    expect(challengedWith(['WEBAUTHN']).hasAuthenticator()).toBe(false);
+    expect(challengedWith(['WEBAUTHN', 'TOTP']).hasAuthenticator()).toBe(true);
   });
 });

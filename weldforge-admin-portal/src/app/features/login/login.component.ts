@@ -8,9 +8,11 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService, MfaFactorType } from '../../core/services/auth.service';
+import { MfaService } from '../../core/services/mfa.service';
+import { WebAuthnCeremony } from '../../core/webauthn-ceremony';
 import { TenantBrandingService } from '../../core/services/tenant-branding.service';
 import { catchError, tap } from 'rxjs/operators';
-import { of } from 'rxjs';
+import { firstValueFrom, of } from 'rxjs';
 import { forwardOidcParams, resolvePostAuthTarget } from '../../core/oidc-continuation';
 import { ExternalNavigator } from '../../core/external-navigator';
 import { apiErrorMessage } from '../../core/api-error';
@@ -72,27 +74,46 @@ type Step = 'credentials' | 'mfa';
 
         <!-- Step 2: MFA -->
         <form *ngIf="step() === 'mfa'" (ngSubmit)="submitMfa()" class="wf-form">
-          <mat-form-field appearance="outline" class="wf-field" *ngIf="!useBackup()">
+          <!-- A passkey is the strongest factor the account has, so it leads.
+               Until 2026-09-13 this step only ever asked for a TOTP code, which
+               locked out anyone whose only factor was a passkey. -->
+          <ng-container *ngIf="mode() === 'passkey'">
+            <p class="wf-sub">Use the passkey or security key registered to this account.</p>
+            <button mat-raised-button color="primary" type="button" class="wf-submit"
+                    [disabled]="loading() || !webauthnAvailable()"
+                    (click)="verifyWithPasskey()">
+              {{ loading() ? 'Waiting for authenticator…' : 'Continue with passkey' }}
+            </button>
+            <p class="wf-error" *ngIf="!webauthnAvailable()">
+              This browser cannot use passkeys. Use a backup code instead.
+            </p>
+          </ng-container>
+
+          <mat-form-field appearance="outline" class="wf-field" *ngIf="mode() === 'totp'">
             <mat-label>Authenticator code</mat-label>
             <input matInput [(ngModel)]="otp" name="otp" maxlength="6" inputmode="numeric"
                    autocomplete="one-time-code" required autofocus>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="wf-field" *ngIf="useBackup()">
+          <mat-form-field appearance="outline" class="wf-field" *ngIf="mode() === 'backup'">
             <mat-label>Backup code</mat-label>
             <input matInput [(ngModel)]="backupCode" name="backupCode" required autofocus>
           </mat-form-field>
 
           <p class="wf-error" *ngIf="error()">{{ error() }}</p>
 
-          <button mat-raised-button color="primary" type="submit" [disabled]="loading()" class="wf-submit">
+          <button mat-raised-button color="primary" type="submit" class="wf-submit"
+                  *ngIf="mode() !== 'passkey'" [disabled]="loading()">
             {{ loading() ? 'Verifying…' : 'Verify' }}
           </button>
 
           <div class="wf-alt">
-            <button mat-button type="button" (click)="toggleBackup()">
-              {{ useBackup() ? 'Use authenticator code' : 'Use a backup code instead' }}
-            </button>
+            <button mat-button type="button" *ngIf="mode() !== 'passkey' && hasPasskey()"
+                    (click)="setMode('passkey')">Use a passkey</button>
+            <button mat-button type="button" *ngIf="mode() !== 'totp' && hasAuthenticator()"
+                    (click)="setMode('totp')">Use authenticator code</button>
+            <button mat-button type="button" *ngIf="mode() !== 'backup'"
+                    (click)="setMode('backup')">Use a backup code instead</button>
             <button mat-button type="button" (click)="reset()">Cancel</button>
           </div>
         </form>
@@ -216,7 +237,9 @@ export class LoginComponent implements OnInit {
   step = signal<Step>('credentials');
   loading = signal(false);
   error = signal<string | null>(null);
-  useBackup = signal(false);
+  /** Which factor the user is presenting: passkey, authenticator code, or a backup code. */
+  mode = signal<'passkey' | 'totp' | 'backup'>('totp');
+  webauthnAvailable = signal<boolean>(false);
 
   private challengeToken: string | null = null;
   private factors: MfaFactorType[] = [];
@@ -260,12 +283,15 @@ export class LoginComponent implements OnInit {
   });
 
   constructor(private authService: AuthService,
+              private mfa: MfaService,
+              private ceremony: WebAuthnCeremony,
               public branding: TenantBrandingService,
               private router: Router,
               private route: ActivatedRoute,
               private externalNav: ExternalNavigator) {}
 
   ngOnInit(): void {
+    this.webauthnAvailable.set(this.ceremony.available());
     const slug = this.branding.slugFromHost();
     if (slug) {
       this.branding.load(slug).subscribe();
@@ -294,6 +320,8 @@ export class LoginComponent implements OnInit {
         if (res.mfaRequired) {
           this.challengeToken = res.mfaChallengeToken ?? null;
           this.factors = res.availableFactors ?? [];
+          // Lead with the strongest factor the account actually has.
+          this.mode.set(this.hasPasskey() ? 'passkey' : (this.hasAuthenticator() ? 'totp' : 'backup'));
           this.step.set('mfa');
           this.loading.set(false);
         } else if (res.token) {
@@ -317,7 +345,7 @@ export class LoginComponent implements OnInit {
       challengeToken: this.challengeToken,
       type: 'TOTP' as MfaFactorType,
     };
-    if (this.useBackup()) body.backupCode = this.backupCode;
+    if (this.mode() === 'backup') body.backupCode = this.backupCode;
     else body.code = this.otp;
 
     this.authService.verifyMfa(body).pipe(
@@ -333,11 +361,55 @@ export class LoginComponent implements OnInit {
     ).subscribe();
   }
 
-  toggleBackup() {
-    this.useBackup.update(v => !v);
+  hasPasskey(): boolean {
+    return this.factors.includes('WEBAUTHN' as MfaFactorType);
+  }
+
+  hasAuthenticator(): boolean {
+    return this.factors.some(f => f === ('TOTP' as MfaFactorType) || f === ('SMS' as MfaFactorType));
+  }
+
+  setMode(mode: 'passkey' | 'totp' | 'backup') {
+    this.mode.set(mode);
     this.otp = '';
     this.backupCode = '';
     this.error.set(null);
+  }
+
+  /**
+   * The assertion half of WebAuthn, mid-login: the challenge token stands in
+   * for the session the user does not have yet. Mirrors the enrolment ceremony
+   * in the Security page, and hands the signed assertion to the same
+   * /mfa/verify endpoint the code factors use.
+   */
+  async verifyWithPasskey() {
+    if (!this.challengeToken) { this.reset(); return; }
+    if (!this.webauthnAvailable()) {
+      this.error.set('This browser cannot use passkeys. Use a backup code instead.');
+      return;
+    }
+    this.error.set(null);
+    this.loading.set(true);
+    try {
+      const started = await firstValueFrom(this.mfa.startWebauthnAssertion(this.challengeToken));
+      const options = JSON.parse(started.publicKey);
+      // The Yubico library serialises under { publicKey: {...} }; tolerate flat too.
+      const credential = await this.ceremony.get(options.publicKey ? options : { publicKey: options });
+      const res = await firstValueFrom(this.authService.verifyMfa({
+        challengeToken: this.challengeToken,
+        type: 'WEBAUTHN' as MfaFactorType,
+        webauthnResponse: JSON.stringify(credential),
+      }));
+      if (res.token) { this.goToApp(); return; }
+      this.error.set('That passkey was not accepted. Try again, or use a backup code.');
+    } catch (e: any) {
+      // The browser raises NotAllowedError when the user dismisses the prompt.
+      this.error.set(e?.name === 'NotAllowedError'
+        ? 'Cancelled. Try again, or use a backup code.'
+        : apiErrorMessage(e, 'Passkey verification failed. Try again, or use a backup code.'));
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   reset() {
@@ -346,7 +418,7 @@ export class LoginComponent implements OnInit {
     this.factors = [];
     this.otp = '';
     this.backupCode = '';
-    this.useBackup.set(false);
+    this.mode.set('totp');
     this.password = '';
     this.loading.set(false);
     this.error.set(null);

@@ -9,7 +9,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { create as webauthnCreate, supported as webauthnSupported } from '@github/webauthn-json';
+import { WebAuthnCeremony } from '../../core/webauthn-ceremony';
 import { MfaFactor, MfaService, TotpEnrollResponse } from '../../core/services/mfa.service';
 import { apiErrorMessage } from '../../core/api-error';
 import { PasswordToggleComponent } from '../../shared/password-toggle/password-toggle.component';
@@ -326,14 +326,19 @@ export class SecurityComponent implements OnInit {
   activateError = signal<string | null>(null);
 
   webauthnBusy = signal(false);
-  webauthnAvailable = signal<boolean>(typeof window !== 'undefined' && webauthnSupported());
+  webauthnAvailable = signal<boolean>(false);
 
   otp = '';
   resetPassword = '';
 
-  constructor(private mfa: MfaService, private snack: MatSnackBar) {}
+  constructor(private mfa: MfaService,
+              private ceremony: WebAuthnCeremony,
+              private snack: MatSnackBar) {}
 
-  ngOnInit() { this.refresh(); }
+  ngOnInit() {
+    this.webauthnAvailable.set(this.ceremony.available());
+    this.refresh();
+  }
 
   refresh() {
     this.mfa.listFactors().subscribe({
@@ -373,14 +378,38 @@ export class SecurityComponent implements OnInit {
         this.ok('Authenticator activated');
         this.cancelTotp();
         this.refresh();
-        // Offer to generate backup codes right after activation if none exist.
-        if (this.backupRemaining() === 0) {
-          this.snack.open('Tip: generate backup codes in case you lose your device.', 'OK', { duration: 6000 });
-        }
+        this.ensureBackupCodes();
       },
       error: () => {
         this.activateError.set('Incorrect code — try again');
       },
+    });
+  }
+
+  /**
+   * Issue recovery codes the moment a first factor is enrolled.
+   *
+   * A tip saying "you could generate backup codes" is not a safety net: on
+   * 2026-09-13 an operator enrolled a passkey as their only factor, had no
+   * codes, and was locked out of the account. Codes are generated here and
+   * shown once, in the same place the Regenerate button shows them.
+   */
+  private ensureBackupCodes() {
+    this.mfa.backupCodeStatus().subscribe({
+      next: status => {
+        if (status.remaining > 0) return;
+        this.mfa.regenerateBackupCodes().subscribe({
+          next: res => {
+            this.freshBackupCodes.set(res.codes);
+            this.backupRemaining.set(res.codes.length);
+            this.snack.open(
+              'Recovery codes generated — save them now. They are your way in if you lose this factor.',
+              'OK', { duration: 10000 });
+          },
+          error: e => this.err('Could not generate recovery codes — do it from Backup codes below', e),
+        });
+      },
+      error: () => { /* status is best-effort; the Regenerate button remains */ },
     });
   }
 
@@ -428,12 +457,13 @@ export class SecurityComponent implements OnInit {
           // when calling toCredentialsCreateJson(); the helper expects that
           // shape, but tolerates a flat options object too.
           const wrapped = options.publicKey ? options : { publicKey: options };
-          const credential = await webauthnCreate(wrapped);
+          const credential = await this.ceremony.create(wrapped);
           this.mfa.finishWebauthnRegistration(ceremonyKey, JSON.stringify(credential), label).subscribe({
             next: () => {
               this.ok('Security key added');
               this.webauthnBusy.set(false);
               this.refresh();
+              this.ensureBackupCodes();
             },
             error: e => {
               this.webauthnBusy.set(false);

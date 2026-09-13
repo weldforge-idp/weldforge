@@ -48,6 +48,15 @@ export class MfaService {
       `${this.url}/backup-codes/regenerate`, {});
   }
 
+  /**
+   * Start a WebAuthn assertion while mid-login. Anonymous by design: the
+   * caller holds an MFA challenge token, not a session.
+   */
+  startWebauthnAssertion(challengeToken: string): Observable<{ publicKey: string }> {
+    return this.http.post<{ publicKey: string }>(
+      `${this.url}/webauthn/assertion/start`, { challengeToken });
+  }
+
   backupCodeStatus(): Observable<{ remaining: number }> {
     return this.http.get<{ remaining: number }>(`${this.url}/backup-codes`);
   }
