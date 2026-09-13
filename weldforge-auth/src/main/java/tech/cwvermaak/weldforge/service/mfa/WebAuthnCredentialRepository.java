@@ -36,9 +36,32 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
     private final MfaFactorRepository mfaFactorRepository;
     private final UserRepository userRepository;
 
+    /**
+     * The user a WebAuthn username refers to — <b>within the request's
+     * tenant</b>.
+     *
+     * <p>A username is unique per tenant, not globally: the same person holds a
+     * separate row in every tenant they belong to. Resolving with
+     * {@code findFirstByEmailIgnoreCase} picked whichever row came first, so a
+     * passkey enrolled in one tenant was checked against another tenant's user
+     * id and every assertion was refused with "user handle ... does not match
+     * username" (production, 2026-09-13). It also meant the allowCredentials
+     * list belonged to the wrong account.
+     *
+     * <p>Falls back to the global lookup only when there is no tenant in scope,
+     * which is not the case on any real ceremony.
+     */
+    private Optional<User> resolve(String username) {
+        String slug = tech.cwvermaak.weldforge.config.tenant.TenantContext.get();
+        if (slug != null && !slug.isBlank()) {
+            return userRepository.findByTenant_SlugAndEmailIgnoreCase(slug, username);
+        }
+        return userRepository.findFirstByEmailIgnoreCase(username);
+    }
+
     @Override
     public Set<PublicKeyCredentialDescriptor> getCredentialIdsForUsername(String username) {
-        return userRepository.findFirstByEmailIgnoreCase(username)
+        return resolve(username)
                 .map(u -> mfaFactorRepository.findByUserIdAndType(u.getId(), MfaFactorType.WEBAUTHN).stream()
                         .filter(f -> Boolean.TRUE.equals(f.getEnabled())
                                   && Boolean.TRUE.equals(f.getVerified()))
@@ -51,7 +74,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
 
     @Override
     public Optional<ByteArray> getUserHandleForUsername(String username) {
-        return userRepository.findFirstByEmailIgnoreCase(username)
+        return resolve(username)
                 .map(u -> userHandle(u.getId()));
     }
 
