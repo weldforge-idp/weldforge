@@ -24,7 +24,7 @@ import { PasswordToggleComponent } from '../../shared/password-toggle/password-t
     <app-auth-shell headline="Set a new password"
                     subline="Enter and confirm your new password.">
       <form *ngIf="!done()" (ngSubmit)="submit()" class="wf-form">
-        <mat-form-field appearance="outline" class="wf-field">
+        <mat-form-field appearance="outline" class="wf-field" subscriptSizing="dynamic">
           <mat-label>New password</mat-label>
           <input matInput #pw [(ngModel)]="newPassword" name="newPassword" required type="password" autocomplete="new-password">
           <wf-password-toggle matIconSuffix [for]="pw" />

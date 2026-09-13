@@ -36,7 +36,7 @@ import { PasswordToggleComponent } from '../../shared/password-toggle/password-t
           <input matInput [(ngModel)]="email" name="email" required type="email" autocomplete="email">
         </mat-form-field>
 
-        <mat-form-field appearance="outline" class="wf-field">
+        <mat-form-field appearance="outline" class="wf-field" subscriptSizing="dynamic">
           <mat-label>Password</mat-label>
           <input matInput #pw [(ngModel)]="password" name="password" required type="password" autocomplete="new-password">
           <wf-password-toggle matIconSuffix [for]="pw" />
