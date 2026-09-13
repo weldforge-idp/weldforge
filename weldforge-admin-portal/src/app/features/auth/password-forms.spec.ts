@@ -9,6 +9,8 @@ import { ResetPasswordComponent } from './reset-password.component';
 import { AuthService } from '../../core/services/auth.service';
 import { TenantBrandingService } from '../../core/services/tenant-branding.service';
 import { ExternalNavigator } from '../../core/external-navigator';
+import { MatFormField } from '@angular/material/form-field';
+import { By } from '@angular/platform-browser';
 
 /**
  * The two forms where a user chooses a password (CONF-7.1, CONF-7.3).
@@ -123,5 +125,64 @@ describe('ResetPasswordComponent — password policy', () => {
     fixture.componentInstance.submit();
 
     expect(fixture.componentInstance.error()).toBe('Could not reset your password. The link may be expired.');
+  });
+});
+
+/**
+ * 2026-09-13: the hint wraps to two lines, but a form field reserves a fixed
+ * one-line subscript area by default, so the second line was drawn on top of
+ * whatever came next -- the confirm-password field on the reset form, and the
+ * "Email already in use" error on the register form. `subscriptSizing:
+ * dynamic` lets the area grow instead.
+ */
+function hintedFieldIsDynamic(fixture: { debugElement: { queryAll(p: unknown): { componentInstance: MatFormField }[] } }) {
+  const hinted = fixture.debugElement
+    .queryAll(By.directive(MatFormField))
+    .map(d => d.componentInstance)
+    .filter(f => (f._hintChildren?.length ?? 0) > 0 || true);
+  return hinted;
+}
+
+describe('password hints do not overlap the fields below them', () => {
+  it('register: the password field grows its subscript area', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [RegisterComponent],
+      providers: [
+        { provide: AuthService, useValue: { register: vi.fn() } },
+        { provide: TenantBrandingService, useValue: brandingStub() },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: ExternalNavigator, useValue: { go: vi.fn() } },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams: {} } } },
+      ],
+    });
+    const fixture = TestBed.createComponent(RegisterComponent);
+    fixture.detectChanges();
+
+    const fields = fixture.debugElement.queryAll(By.directive(MatFormField));
+    const withHint = fields.filter(f => (f.nativeElement as HTMLElement).textContent?.includes(HINT));
+    expect(withHint.length).toBe(1);
+    expect((withHint[0].componentInstance as MatFormField).subscriptSizing).toBe('dynamic');
+  });
+
+  it('reset: the new-password field grows its subscript area', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ResetPasswordComponent],
+      providers: [
+        { provide: AuthService, useValue: { resetPassword: vi.fn() } },
+        { provide: TenantBrandingService, useValue: brandingStub() },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: ExternalNavigator, useValue: { go: vi.fn() } },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ token: 't' }), queryParams: { token: 't' } } } },
+      ],
+    });
+    const fixture = TestBed.createComponent(ResetPasswordComponent);
+    fixture.detectChanges();
+
+    const fields = fixture.debugElement.queryAll(By.directive(MatFormField));
+    const withHint = fields.filter(f => (f.nativeElement as HTMLElement).textContent?.includes(HINT));
+    expect(withHint.length).toBe(1);
+    expect((withHint[0].componentInstance as MatFormField).subscriptSizing).toBe('dynamic');
   });
 });

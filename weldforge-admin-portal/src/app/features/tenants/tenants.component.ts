@@ -378,6 +378,37 @@ interface TenantRow extends Tenant {
               <h4>OIDC relying parties <span class="mono tenant-tag">{{ t.slug }}</span></h4>
               <p class="sub">Apps that authenticate <em>via</em> WeldForge as their OpenID Connect identity provider. Each client gets its own secret and may register multiple redirect URIs. Everything here is read from and written to <code>{{ t.slug }}</code>, whatever the "Acting as tenant" picker says.</p>
 
+              <!-- Issued credentials. A browser alert was the wrong place for a
+                   secret: it cannot be selected reliably, it is dismissed by a
+                   stray Enter, and it blocks the page. This panel stays until
+                   it is dismissed, and offers the copy the operator actually
+                   needs. -->
+              <div *ngIf="issuedFor(t) as issued" class="wf-secret-panel">
+                <div class="wf-secret-head">
+                  <h5>{{ issued.secret ? 'Client secret — shown once' : 'Public client created' }}</h5>
+                  <button mat-icon-button (click)="dismissIssued()" aria-label="Dismiss" title="Dismiss">
+                    <mat-icon>close</mat-icon>
+                  </button>
+                </div>
+                <p class="sub">{{ issued.note }}</p>
+                <div class="wf-secret-row">
+                  <span class="wf-secret-label">client_id</span>
+                  <code class="mono wf-secret-value">{{ issued.clientId }}</code>
+                  <button mat-stroked-button (click)="copy(issued.clientId)">Copy</button>
+                </div>
+                <div class="wf-secret-row" *ngIf="issued.secret">
+                  <span class="wf-secret-label">client_secret</span>
+                  <code class="mono wf-secret-value">{{ secretVisible() ? issued.secret : '•••••••••••••••••••••••••••••••' }}</code>
+                  <button mat-icon-button (click)="secretVisible.set(!secretVisible())"
+                          [attr.aria-label]="secretVisible() ? 'Hide secret' : 'Show secret'"
+                          [attr.aria-pressed]="secretVisible()"
+                          [title]="secretVisible() ? 'Hide secret' : 'Show secret'">
+                    <mat-icon>{{ secretVisible() ? 'visibility_off' : 'visibility' }}</mat-icon>
+                  </button>
+                  <button mat-flat-button color="primary" (click)="copy(issued.secret!)">Copy secret</button>
+                </div>
+              </div>
+
               <table *ngIf="oidcClientsFor(t).length" class="wf-table">
                 <thead>
                   <tr><th>client_id</th><th>Name</th><th>Type</th><th>Redirect URIs</th><th>Scopes</th><th>Grants</th><th>PKCE</th><th></th></tr>
@@ -940,6 +971,15 @@ export class TenantsComponent implements OnInit {
   newOidcRequirePkce = true;
   newOidcRequireMfa = false;
   newOidcMaxAge = 0;
+  /**
+   * The credentials just issued for a client, and the row they belong to.
+   * Held until dismissed: a secret is shown exactly once, so it must not
+   * depend on the operator reading a modal before it goes.
+   */
+  issuedCredentials = signal<{ tenantId: number; clientId: string; secret: string | null; note: string } | null>(null);
+  /** Masked by default, so a screen-share or a screenshot does not carry it. */
+  secretVisible = signal(false);
+
   /** Blank lets the server generate `wf_client_…`; apps usually want a readable id. */
   newOidcClientId = '';
   /** SPA / native app: PKCE only, no secret. */
@@ -971,6 +1011,21 @@ export class TenantsComponent implements OnInit {
       }))),
       error: err => this.err('Failed to load tenants', err),
     });
+  }
+
+  issuedFor(t: TenantRow) {
+    const issued = this.issuedCredentials();
+    return issued && issued.tenantId === t.id ? issued : null;
+  }
+
+  private showIssued(t: TenantRow, clientId: string, secret: string | null, note: string) {
+    this.secretVisible.set(false);
+    this.issuedCredentials.set({ tenantId: t.id, clientId, secret, note });
+  }
+
+  dismissIssued() {
+    this.issuedCredentials.set(null);
+    this.secretVisible.set(false);
   }
 
   oidcClientsFor(t: TenantRow): OidcClient[] {
@@ -1376,25 +1431,12 @@ export class TenantsComponent implements OnInit {
         this.newOidcRedirects = '';
         this.newOidcRequireMfa = false;
         this.newOidcMaxAge = 0;
-        // Show the secret in a modal-style alert so the admin captures it once.
-        const message = created.clientSecret
-          ? `OIDC client created in ${t.slug}.
-
-`
-            + `client_id:     ${created.clientId}
-`
-            + `client_secret: ${created.clientSecret}
-
-`
-            + `Save the secret now — it will not be shown again.`
-          : `Public OIDC client created in ${t.slug}.
-
-`
-            + `client_id: ${created.clientId}
-
-`
-            + `No secret was issued; the app must use PKCE.`;
-        window.alert(message);
+        // Shown in the page, not an alert: a secret that appears once must be
+        // selectable and must survive a stray keypress.
+        this.showIssued(t, created.clientId, created.clientSecret ?? null,
+            created.clientSecret
+                ? `Created in ${t.slug}. This is the only time the secret is shown — store it now.`
+                : `Created in ${t.slug}. No secret is issued to a public client; it authenticates with PKCE.`);
       },
       error: err => this.err('Create failed', err),
     });
@@ -1405,12 +1447,9 @@ export class TenantsComponent implements OnInit {
     if (!confirm(`Rotate the secret for ${c.clientId} in ${t.slug}? Existing integrations will stop working until updated.`)) return;
     this.oidcApi.rotateSecret(c.id, t.slug).subscribe({
       next: rotated => {
-        const message = `New client_secret for ${c.clientId}:
-
-${rotated.clientSecret}
-
-Save it now.`;
-        window.alert(message);
+        this.showIssued(t, c.clientId, rotated.clientSecret ?? null,
+            `Rotated in ${t.slug}. The previous secret stopped working immediately — `
+            + `update every deployment that uses it.`);
       },
       error: err => this.err('Rotate failed', err),
     });

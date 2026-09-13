@@ -30,6 +30,7 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
   const rowB: Tenant = { id: 9, slug: 'cwvermaak-tech', name: 'CW Vermaak Tech', enabled: true };
 
   let ctl: HttpTestingController;
+  let fixture: import('@angular/core/testing').ComponentFixture<TenantsComponent>;
   let snack: { open: ReturnType<typeof vi.fn> };
   let picked: string | null;
 
@@ -48,6 +49,10 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     newOidcRedirects: string;
     newOidcPublic: boolean;
     samlIdpDraft: { entityId: string; acsUrl: string };
+    issuedCredentials(): { tenantId: number; clientId: string; secret: string | null; note: string } | null;
+    issuedFor(t: Row): { clientId: string; secret: string | null; note: string } | null;
+    secretVisible: { (): boolean; set(v: boolean): void };
+    dismissIssued(): void;
   };
 
   function create(): Exposed {
@@ -75,7 +80,8 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     });
     TestBed.overrideProvider(MatSnackBar, { useValue: snack });
     ctl = TestBed.inject(HttpTestingController);
-    const c = TestBed.createComponent(TenantsComponent).componentInstance as unknown as Exposed;
+    fixture = TestBed.createComponent(TenantsComponent);
+    const c = fixture.componentInstance as unknown as Exposed;
     c.ngOnInit();
     return c;
   }
@@ -141,8 +147,15 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
 
     expect(c.oidcClientsFor(b).map(x => x.clientId)).toEqual(['keycrypt']);
     expect(c.oidcClientsFor(row(c, 'default'))).toEqual([]);
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('created in cwvermaak-tech'));
-    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('s3cret'));
+    // The secret is revealed in the page, on this row, and never in an alert.
+    expect(window.alert).not.toHaveBeenCalled();
+    const issued = c.issuedFor(b)!;
+    expect(issued.clientId).toBe('keycrypt');
+    expect(issued.secret).toBe('s3cret');
+    expect(issued.note).toContain('only time the secret is shown');
+    expect(c.issuedFor(row(c, 'default'))).toBeNull();
+    // Masked until asked for, so a screen-share does not carry it.
+    expect(c.secretVisible()).toBe(false);
   });
 
   it('a public client is sent as public, with PKCE forced on, and no secret is shown', () => {
@@ -159,9 +172,11 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     expect(req.request.body.requirePkce).toBe(true);
     req.flush({ id: 13, clientId: 'wf_client_x', publicClient: true }, acting('cwvermaak-tech'));
 
-    const shown = (window.alert as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(shown).toContain('No secret was issued');
-    expect(shown).not.toContain('undefined');
+    const issued = c.issuedFor(b)!;
+    expect(issued.secret).toBeNull();
+    expect(issued.note).toContain('No secret is issued to a public client');
+    expect(issued.note).not.toContain('undefined');
+    expect(window.alert).not.toHaveBeenCalled();
   });
 
   it('a create answered from another tenant is an error, and nothing is added to the row', () => {
@@ -177,6 +192,7 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
 
     expect(c.oidcClientsFor(b)).toEqual([]);
     expect(window.alert).not.toHaveBeenCalled();
+    expect(c.issuedCredentials()).toBeNull();
     expect(snack.open).toHaveBeenCalledWith(expect.stringContaining("ran in tenant 'default'"), expect.anything(), expect.anything());
   });
 
@@ -189,6 +205,10 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     const rotate = ctl.expectOne(`${OIDC}/11/rotate-secret`);
     expect(rotate.request.headers.get('X-WF-Tenant')).toBe('cwvermaak-tech');
     rotate.flush({ id: 11, clientId: 'keycrypt', clientSecret: 'new' }, acting('cwvermaak-tech'));
+    expect(c.issuedFor(b)!.secret).toBe('new');
+    expect(c.issuedFor(b)!.note).toContain('previous secret stopped working');
+    c.dismissIssued();
+    expect(c.issuedCredentials()).toBeNull();
 
     c.removeOidcClient(b, { id: 11, clientId: 'keycrypt' });
     const del = ctl.expectOne(`${OIDC}/11`);
@@ -197,6 +217,33 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     del.flush(null, acting('cwvermaak-tech'));
 
     expect(c.oidcClientsFor(b)).toEqual([]);
+  });
+
+  it('renders the secret in the page, masked until asked for', () => {
+    const c = create();
+    const b = row(c, 'cwvermaak-tech');
+    expand(c, b);
+    c.newOidcRedirects = 'https://x.example/cb';
+    c.createOidcClient(b);
+    ctl.expectOne(r => r.url === OIDC && r.method === 'POST')
+      .flush({ id: 20, clientId: 'keycrypt', clientSecret: 'wfs_top_secret_value' }, acting('cwvermaak-tech'));
+    fixture.detectChanges();
+
+    const panel = fixture.nativeElement.querySelector('.wf-secret-panel') as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(panel.textContent).toContain('keycrypt');
+    // Masked by default -- the value is present in the DOM only once revealed.
+    expect(panel.textContent).not.toContain('wfs_top_secret_value');
+    expect(panel.textContent).toContain('•');
+
+    c.secretVisible.set(true);
+    fixture.detectChanges();
+    expect((fixture.nativeElement.querySelector('.wf-secret-panel') as HTMLElement).textContent)
+      .toContain('wfs_top_secret_value');
+
+    c.dismissIssued();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.wf-secret-panel')).toBeNull();
   });
 
   it("registers a SAML SP in the row's tenant", () => {
