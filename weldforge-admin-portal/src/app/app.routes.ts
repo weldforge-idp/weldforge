@@ -12,6 +12,7 @@ import { ResetPasswordComponent } from './features/auth/reset-password.component
 import { RegisterComponent } from './features/auth/register.component';
 import { VerifyEmailComponent } from './features/auth/verify-email.component';
 import { authGuard } from './core/guards/auth.guard';
+import { adminGuard } from './core/guards/admin.guard';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -19,13 +20,14 @@ export const routes: Routes = [
   { path: 'reset-password', component: ResetPasswordComponent },
   { path: 'register', component: RegisterComponent },
   { path: 'verify-email', component: VerifyEmailComponent },
-  { path: 'tenants', component: TenantsComponent, canActivate: [authGuard] },
-  { path: 'users', component: UsersComponent, canActivate: [authGuard] },
-  { path: 'roles', component: RolesComponent, canActivate: [authGuard] },
+  { path: 'tenants', component: TenantsComponent, canActivate: [authGuard, adminGuard] },
+  { path: 'users', component: UsersComponent, canActivate: [authGuard, adminGuard] },
+  { path: 'roles', component: RolesComponent, canActivate: [authGuard, adminGuard] },
   { path: 'security', component: SecurityComponent, canActivate: [authGuard] },
-  { path: 'audit', component: AuditComponent, canActivate: [authGuard] },
-  { path: 'group-role-mappings', component: GroupRoleMappingsComponent, canActivate: [authGuard] },
-  { path: 'service-accounts', component: ServiceAccountsComponent, canActivate: [authGuard] },
+  { path: 'audit', component: AuditComponent, canActivate: [authGuard, adminGuard] },
+  { path: 'group-role-mappings', component: GroupRoleMappingsComponent, canActivate: [authGuard, adminGuard] },
+  { path: 'service-accounts', component: ServiceAccountsComponent, canActivate: [authGuard, adminGuard] },
+  // Both land on an admin page; adminGuard redirects a non-admin to /security.
   { path: '', redirectTo: 'tenants', pathMatch: 'full' },
   { path: '**', redirectTo: 'tenants' }
 ];

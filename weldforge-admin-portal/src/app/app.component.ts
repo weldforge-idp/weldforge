@@ -17,12 +17,16 @@ import { AuthService } from './core/services/auth.service';
       <span class="wf-tagline mono">federated identity platform</span>
       <span class="spacer"></span>
       <nav class="wf-nav" *ngIf="authService.isLoggedIn() && !isAuthRoute()">
-        <a mat-button routerLink="/tenants" routerLinkActive="active">Tenants</a>
-        <a mat-button routerLink="/users" routerLinkActive="active">Users</a>
-        <a mat-button routerLink="/roles" routerLinkActive="active">Roles</a>
-        <a mat-button routerLink="/group-role-mappings" routerLinkActive="active">Group Roles</a>
-        <a mat-button routerLink="/service-accounts" routerLinkActive="active">Service Accounts</a>
-        <a mat-button routerLink="/audit" routerLinkActive="active">Audit</a>
+        <ng-container *ngIf="authService.hasAdminAccess()">
+          <a mat-button routerLink="/tenants" routerLinkActive="active">Tenants</a>
+          <a mat-button routerLink="/users" routerLinkActive="active">Users</a>
+          <a mat-button routerLink="/roles" routerLinkActive="active">Roles</a>
+          <a mat-button routerLink="/group-role-mappings" routerLinkActive="active">Group Roles</a>
+          <a mat-button routerLink="/service-accounts" routerLinkActive="active">Service Accounts</a>
+          <a mat-button routerLink="/audit" routerLinkActive="active">Audit</a>
+        </ng-container>
+        <!-- Security is every signed-in account's own page: factors, backup
+             codes, MFA reset. It is the only nav entry a non-admin sees. -->
         <a mat-button routerLink="/security" routerLinkActive="active">Security</a>
         <button mat-stroked-button class="wf-logout" (click)="logout()">Logout</button>
       </nav>

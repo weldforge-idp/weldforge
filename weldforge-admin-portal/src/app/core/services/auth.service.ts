@@ -137,6 +137,21 @@ export class AuthService {
     }
   }
 
+  /**
+   * True when this session may use the admin surface at all.
+   *
+   * `READ_ONLY` counts: it can look, which is what the admin pages are for.
+   * `NONE` does not, and such a session gets only its own Security page --
+   * before 2026-09-13 it saw the whole admin nav and learned it had no access
+   * from an "Access denied" toast on every page it opened.
+   */
+  hasAdminAccess(): boolean {
+    const c = this.getJwtClaims();
+    if (!c) return false;
+    if (c.sa === true) return true;
+    return c.adm != null && c.adm !== 'NONE';
+  }
+
   /** True when the JWT carries `sa: true` or `adm: SUPER_ADMIN`. */
   isSuperAdmin(): boolean {
     const c = this.getJwtClaims();
