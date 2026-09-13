@@ -78,10 +78,21 @@ class WebAuthnAssertionStartIntegrationTest {
 
     /** A user with an enrolled passkey, so login demands a second factor. */
     private User passkeyUser() {
+        return passkeyUser(null);
+    }
+
+    /**
+     * @param duplicateEmail when set, an account with this email already exists
+     *                       in another tenant and holds a LOWER id -- the
+     *                       production shape, where the global lookup found it
+     *                       first.
+     */
+    private User passkeyUser(String duplicateEmail) {
         Tenant home = tenants.findBySlug("default").orElseThrow();
         String tag = UUID.randomUUID().toString().substring(0, 8);
+        String email = duplicateEmail != null ? duplicateEmail : "pk-" + tag + "@test.example";
         User u = users.save(User.builder()
-                .tenant(home).username("pk-" + tag).email("pk-" + tag + "@test.example")
+                .tenant(home).username("pk-" + tag).email(email)
                 .password(passwordEncoder.encode(PASSWORD))
                 .provider(AuthProvider.LOCAL).providerId("pk-" + tag).active(true)
                 .build());
@@ -96,6 +107,17 @@ class WebAuthnAssertionStartIntegrationTest {
                 .signatureCount(0L).enabled(true).verified(true).uvRequired(true)
                 .build());
         return u;
+    }
+
+    /** The same person in another tenant, created FIRST so it holds the lower id. */
+    private User sameEmailInAnotherTenantFirst(String email) {
+        String slug = "other-" + UUID.randomUUID().toString().substring(0, 8);
+        Tenant other = tenants.save(Tenant.builder().slug(slug).name(slug).displayName(slug).build());
+        return users.save(User.builder()
+                .tenant(other).username("dup-" + slug).email(email)
+                .password(passwordEncoder.encode(PASSWORD))
+                .provider(AuthProvider.LOCAL).providerId("dup-" + slug).active(true)
+                .build());
     }
 
     private String challengeTokenFor(User u) throws Exception {
@@ -167,5 +189,32 @@ class WebAuthnAssertionStartIntegrationTest {
                     .as("attempt %d: %s", i + 1, r.getResponse().getContentAsString())
                     .isEqualTo(200);
         }
+    }
+
+    @Test
+    @DisplayName("the same email in another tenant does not hijack the ceremony (production, 2026-09-13)")
+    void username_is_resolved_within_the_request_tenant() throws Exception {
+        // The production shape: the other tenant's row exists first and holds
+        // the lower id, so a global username lookup finds IT. The ceremony was
+        // then built for the wrong user id and every assertion was refused:
+        // "user handle ... does not match username".
+        String shared = "dup-" + UUID.randomUUID().toString().substring(0, 8) + "@test.example";
+        User elsewhere = sameEmailInAnotherTenantFirst(shared);
+        User withPasskey = passkeyUser(shared);
+        assertThat(elsewhere.getId()).isLessThan(withPasskey.getId());
+
+        String challengeToken = challengeTokenFor(withPasskey);
+        MvcResult r = mvc.perform(post("/api/auth/mfa/webauthn/assertion/start")
+                        .header("X-Tenant-Slug", "default")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"challengeToken\":\"" + challengeToken + "\"}"))
+                .andReturn();
+
+        assertThat(r.getResponse().getStatus()).isEqualTo(200);
+        // The options must offer THIS tenant's credential, not an empty list
+        // built from the other tenant's account.
+        String credentialId = factors.findByUserIdAndType(withPasskey.getId(), MfaFactorType.WEBAUTHN)
+                .get(0).getCredentialId();
+        assertThat(r.getResponse().getContentAsString()).contains(credentialId);
     }
 }
