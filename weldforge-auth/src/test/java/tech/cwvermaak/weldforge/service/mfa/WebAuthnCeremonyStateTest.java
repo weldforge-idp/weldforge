@@ -64,9 +64,10 @@ class WebAuthnCeremonyStateTest {
     }
 
     private void stored(Long userId, WebAuthnCeremony.Type type, LocalDateTime expiresAt) {
-        when(ceremonyRepository.findById(TOKEN)).thenReturn(Optional.of(
+        when(ceremonyRepository.findById(WebAuthnService.ceremonyKey(TOKEN))).thenReturn(Optional.of(
                 WebAuthnCeremony.builder()
-                        .challengeToken(TOKEN)
+                        // Rows are keyed by a hash of the token, never the token itself.
+                        .challengeToken(WebAuthnService.ceremonyKey(TOKEN))
                         .userId(userId)
                         .ceremonyType(type)
                         .optionsJson("{\"options\":true}")
@@ -131,7 +132,7 @@ class WebAuthnCeremonyStateTest {
     @Test
     @DisplayName("An unknown token is refused without touching the database twice")
     void unknown_token_is_refused() {
-        when(ceremonyRepository.findById(TOKEN)).thenReturn(Optional.empty());
+        when(ceremonyRepository.findById(WebAuthnService.ceremonyKey(TOKEN))).thenReturn(Optional.empty());
 
         assertThat(consume(alice, WebAuthnCeremony.Type.REGISTRATION)).isNull();
         verify(ceremonyRepository, never()).delete(any(WebAuthnCeremony.class));
