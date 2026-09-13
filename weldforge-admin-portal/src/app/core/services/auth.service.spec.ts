@@ -100,4 +100,30 @@ describe('AuthService', () => {
       expect(localStorage.getItem('access_token')).toBeNull();
     });
   });
+
+  describe('hasAdminAccess', () => {
+    /** An unsigned JWT; the portal never verifies signatures. */
+    const token = (claims: Record<string, unknown>) => {
+      const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+      return `${b64({ alg: 'HS512' })}.${b64(claims)}.sig`;
+    };
+
+    it.each([
+      { claims: { adm: 'SUPER_ADMIN' }, expected: true },
+      { claims: { sa: true }, expected: true },
+      { claims: { adm: 'TENANT_ADMIN' }, expected: true },
+      { claims: { adm: 'READ_ONLY' }, expected: true },
+      { claims: { adm: 'NONE' }, expected: false },
+      { claims: { sa: false, adm: 'NONE' }, expected: false },
+      { claims: {}, expected: false },
+    ])('$claims -> $expected', ({ claims, expected }) => {
+      localStorage.setItem('access_token', token(claims));
+      expect(service.hasAdminAccess()).toBe(expected);
+    });
+
+    it('is false with no session at all', () => {
+      localStorage.clear();
+      expect(service.hasAdminAccess()).toBe(false);
+    });
+  });
 });
