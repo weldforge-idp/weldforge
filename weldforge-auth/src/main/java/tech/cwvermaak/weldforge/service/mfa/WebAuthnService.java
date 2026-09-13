@@ -255,10 +255,31 @@ public class WebAuthnService {
      * {@code RefreshTokenFamilyRevoker}. The transaction is declared on the
      * public entry points instead, where the proxy can see it.
      */
+    /**
+     * The row key for a ceremony: SHA-256 of the token the client holds.
+     *
+     * <p>Not the token itself, for two reasons. The assertion ceremony is keyed
+     * by the MFA challenge token, which is a JWT of several hundred characters
+     * and does not fit {@code challenge_token varchar(128)} -- every passkey
+     * SIGN-IN failed on that in production ("value too long"), while enrolment
+     * worked because its key is a short generated string. And the challenge
+     * token is a live credential: a hash is enough to find the row, so there is
+     * no reason to keep the original in the database.
+     */
+    static String ceremonyKey(String challengeToken) {   // package-private: the row key is part of the contract tests assert
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(challengeToken.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required by the JRE", e);
+        }
+    }
+
     private void persistCeremony(User user, String challengeToken,
                                  WebAuthnCeremony.Type type, String optionsJson) {
         ceremonyRepository.save(WebAuthnCeremony.builder()
-                .challengeToken(challengeToken)
+                .challengeToken(ceremonyKey(challengeToken))
                 .userId(user.getId())
                 .ceremonyType(type)
                 .optionsJson(optionsJson)
@@ -290,7 +311,7 @@ public class WebAuthnService {
                           java.util.function.Function<String, T> parser) {
         if (challengeToken == null || challengeToken.isBlank()) return null;
 
-        Optional<WebAuthnCeremony> found = ceremonyRepository.findById(challengeToken);
+        Optional<WebAuthnCeremony> found = ceremonyRepository.findById(ceremonyKey(challengeToken));
         if (found.isEmpty()) return null;
         WebAuthnCeremony row = found.get();
 
