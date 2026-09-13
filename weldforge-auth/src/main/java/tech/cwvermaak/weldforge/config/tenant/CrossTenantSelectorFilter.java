@@ -81,8 +81,24 @@ public class CrossTenantSelectorFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Nobody is signed in: say so, rather than answering a selector.
+        // /api/admin/** is authenticated-only, so letting the chain run gives
+        // the caller Spring Security's 401. Refusing here instead told an
+        // expired session that it lacked access to a tenant (403), which is
+        // both wrong and unactionable -- the admin portal retries on 401 and
+        // never on 403, so on 2026-09-13 an expired session with a tenant
+        // picked sat on a dead page instead of returning to the sign-in
+        // screen. An anonymous caller can reach no tenant either way.
+        if (!authenticated()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String explicit = normalized(request.getHeader(HEADER));
-        String legacy = authenticated() ? normalized(request.getHeader(LEGACY_HEADER)) : null;
+        // Authentication is guaranteed by the early return above, so the
+        // legacy header is safe to honour here: pre-auth it means something
+        // else entirely (which tenant a sign-in is for) and is never a selector.
+        String legacy = normalized(request.getHeader(LEGACY_HEADER));
         String homeSlug = TenantContext.get();
 
         if (explicit != null && legacy != null && !explicit.equals(legacy)) {
