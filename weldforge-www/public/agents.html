@@ -51,6 +51,8 @@
             <a class="btn ghost" href="#onboarding">Onboard a new tenant</a>
             <a class="btn ghost" href="#signup">New user sign-up</a>
             <a class="btn ghost" href="#auth-urls">End-user auth URLs</a>
+            <a class="btn ghost" href="#hosted-signup">Subscribe to hosted</a>
+            <a class="btn ghost" href="#mfa">MFA / passkeys</a>
         </div>
     </div>
 </section>
@@ -82,10 +84,13 @@ curl -sS https://sso.weldforge.org/t/leap/oauth2/jwks
 # 3. Per-tenant SAML IdP metadata — returns signed SAML 2.0 metadata XML.
 curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
         <p style="margin-top: 1rem;">
-            <strong>Note:</strong> the <code>/actuator/*</code> health probes are
-            cluster-internal and are <em>not</em> exposed through the public
-            ingress — a request to them falls through to the marketing SPA and
-            returns HTML, so don't use them as an external liveness check.
+            <strong>Note:</strong> the <code>/actuator/*</code> endpoints are
+            cluster-internal and deliberately <em>not</em> routed by the public
+            ingress — a request falls through to the admin portal SPA and
+            returns HTML, so they are useless as an external liveness check and
+            you should not scrape them. For a simple up/down signal use
+            <code>GET https://sso.weldforge.org/health</code>, which is public
+            and returns JSON.
         </p>
 
         <p style="margin-top: 1rem;">
@@ -120,9 +125,9 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
         <h3>Hosted platform</h3>
         <ul class="checklist">
             <li>API base: <code>https://sso.weldforge.org</code></li>
-            <li>Admin portal (Angular SPA): <code>https://admin.weldforge.org</code></li>
+            <li>Admin portal (Angular SPA): <code>https://sso.weldforge.org</code> — served from the same host as the API. <code>admin.weldforge.org</code> does not resolve; do not link it.</li>
             <li>Marketing / docs: <code>https://www.weldforge.org</code></li>
-            <li>Interactive API docs (Swagger UI): <code>https://sso.weldforge.org/swagger-ui/index.html</code> — <strong>gated</strong>, requires a valid <code>x-app-authorization</code> API key (per 2026-04 security audit, the OpenAPI spec is no longer anonymously reachable).</li>
+            <li>Interactive API docs (Swagger UI) and the OpenAPI spec: <strong>not routed on the public host</strong>. <code>/swagger-ui/index.html</code> and <code>/v3/api-docs</code> return the portal's HTML rather than a spec, because the ingress forwards only <code>/api</code>, <code>/t/</code>, <code>/saml2</code>, <code>/scim</code> and <code>/health</code> to the backend. Run the container yourself (<code>docker compose up</code>) and read them at <code>http://localhost:8076</code>. Build integrations from this page and <code>/llms.txt</code>, not from a fetched spec.</li>
             <li>OpenAPI spec (raw JSON): <code>https://sso.weldforge.org/v3/api-docs</code> — same gate.</li>
         </ul>
 
@@ -247,17 +252,16 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
             email-verification flow — for example, an integration agent
             like <strong>WriteBuddy</strong> or <strong>TechMetropolis</strong>
             assembling a deep link, or an email template you generate on
-            behalf of another product — construct the URL on the
-            <strong>apex host</strong> as shown below. Do not use a legacy
-            query parameter, and do not yet use per-tenant subdomains
-            (see "planned, not yet live" below).
+            behalf of another product — use a <strong>per-tenant
+            subdomain</strong> when you know the tenant slug, and the apex
+            host when you do not. Both are live. Do not use the legacy
+            query parameter.
         </p>
 
         <p>
-            The auth screens are served from the apex host today. The
-            <code>reset-password</code> and <code>verify-email</code> tokens
-            are tenant-scoped, so the apex host resolves the correct tenant
-            from the token. The legacy
+            The <code>reset-password</code> and <code>verify-email</code>
+            tokens are tenant-scoped, so the apex host resolves the correct
+            tenant from the token on its own. The legacy
             <code>?tenant=&lt;slug&gt;</code> query-param form has been
             <strong>removed</strong> — do not generate it.
         </p>
@@ -271,22 +275,34 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata</code></pre>
             <li>Verify email:    <code>https://sso.weldforge.org/verify-email?token={raw-token}</code></li>
         </ul>
 
-        <h3>Per-tenant subdomains — planned, not yet live</h3>
+        <h3>Per-tenant subdomains — live</h3>
         <p>
-            The target design gives each tenant its own subdomain
-            (<code>https://{slug}.sso.weldforge.org/login</code> and the
-            same five paths) so browser-built-in password managers (which
-            match on <code>scheme + host</code> and ignore both path and
-            query) treat each tenant as a distinct site. This needs
-            wildcard DNS + TLS that is <strong>not yet provisioned in
-            production</strong>: <code>{slug}.sso.weldforge.org</code>
-            currently returns NXDOMAIN and the apex certificate covers
-            <code>sso.weldforge.org</code> only.
-            <strong>Until it ships, do not generate subdomain auth URLs —
-            use the apex host above.</strong>
+            Each tenant has its own subdomain
+            (<code>https://{slug}.sso.weldforge.org/login</code> and the same
+            five paths), so browser password managers — which match on
+            <code>scheme + host</code> and ignore both path and query — treat
+            each tenant as a distinct site. Wildcard DNS and a wildcard TLS
+            certificate are provisioned, so these resolve and present a valid
+            certificate. Verify it yourself:
+        </p>
+        <pre><code>curl -sSI https://leap.sso.weldforge.org/login</code></pre>
+        <p>
+            <strong>Prefer the subdomain form when you know the slug.</strong>
+            An earlier version of this page told agents not to generate these
+            URLs, because at the time the wildcard DNS and certificate were not
+            provisioned. They are now, and that instruction was withdrawn on
+            14 September 2026.
+        </p>
+        <p>
+            A tenant subdomain also sets the tenant implicitly, so requests to
+            it need no <code>X-Tenant-Slug</code> header. On the apex host that
+            header <em>is</em> required for tenant-scoped calls such as
+            <code>POST /api/auth/register</code> — without it the request
+            resolves to the <code>default</code> tenant, returns 200, and
+            creates the account in the wrong place.
         </p>
 
-        <h3>Slug rules (apply once subdomains ship)</h3>
+        <h3>Slug rules</h3>
         <ul class="checklist">
             <li>Pattern: <code>^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$</code> — lowercase ASCII, digits, internal hyphens, 2–64 chars.</li>
             <li>Reserved root labels never resolve to a tenant: <code>www</code>, <code>api</code>, <code>admin</code>, <code>app</code>, <code>mail</code>, <code>static</code>.</li>
@@ -681,6 +697,97 @@ curl -s $HOST/t/{slug}/oauth2/jwks</code></pre>
             <li><code>503</code> — <code>provider_unavailable</code> (circuit-breaker open on an upstream IdP, CRM, SMTP or Twilio)</li>
             <li><code>500</code> — <code>internal_error</code></li>
         </ul>
+    </div>
+</section>
+
+<section id="hosted-signup">
+    <div class="container narrow">
+        <h2>Subscribing to the hosted service</h2>
+        <p>
+            This creates a <strong>tenant</strong>, and is not the same as
+            registering a user inside an existing tenant — for that, see
+            <a href="#signup">New user sign-up</a>.
+        </p>
+<pre><code>curl -sS -X POST https://sso.weldforge.org/api/public/orders   -H "Content-Type: application/json"   -d '{"tier":"cloud-starter","organisation":"Acme (Pty) Ltd",
+       "contactName":"Alice","contactEmail":"alice@acme.test",
+       "tenantSlug":"acme","region":"af-south","billingCycle":"MONTHLY",
+       "currency":"USD","billingCountry":"ZA","termsAccepted":true}'</code></pre>
+        <p>
+            No API key. This is a browser-facing endpoint, like
+            <code>/api/auth/**</code> — do not send
+            <code>x-app-authorization</code>.
+        </p>
+        <p>
+            The response always carries <code>orderToken</code> and an explicit
+            <code>nextStep</code>:
+        </p>
+        <table class="pricing">
+            <thead><tr><th><code>nextStep</code></th><th>What it means</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><code>CHECKOUT</code></td>
+                    <td><code>checkoutUrl</code> is set — send the customer there to pay. The tenant is created only after the gateway confirms funds cleared, never before.</td>
+                </tr>
+                <tr>
+                    <td><code>MANUAL_FOLLOW_UP</code></td>
+                    <td><code>checkoutUrl</code> is <code>null</code>. The order is recorded and the slug reserved, but no payment gateway is configured for that currency and country, so a human completes it.</td>
+                </tr>
+            </tbody>
+        </table>
+        <p>
+            <strong>Branch on <code>nextStep</code>, never on whether
+            <code>checkoutUrl</code> is present.</strong> A null URL is not an
+            error and must not be retried — the sign-up has been accepted either
+            way.
+        </p>
+        <p>
+            Tiers: <code>cloud-starter</code>, <code>cloud-team</code>,
+            <code>cloud-business</code>, <code>cloud-scale</code>,
+            <code>cloud-dedicated</code>, <code>regulated</code>,
+            <code>self-host-supported</code>. Prices are on the
+            <a href="/pricing.html">pricing page</a>. The requested slug is
+            validated with the same rules as the admin path and held while the
+            order is live, so a 400 naming the slug means choose another.
+        </p>
+        <p>
+            Self-hosting needs none of this — see
+            <a href="#selfhost">Self-hosting</a>.
+        </p>
+    </div>
+</section>
+
+<section id="mfa">
+    <div class="container narrow">
+        <h2>Multi-factor authentication</h2>
+        <p>
+            When a tenant requires a second factor,
+            <code>POST /api/auth/login</code> answers
+            <code>{"mfaRequired": true, "mfaChallengeToken": "&lt;JWT&gt;"}</code>
+            instead of a session. <strong>This is not a failure</strong> — do
+            not treat it as a rejected credential.
+        </p>
+        <p>
+            Every factor is redeemed at the <em>same</em> endpoint,
+            <code>POST /api/auth/mfa/verify</code>, whose body is
+            <code>{challengeToken, type, code, backupCode, webauthnResponse}</code>
+            — the challenge token plus exactly one of the last three.
+        </p>
+        <ul class="checklist">
+            <li><strong>WebAuthn / passkey</strong> (Windows Hello, Touch ID, security keys) — first <code>POST /api/auth/mfa/webauthn/assertion/start</code> with <code>{"challengeToken": "…"}</code>. It answers <code>{"publicKey": "&lt;options JSON&gt;"}</code>; run the browser ceremony with those options and send the serialised result back as <code>webauthnResponse</code>. There is <em>no</em> <code>.../assertion/finish</code> endpoint.</li>
+            <li><strong>TOTP</strong> — six-digit <code>code</code>.</li>
+            <li><strong>Backup code</strong> — <code>backupCode</code>. Issued when the user enrols their first factor; each works once. This path is taken whenever <code>backupCode</code> is non-blank, regardless of <code>type</code>.</li>
+        </ul>
+        <p>
+            Responses: <strong>200</strong> with the session,
+            <strong>401</strong> if the factor is wrong, <strong>429</strong> if
+            the account is locked. Failed factor attempts feed the same lockout
+            counter as failed passwords, so retrying in a loop locks the account.
+        </p>
+        <p>
+            The challenge token is a JWT and is several hundred characters long.
+            Do not assume a short opaque string, and do not use it as a database
+            key.
+        </p>
     </div>
 </section>
 
