@@ -520,6 +520,49 @@ from the internet** on production (200) — every metric, tenant slugs and reque
 URIs included. The ingress `/actuator` route is gone; details in the
 Infrastructure section above.
 
+### Also shipped 2026-09-14
+
+- **Monitoring + alerting** — see the Infrastructure section above and
+  `docs/monitoring.md` in the infrastructure repo.
+- **`scripts/Test-PrePromotion.ps1`** — ~20 read-only black-box checks against a
+  deployed environment, each one a defect that actually reached production. Run
+  it against staging before promoting and against production after.
+- **`.github/workflows/uptime.yml`** — external uptime probe, because the
+  in-cluster monitoring runs *on* `tech01` and cannot report that `tech01` is
+  down. Opens one labelled `uptime` issue and closes it on recovery.
+- **Horizontal scaling unblocked** — ShedLock (`V58`) leases each of the eight
+  `@Scheduled` jobs so exactly one instance runs them. Before this, two replicas
+  meant two provisioning retries per paid order, two webhook deliveries and two
+  concurrent signing-key rotations. **The rate limiter is still per-instance**,
+  so N replicas = N × the configured limit; divide the limits or move the
+  buckets to Redis before raising the count. Deliberately no HPA. Full
+  procedure: `docs/scaling.md` in the infrastructure repo.
+- **Hosted sign-up captures leads** — `POST /api/public/orders` used to throw
+  when no payment gateway was configured, *before* writing the order row, so the
+  funnel discarded every sign-up. It now records the order either way and
+  returns an explicit `nextStep` (`CHECKOUT` | `MANUAL_FOLLOW_UP`). Self-serve
+  card checkout still needs a merchant account, which is an operator task.
+- **`X-Robots-Tag: noindex, nofollow` on the SSO host** — it had no robots.txt,
+  no meta tag and no header, so every tenant's login and password-reset page was
+  indexable.
+- **Marketing site brought in line with reality** (PRs #105, #106) — per-tenant
+  subdomains documented as live, `admin.weldforge.org` removed (it does not
+  resolve), competitor pricing re-checked and corrected where it had gone stale
+  in our favour.
+
+### Answered, so it does not get re-asked
+
+**`/login` serves the admin portal SPA, not this service's `LoginController`,
+and that is correct.** The Ingress forwards `/api`, `/t/`, `/saml2`, `/scim` and
+`/health` to the backend and everything else to the portal. The OIDC
+`/authorize` state machine redirects unauthenticated users to
+`{tenant-origin}/login/?oidcReturnTo=…` *expecting the SPA*, which reads that
+parameter (`core/oidc-continuation.ts`) and applies the tenant's branding via
+`TenantBrandingService`. `LoginController` serves the same paths for deployments
+that reach the API directly with no separate portal host — a docker-compose
+self-host. Both exist on purpose. Verified: `/login` and `/login/` both answer
+200 on the apex and on tenant subdomains.
+
 ### Still open after this session
 - Stray prod OIDC client `oidc_clients` id 10 in `default` (zero dependents).
   **The auto-mode classifier blocks Claude from running production DELETEs** —
@@ -530,7 +573,16 @@ Infrastructure section above.
 - Local pre-promotion E2E script (user chose a local script over CI-against-
   staging) — not built.
 - Dead Cloudflare records `em8050`, `107605731`, `url7762`.
-- Stale GitHub issues #79/#80/#81; `origin/dev` 192 behind main.
+- ~~Stale GitHub issues #79/#80/#81~~ — all three closed 2026-09-14. #79 was
+  resolved structurally by the k3s move: cert-manager issues a wildcard, so the
+  hand-maintained `tenantCerts` list is no longer in the path and a brand-new
+  tenant subdomain gets a valid certificate with no manual step (verified).
+  `origin/dev` is still 192 behind main.
+- **Needs the operator, not Claude:** a merchant account (the only thing between
+  a captured sign-up and a self-serve paying customer), and deleting the stray
+  production OIDC client — the classifier blocks Claude from production DELETEs.
+- Dead Cloudflare records from the old SendGrid account: `em8050`,
+  `107605731`, `url7762`.
 
 ### Process notes worth keeping
 - **The infrastructure repo has several Claude sessions working in it at once.**

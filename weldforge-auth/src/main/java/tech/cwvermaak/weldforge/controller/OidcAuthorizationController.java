@@ -129,8 +129,23 @@ public class OidcAuthorizationController {
             // Send the user to the tenant's own subdomain so the
             // TenantResolverFilter picks up the slug from Host and password
             // managers see acme.sso.weldforge.org as a distinct site.
-            // Trailing slash matches the nginx /login/ proxy block so the
-            // browser doesn't pick up a 301 → /login/ on the way through.
+            // The target is the ADMIN PORTAL SPA's login route, not this
+            // service's own LoginController — the Ingress forwards /api, /t/,
+            // /saml2, /scim and /health to the backend and everything else to
+            // the portal, so /login/ reaches the SPA. That is deliberate: the
+            // SPA reads oidcReturnTo (core/oidc-continuation.ts) and applies
+            // the tenant's branding, which this redirect depends on.
+            //
+            // LoginController serves these same paths for deployments that
+            // reach the API directly with no separate portal host — a
+            // docker-compose self-host, most obviously. Both exist on purpose;
+            // which one answers depends on what is in front of the service.
+            //
+            // The trailing slash originally matched an nginx /login/ proxy
+            // block that no longer exists (the path list moved into the
+            // Ingress). Kept because it is what is deployed and verified —
+            // /login and /login/ both answer 200 on the apex and on tenant
+            // subdomains — not because nginx still requires it.
             String loginUrl = publicHost.originForTenant(slug)
                     + "/login/?oidcReturnTo=" + encoded;
             return ResponseEntity.status(302).location(URI.create(loginUrl)).build();
