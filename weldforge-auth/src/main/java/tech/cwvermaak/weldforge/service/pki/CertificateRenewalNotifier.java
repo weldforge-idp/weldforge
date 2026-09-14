@@ -2,6 +2,7 @@ package tech.cwvermaak.weldforge.service.pki;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import tech.cwvermaak.weldforge.model.AuditEvent;
@@ -36,7 +37,10 @@ public class CertificateRenewalNotifier {
     private final IssuedCertificateRepository repository;
     private final AuditService auditService;
 
+    // Cluster-wide single execution. Sends mail. Twice means every tenant admin
+    // gets a duplicate notice.
     @Scheduled(cron = "${app.pki.renewal-scan-cron:0 0 6 * * *}")
+    @SchedulerLock(name = "certificateRenewalNotice", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
     public void scan() {
         LocalDateTime now = LocalDateTime.now();
         for (int window : WINDOWS_DAYS) {

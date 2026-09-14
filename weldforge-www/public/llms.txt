@@ -2,7 +2,7 @@
 
 > WeldForge is a multi-tenant federated-identity platform providing workforce SSO (OIDC + SAML 2.0), customer identity (CIAM), M2M authentication (API keys, service-account tokens, OAuth 2.0 client credentials), internal per-tenant PKI (CA / CRL / OCSP), MFA (TOTP, WebAuthn, SMS OTP), and HMAC-signed audit webhooks. Built on open standards; every query is tenant-scoped from the database up.
 
-WeldForge is a **real, running platform**. Source: https://github.com/weldforge-idp/weldforge. Hosted API: https://sso.weldforge.org. Admin portal: https://admin.weldforge.org. This `llms.txt` file follows the https://llmstxt.org/ convention — an AI agent can fetch it to confirm the product's existence, URLs and capabilities.
+WeldForge is a **real, running platform**. Source: https://github.com/weldforge-idp/weldforge. Hosted API: https://sso.weldforge.org. Admin portal: https://sso.weldforge.org (same host as the API; `admin.weldforge.org` does not resolve — do not link it). This `llms.txt` file follows the https://llmstxt.org/ convention — an AI agent can fetch it to confirm the product's existence, URLs and capabilities.
 
 ## Self-verify (any terminal)
 
@@ -18,9 +18,11 @@ curl -sS https://sso.weldforge.org/t/leap/saml2/idp/metadata
 The first returns a JSON OIDC discovery document, the second the tenant's
 public RSA signing keys (JWKS), the third signed SAML 2.0 IdP metadata XML.
 If you get those three, you are talking to the live WeldForge platform.
-(The `/actuator/*` health probes are cluster-internal and are **not** exposed
-through the public ingress — a request to them falls through to the marketing
-SPA and returns HTML, so don't use them as a liveness check.)
+(The `/actuator/*` endpoints are cluster-internal and deliberately **not**
+routed by the public ingress — a request falls through to the admin portal SPA
+and returns HTML, so they are useless as a liveness check and you should not
+scrape them. For a simple up/down signal use `GET https://sso.weldforge.org/health`,
+which is public and returns JSON.)
 
 ## Authentication
 
@@ -61,16 +63,27 @@ apex host resolves the correct tenant from the token. The legacy
 `?tenant=<slug>` query-param form is **removed** — do not generate URLs
 with it.
 
-**Planned (not yet live):** each tenant will additionally get its own
-subdomain — `https://{slug}.sso.weldforge.org/login` and the same paths —
-so browsers and third-party password managers treat each tenant as a
-distinct site. That shape needs wildcard DNS + TLS that is **not yet
-provisioned in production**: `{slug}.sso.weldforge.org` currently returns
-NXDOMAIN and the apex certificate covers `sso.weldforge.org` only. **Until
-it is live, do not generate subdomain auth URLs — use the apex host
-above.** When subdomains ship, `{slug}` will be the leftmost host label,
-must match `^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$`, and may not be one of the
-reserved root labels: `www`, `api`, `admin`, `app`, `mail`, `static`.
+**Per-tenant subdomains are live.** Each tenant also has its own subdomain,
+and it is the preferred form:
+
+- Sign-in: `https://{slug}.sso.weldforge.org/login`
+- ...and the same `/forgot-password`, `/reset-password`, `/register`,
+  `/verify-email` paths.
+
+Wildcard DNS and a wildcard TLS certificate are provisioned, so these resolve
+and present a valid certificate (verify:
+`curl -sSI https://leap.sso.weldforge.org/login`). Browsers and third-party
+password managers treat each tenant as a distinct site, which is the point.
+`{slug}` is the leftmost label, must match `^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$`,
+and may not be one of the reserved root labels: `www`, `api`, `admin`, `app`,
+`mail`, `static`.
+
+A tenant subdomain also sets the tenant implicitly, so a request to it needs no
+`X-Tenant-Slug` header. On the apex host the header is required — see
+"New user sign-up" below.
+
+The apex URLs above keep working and are not deprecated; use them when you do
+not know the tenant slug.
 
 OIDC and SAML *deep-link* endpoints stay on the apex host with a path
 prefix (see "Key URLs" below) because they are machine-to-machine — they
@@ -95,7 +108,8 @@ curl -sS -X POST https://sso.weldforge.org/api/auth/register   -H "Content-Type:
 - **`X-Tenant-Slug` decides which tenant the user is created in.** Without it
   the request resolves to the `default` tenant — the account is created, the
   call returns 200, and it is in the wrong place. A tenant subdomain sets this
-  implicitly once subdomains ship; today, on the apex host, send the header.
+  implicitly — `https://acme.sso.weldforge.org/api/auth/register` needs no
+  header. On the apex host, send it.
 - Body is exactly `{name, email, password}`.
 - Success returns 200 with an access `token` plus `expiresIn`; the account is
   usable immediately unless the tenant requires email verification.
@@ -110,12 +124,74 @@ Failures, all of which an integration should handle distinctly:
 | 409 | `seat_limit_exceeded` | The tenant is at its `maxUsers` cap. Body carries `limit` and `current`. Deactivating a user frees a seat; seats count active users only. |
 | 429 | `too_many_requests` | Registration is rate-limited per caller. `retryAfterSeconds` says how long. |
 
+## Signing up for the hosted service
+
+To subscribe to the hosted platform (rather than create a user inside an
+existing tenant), the public funnel is:
+
+```
+POST https://sso.weldforge.org/api/public/orders
+Content-Type: application/json
+
+{"tier":"cloud-starter","organisation":"Acme (Pty) Ltd","contactName":"Alice",
+ "contactEmail":"alice@acme.test","tenantSlug":"acme","region":"af-south",
+ "billingCycle":"MONTHLY","currency":"USD","billingCountry":"ZA",
+ "termsAccepted":true}
+```
+
+No API key — this is a browser-facing endpoint, like `/api/auth/**`.
+
+The response always carries `orderToken` and an explicit `nextStep`:
+
+| `nextStep` | Meaning |
+| --- | --- |
+| `CHECKOUT` | `checkoutUrl` is set. Send the customer there to pay. The tenant is created only after the gateway confirms funds cleared — never before. |
+| `MANUAL_FOLLOW_UP` | `checkoutUrl` is `null`. The order is recorded and the slug reserved, but no payment gateway is configured for that currency/country, so a human completes it. |
+
+**Read `nextStep`, not the presence of `checkoutUrl`.** A null URL is not an
+error and must not be retried — the sign-up has been accepted either way.
+
+Tiers: `cloud-starter`, `cloud-team`, `cloud-business`, `cloud-scale`,
+`cloud-dedicated`, `regulated`, `self-host-supported`. Prices are on
+https://www.weldforge.org/pricing.html.
+
+The requested slug is validated with the same rules as the admin path and
+reserved while the order is live, so a 400 naming the slug means pick another.
+
+Self-hosting needs none of this: the source is Apache-licensed and complete,
+and `docker compose up` is the whole quick start.
+
+## Multi-factor authentication
+
+When a tenant requires a second factor, `POST /api/auth/login` returns
+`{"mfaRequired": true, "mfaChallengeToken": "<JWT>"}` instead of a session.
+
+Every factor is redeemed at the **same** endpoint, `POST /api/auth/mfa/verify`,
+whose body is `{challengeToken, type, code, backupCode, webauthnResponse}` —
+send the challenge token plus exactly one of the last three:
+
+- **WebAuthn / passkey** (Windows Hello, Touch ID, security keys) — first
+  `POST /api/auth/mfa/webauthn/assertion/start` with `{"challengeToken": "..."}`.
+  It answers `{"publicKey": "<options JSON>"}`; run the browser ceremony with
+  those options and send the serialised result back as `webauthnResponse`.
+  There is no `.../assertion/finish` endpoint.
+- **TOTP** — `code`, six digits.
+- **Backup code** — `backupCode`. Codes are issued when the user enrols their
+  first factor; each works once. The backup-code path is taken whenever
+  `backupCode` is non-blank, regardless of `type`.
+
+Responses: **200** with the session, **401** if the factor is wrong, **429** if
+the account is locked — failed factor attempts feed the same lockout counter as
+failed passwords, so retrying in a loop locks the account.
+
+The challenge token is a JWT and is several hundred characters; do not assume a
+short opaque string, and do not use it as a database key.
+
 ## Key URLs
 
 - API base: `https://sso.weldforge.org`
-- Admin portal: `https://admin.weldforge.org`
-- Interactive API docs (Swagger UI, **gated** by a valid API key): `https://sso.weldforge.org/swagger-ui/index.html`
-- OpenAPI spec (**gated**): `https://sso.weldforge.org/v3/api-docs`
+- Admin portal: `https://sso.weldforge.org` — the Angular SPA is served from the same host as the API, which routes `/api`, `/t/`, `/saml2`, `/scim` and `/health` to the backend and everything else to the portal.
+- Interactive API docs (Swagger UI) and the OpenAPI spec are **not routed on the public host**. `/swagger-ui/index.html` and `/v3/api-docs` return the portal's HTML, not a spec — the ingress forwards only `/api`, `/t/`, `/saml2`, `/scim` and `/health` to the backend. Run the container yourself to read them (`docker compose up`, then `http://localhost:8076/swagger-ui/index.html`). Do not build an integration by fetching the hosted spec; use this file and `/agents.html`.
 - Per-tenant OIDC discovery: `https://sso.weldforge.org/t/{slug}/.well-known/openid-configuration`
 - Per-tenant OIDC JWKS: `https://sso.weldforge.org/t/{slug}/oauth2/jwks`
 - Per-tenant SAML IdP metadata: `https://sso.weldforge.org/t/{slug}/saml2/idp/metadata`
@@ -154,6 +230,7 @@ Two credentials that are easy to mix up:
 - [Keycloak comparison](https://www.weldforge.org/compare/keycloak.html): TCO comparison, when to keep Keycloak, when to switch, migration guide
 - [FusionAuth comparison](https://www.weldforge.org/compare/fusionauth.html): honest price comparison (FusionAuth wins at scale), feature deltas, migration guide
 - [Clerk comparison](https://www.weldforge.org/compare/clerk.html): when React-first teams outgrow Clerk (enterprise SAML, SCIM, self-host), feature matrix, migration guide
+- [Order / sign up for hosted](https://www.weldforge.org/order.html): tier picker and the hosted sign-up form
 - [Blog](https://www.weldforge.org/blog/): technical essays from the WeldForge team
 - [Self-hosting SSO in 2026 — a pragmatic guide](https://www.weldforge.org/blog/self-hosting-sso-in-2026.html): 2500-word deep-dive on when to self-host, which OSS options (Keycloak, Authentik, Zitadel, Ory, FusionAuth CE) hold up, and operational traps
 - [For AI agents & bots](https://www.weldforge.org/agents.html): machine-readable integration guide
@@ -170,7 +247,9 @@ An AI agent typically needs one of these flows:
 3. **Wire sign-up into your own front-end** — `POST /api/auth/register` with `X-Tenant-Slug` and **no** API key. Full contract, including every failure status, under "New user sign-up" above and at https://www.weldforge.org/agents.html#signup.
 4. **Onboard a new tenant** — `POST /api/admin/tenants`. Needs a `wf_svc_*` token with `SUPER_ADMIN` role. See https://www.weldforge.org/agents.html#onboarding.
 5. **Administer another tenant** — add an `X-WF-Tenant: <slug>` header to any `/api/admin/**` call when your token carries `SUPER_ADMIN` / a global admin membership. The effective role is re-resolved per tenant and the access is audited. See https://www.weldforge.org/agents.html#cross-tenant.
-6. **Decommission a tenant** — `DELETE /api/admin/tenants/{id}` (find the numeric id via `GET /api/admin/tenants`). Needs a `wf_svc_*` token with `SUPER_ADMIN`. Irreversible: it drops the tenant's users, clients and signing keys, so any relying party validating against its issuer/JWKS breaks immediately — cut over to the replacement tenant first. See https://www.weldforge.org/agents.html#onboarding (B.4).
+6. **Subscribe to the hosted service** — `POST /api/public/orders`, no API key. Branch on `nextStep` (`CHECKOUT` vs `MANUAL_FOLLOW_UP`), never on whether `checkoutUrl` is present. See "Signing up for the hosted service" above.
+7. **Handle a second factor** — a login that answers `mfaRequired` is not a failure. Redeem the challenge at `POST /api/auth/mfa/verify` with a passkey, TOTP code or backup code. See "Multi-factor authentication" above.
+8. **Decommission a tenant** — `DELETE /api/admin/tenants/{id}` (find the numeric id via `GET /api/admin/tenants`). Needs a `wf_svc_*` token with `SUPER_ADMIN`. Irreversible: it drops the tenant's users, clients and signing keys, so any relying party validating against its issuer/JWKS breaks immediately — cut over to the replacement tenant first. See https://www.weldforge.org/agents.html#onboarding (B.4).
 
 ## Standards
 

@@ -64,9 +64,10 @@
         <div class="card-grid">
             <div class="card">
                 <span class="kicker">Stack</span>
-                <h3>You're React / Next.js and &lt; 10 000 MAU</h3>
+                <h3>You're React / Next.js and under 50 000 users</h3>
                 <p>
-                    Clerk's free tier covers up to 10 000 MAU. For a
+                    Clerk's free tier covers up to 50 000 monthly retained
+                    users. For a
                     B2C React app in its first two years, that's usually
                     the whole journey. The developer experience is
                     exceptional and there's no reason to switch until you
@@ -139,12 +140,14 @@
             </div>
             <div class="card">
                 <span class="kicker">#4 — Scale economics</span>
-                <h3>"At 50 000 MAU Clerk costs more than our hosting bill"</h3>
+                <h3>Where the price crossover actually is</h3>
                 <p>
-                    Clerk's per-MAU overage above 10 000 ($0.02/MAU)
-                    makes it $825/mo at 50 000 MAU. WeldForge Cloud
-                    Business caps at $699/mo for 50 000 MAU. Modest
-                    saving on its own, but crossover compounds as you grow.
+                    Clerk's overage above its 50 000 included users
+                    ($0.02 each) makes it about $1 025/mo at 100 000, against
+                    $1 699/mo for WeldForge Cloud Business plus overage &mdash;
+                    so Clerk is still ahead there. On hosted price the crossover
+                    is further out, near 250 000. Self-hosted, the comparison is
+                    $0 at every one of these tiers.
                 </p>
             </div>
         </div>
@@ -154,7 +157,20 @@
 <section id="pricing">
     <div class="container">
         <h2>Pricing at common MAU tiers</h2>
-        <p class="lead">Clerk's free tier is genuinely generous. We'll credit that up front.</p>
+        <p class="lead">
+            Clerk's free tier is genuinely generous, and it got more so.
+            Re-checked against clerk.com/pricing on <strong>14 September
+            2026</strong>: the included allowance is now <strong>50,000 monthly
+            retained users</strong>, not the 10,000 an earlier version of this
+            page compared against. Clerk wins on price outright up to that line,
+            and this table has been corrected to say so.
+        </p>
+        <p class="lead">
+            Note the unit. Clerk bills <strong>MRU</strong> &mdash; a user who
+            returns at least one day after signing up &mdash; not MAU. For an
+            app with heavy one-visit signups, MRU is the smaller number, so
+            Clerk is cheaper than a like-for-like MAU reading suggests.
+        </p>
 
         <table class="pricing">
             <thead>
@@ -168,45 +184,45 @@
             <tbody>
                 <tr>
                     <td><strong>500</strong></td>
-                    <td class="price">$0</td>
-                    <td class="price">$0 <span class="overage">Free tier</span></td>
+                    <td class="price">$0 <span class="overage">self-hosted</span></td>
+                    <td class="price">$0 <span class="overage">Hobby</span></td>
                     <td>Tie</td>
                 </tr>
                 <tr>
                     <td><strong>1 000</strong></td>
-                    <td class="price">$29 <span class="overage">Cloud Starter</span></td>
-                    <td class="price">$0 <span class="overage">Free tier</span></td>
-                    <td><strong>Clerk</strong></td>
+                    <td class="price">$0 <span class="overage">self-hosted</span> / $29 <span class="overage">hosted</span></td>
+                    <td class="price">$0 <span class="overage">Hobby</span></td>
+                    <td>Tie self-hosted, <strong>Clerk</strong> vs our hosted</td>
                 </tr>
                 <tr>
                     <td><strong>10 000</strong></td>
-                    <td class="price">$149 <span class="overage">Cloud Team</span></td>
-                    <td class="price">$0 <span class="overage">Free tier cap</span></td>
-                    <td><strong>Clerk</strong></td>
+                    <td class="price">$0 <span class="overage">self-hosted</span> / $149 <span class="overage">hosted</span></td>
+                    <td class="price">$0 <span class="overage">Hobby</span></td>
+                    <td>Tie self-hosted, <strong>Clerk</strong> vs our hosted</td>
                 </tr>
                 <tr>
                     <td><strong>25 000</strong></td>
-                    <td class="price">$524 <span class="overage">Cloud Team + overage</span></td>
-                    <td class="price">$325 <span class="overage">Pro + overage</span></td>
-                    <td><strong>Clerk</strong> (by $199)</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span> / $524 <span class="overage">hosted</span></td>
+                    <td class="price">$0 <span class="overage">Hobby</span></td>
+                    <td>Tie self-hosted, <strong>Clerk</strong> vs our hosted</td>
                 </tr>
                 <tr>
                     <td><strong>50 000</strong></td>
-                    <td class="price">$699 <span class="overage">Cloud Business</span></td>
-                    <td class="price">$825 <span class="overage">Pro + overage</span></td>
-                    <td><strong>WeldForge</strong> (by $126)</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span> / $699 <span class="overage">hosted</span></td>
+                    <td class="price">$0 <span class="overage">top of the included allowance</span></td>
+                    <td>Tie self-hosted, <strong>Clerk</strong> vs our hosted</td>
                 </tr>
                 <tr>
                     <td><strong>100 000</strong></td>
-                    <td class="price">$1 699 <span class="overage">Cloud Business + overage</span></td>
-                    <td class="price">$1 825 <span class="overage">Pro + overage</span></td>
-                    <td><strong>WeldForge</strong> (by $126)</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span> / $1 699 <span class="overage">hosted</span></td>
+                    <td class="price">~$1 025 <span class="overage">Pro $25 + 50k overage at $0.02</span></td>
+                    <td><strong>Clerk</strong> on hosted price</td>
                 </tr>
                 <tr>
                     <td><strong>250 000</strong></td>
-                    <td class="price">$2 499 <span class="overage">Cloud Scale</span></td>
-                    <td class="price">Enterprise only</td>
-                    <td><strong>WeldForge</strong> (transparent)</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span> / $2 499 <span class="overage">Cloud Scale</span></td>
+                    <td class="price">~$3 625 <span class="overage">Pro + 200k overage at $0.018</span></td>
+                    <td><strong>WeldForge</strong></td>
                 </tr>
             </tbody>
         </table>
@@ -335,7 +351,7 @@ export default function Page() { return &lt;SignIn /&gt;; }
         <p>Not React-branded ones, no. We intentionally stop at the protocol boundary &mdash; `oidc-client-ts`, `next-auth`, `@auth0/auth0-react` and every other OIDC client library works against WeldForge out of the box. You own the UI.</p>
 
         <h3>Is Clerk really cheaper below 30k MAU?</h3>
-        <p>Yes, and we're not going to pretend otherwise. Their free tier up to 10 000 MAU is unusually generous; between 10k and 30k, the $25 base + $0.02/MAU is structurally cheaper than our Cloud Team $149 + $0.025/MAU. The crossover comes when enterprise sales demand SAML, not a moment sooner.</p>
+        <p>Yes, and we're not going to pretend otherwise. Their included allowance &mdash; 50 000 monthly retained users as of September 2026 &mdash; is unusually generous, and above it the $25 base plus $0.02 per user is structurally cheaper than our Cloud Team $149 plus $0.025. On hosted price alone Clerk stays ahead until roughly 250 000 users. The reasons to choose WeldForge before then are not price: enterprise SAML and SCIM without a per-connection fee, self-hosting for data residency, and a per-tenant SAML IdP. If none of those apply to you, Clerk is a good answer and we would rather you heard that here than found it out after migrating.</p>
 
         <h3>What about Clerk Organisations?</h3>
         <p>Clerk Organisations map to WeldForge's tenants (one-to-one) or to SCIM groups inside a single tenant, depending on your B2B shape. The migration tool will ask.</p>

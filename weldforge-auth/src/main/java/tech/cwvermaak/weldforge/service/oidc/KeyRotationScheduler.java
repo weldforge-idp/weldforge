@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import tech.cwvermaak.weldforge.model.Tenant;
@@ -32,7 +33,13 @@ public class KeyRotationScheduler {
     @Value("${app.key-rotation.max-age-days:90}")
     private long maxAgeDays;
 
+    // Cluster-wide single execution. Two instances rotating a tenant signing key
+    // at the same moment is the worst case in this file: relying parties would be
+    // validating against a JWKS that changed twice. lockAtLeastFor is generous so
+    // a fast no-op run cannot release the lease in time for a second instance to
+    // pick the same window up.
     @Scheduled(fixedDelayString = "${app.key-rotation.interval-ms:86400000}")
+    @SchedulerLock(name = "keyRotation", lockAtMostFor = "PT15M", lockAtLeastFor = "PT5M")
     public void checkAndRotateKeys() {
         log.info("Key rotation check started (max-age-days={})", maxAgeDays);
 

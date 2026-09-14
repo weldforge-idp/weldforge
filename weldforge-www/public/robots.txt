@@ -2,15 +2,22 @@
 # Crawlable by search engines and AI agents.
 # See also: /llms.txt, /sitemap.xml, /ai-manifest.json, /ld.json.
 #
-# End-user auth screens are served from the apex SSO host today:
+# End-user auth screens live on the SSO host, not here — both on the apex
 #   https://sso.weldforge.org/{login,forgot-password,reset-password,register,verify-email}
-# Per-tenant subdomains ({slug}.sso.weldforge.org) are the target shape but are
-# NOT yet provisioned — see /llms.txt. Either way the SSO host serves its own
-# robots.txt disallowing indexing — login forms don't belong in search results,
-# and an indexed apex copy would defeat the password-manager-distinctness
-# goal of the per-tenant URLs. AI agents that need to know how end users
-# sign in should read /llms.txt or /agents.html on this site, not crawl
-# the auth forms themselves.
+# and on each tenant's own subdomain, {slug}.sso.weldforge.org, which are now
+# provisioned and hold a valid wildcard certificate.
+#
+# Every response from that host carries `X-Robots-Tag: noindex, nofollow`,
+# deliberately: login forms don't belong in search results, and with per-tenant
+# subdomains each tenant would otherwise be another indexable copy of the same
+# forms. A header rather than a robots.txt file, because that host is an API
+# plus an SPA with no document root — fetching https://sso.weldforge.org/robots.txt
+# returns the portal's HTML, which is not a crawl permission.
+#
+# AI agents that need to know how end users sign in should read /llms.txt or
+# /agents.html on this site rather than crawling the auth forms.
+#
+# /actuator/* is not routed publicly at all and there is nothing to crawl there.
 
 User-agent: *
 Allow: /

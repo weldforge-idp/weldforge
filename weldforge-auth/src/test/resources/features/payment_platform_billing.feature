@@ -22,6 +22,20 @@ Feature: Platform billing — payment-first-then-provision
     And exactly 1 billing transaction is recorded as SUCCEEDED
     And an audit event "tenant.provisioned_via_billing" is recorded
 
+  Scenario: A sign-up is captured even when no gateway is configured
+    # The operator may not have a merchant account yet -- which is the normal
+    # state of a new platform, not an error. This used to throw before the
+    # order row was written, so the prospective customer got a 500 and the
+    # funnel discarded the lead it exists to capture.
+    Given the platform has no payment gateway configured
+    When a customer submits an order for tier "cloud-starter" with slug "smme" and email "owner@smme.test"
+    Then the order is in state "CREATED"
+    And the customer did not receive a checkout URL
+    And the next step is "MANUAL_FOLLOW_UP"
+    And the slug "smme" is still reserved
+    And sales was notified about the order
+    And no tenant with slug "smme" exists
+
   Scenario: Customer cancels checkout
     When a customer submits an order for tier "cloud-starter" with slug "widgets" and email "ops@widgets.test"
     And a checkout-cancelled webhook arrives for that order

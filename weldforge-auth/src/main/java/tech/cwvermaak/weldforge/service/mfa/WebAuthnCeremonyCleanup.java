@@ -2,6 +2,7 @@ package tech.cwvermaak.weldforge.service.mfa;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +26,9 @@ public class WebAuthnCeremonyCleanup {
 
     private final WebAuthnCeremonyRepository repository;
 
+    // Cluster-wide single execution. A row delete; short work, hourly cadence.
     @Scheduled(fixedDelayString = "${app.mfa.webauthn.ceremony-cleanup-interval-ms:3600000}")
+    @SchedulerLock(name = "webAuthnCeremonyCleanup", lockAtMostFor = "PT5M", lockAtLeastFor = "PT1M")
     @Transactional
     public void purgeExpired() {
         long removed = repository.deleteByExpiresAtBefore(LocalDateTime.now());

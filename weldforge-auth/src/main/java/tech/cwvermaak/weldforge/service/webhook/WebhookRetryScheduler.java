@@ -2,6 +2,7 @@ package tech.cwvermaak.weldforge.service.webhook;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import tech.cwvermaak.weldforge.model.WebhookDelivery;
@@ -24,7 +25,11 @@ public class WebhookRetryScheduler {
     private final WebhookDeliveryRepository deliveryRepository;
     private final WebhookPublisher publisher;
 
+    // Cluster-wide single execution. Redelivers customer webhooks. A duplicate
+    // delivery is visible to the subscriber and undermines the at-least-once
+    // contract we document.
     @Scheduled(fixedDelayString = "${app.webhooks.retry-interval-ms:30000}")
+    @SchedulerLock(name = "webhookRetry", lockAtMostFor = "PT5M", lockAtLeastFor = "PT15S")
     public void retryPending() {
         List<WebhookDelivery> due = deliveryRepository
                 .findTop100ByStatusAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAsc(

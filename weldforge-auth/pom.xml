@@ -228,6 +228,23 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
         <!-- OpenAPI / Swagger documentation -->
+        <!-- ShedLock: one scheduled job runs on one instance, cluster-wide.
+             Without it every @Scheduled method fires on every replica, so a
+             second pod means two provisioning retries, two webhook redeliveries
+             and two signing-key rotations. It is what makes replicas > 1 safe,
+             not merely possible. JDBC provider: the lock lives in the database
+             we already have, so scaling does not also mean introducing Redis. -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>6.6.0</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>6.6.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
