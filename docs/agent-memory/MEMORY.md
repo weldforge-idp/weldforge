@@ -1,16 +1,18 @@
+- [Session 2026-09-14](session_2026_09_14.md) — ten production defects fixed (sha-0992ad2) plus the first monitoring stack on tech01; what is still open
+- [Shared working tree, shared index](feedback_shared_repo_index.md) — several Claude sessions commit in the infrastructure repo; use `git commit -- <paths>`, a bare commit sweeps their staged files
 - [Session 2026-09-10](session_2026_09_10.md) — Sprint 5 gaps + Sprint 6 live as sha-797c70b; Flux deploy procedure from the node; max_age/prompt=login and B-API-2 open
 - [Open work snapshot 2026-05-23](open_work_2026_05_23.md) — end-of-session state for resumption: production state, 8 open agenda items, things explicitly NOT to do on resume
 - [Tech Metropolis tenant trio](tenant_tech_metropolis.md) — `techmetropolis` (id 6) is the most active tenant; Safe Space + Krusty + Commons all share it for cross-app SSO via a shared HS512 secret in `wf-jwt-secret`
 - [PlatformSettings on its own branch](platform_settings_wip.md) — committed on feature/write-buddy-integration@1a321df, NOT on main; V33 slot is now occupied by an unrelated migration so the branch must renumber on revival (main is at V40)
-- [Dev sync pending](dev_branch_behind.md) — origin/dev is 61 commits behind main (as of 2026-05-23) and growing; fast-forward command ready, awaiting user go-ahead
+- [Dev sync pending](dev_branch_behind.md) — origin/dev is 192 commits behind main (2026-09-14) and nothing has merged from it in months; fast-forward command ready, awaiting user go-ahead
 - [GitHub auth account](github_account.md) — christiaanwvermaak is the right user for weldforge-idp/weldforge; gh credential helper flips between accounts
 - [Git push needs token-in-URL](feedback_git_push_token_in_url.md) — gh credential helper returns wrong account's token; use https://user:token@host form
-- [Repo + cluster reference](reference_infra.md) — weldforge-idp/weldforge, GKE cluster, kubectl context
+- [Repo + cluster reference](reference_infra.md) — k3s on tech01 via Flux GitOps, GHCR images, SOPS secrets; GCP/GKE is dormant history
 - [Auth-form branding in docs](feedback_auth_form_branding_in_docs.md) — every tutorial/integration guide must document how operators brand the login + password-reset forms
 - [Deployment pipeline](deployment_pipeline.md) — GitHub Actions, not TeamCity; TEAMCITY.md / deploy.sh comments are stale
 - [Tenant-nesting WIP](tenant_nesting_wip.md) — feat/admin-rest-tenant-nesting@1ff7451 — 5 TS2554 errors in service-accounts.component.ts, thread tenantId via TenantPickerService.outgoingTenantId()
 - [Admin tenant selector](feedback_admin_tenant_selector.md) — one audited selector (X-WF-Tenant), refuse don't fall back; row-scoped portal screens pass forTenant(slug); 2026-09-11 misdirected-client incident
 - [Angular zoneless pitfalls](feedback_angular_zoneless_pitfalls.md) — computed() over a non-signal field freezes; template `!` on lazy-init objects throws at runtime and truncates CD
 - [Verify operator-asserted infra state](feedback_verify_operator_infra_assertions.md) — when the user says "DNS is live" / "cert is provisioned" / "secret is set", run the one-liner check before merging; we got burned by it on 2026-05-20
-- [SendGrid trial deadline](sendgrid_trial_deadline.md) — free trial ends 2026-07-16; downgrade to the free plan before then or transactional email silently stops
+- [SendGrid is alert-monitored now](sendgrid_trial_deadline.md) — new account since 2026-09-13; mail was dead for two weeks after the GCP move; the Prometheus alert replaces the manual smoke test
 - [Portable memory snapshot](portable_memory_snapshot.md) — memory mirrored to repo docs/agent-memory/ + CLAUDE.md so it survives copy/clone; keep both in sync

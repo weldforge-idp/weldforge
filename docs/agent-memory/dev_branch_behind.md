@@ -5,7 +5,7 @@ type: project
 originSessionId: 9f38af7d-b118-4b7d-ab14-ea150e67a780
 ---
 
-As of 2026-05-23, `origin/dev` is **61 commits behind `origin/main`** (PRs #27–#39 have all landed on main without dev being updated). The drift has compounded: 1 commit on 2026-05-04 → 25 on 2026-05-14 → 61 on 2026-05-23. Each session that ships another PR adds another commit to the gap.
+As of **2026-09-14**, `origin/dev` is **192 commits behind `origin/main`** (PRs #27–#39 have all landed on main without dev being updated). The drift has compounded: 1 on 2026-05-04 → 25 on 2026-05-14 → 61 on 2026-05-23 → 71 on 2026-06-08 → 192 on 2026-09-14. Nothing has merged *from* dev in that whole span, which is itself worth noticing: it may be abandoned rather than pinned. Each session that ships another PR adds another commit to the gap.
 
 The user has flagged sync `dev` → `main` as a pending follow-up but kept deferring it because there's always more in-flight work. **Don't auto-execute.** Confirm before pushing — `dev` may still be intentionally pinned (waiting for a release marker, a quiet window for an external observer, etc.). Re-check the count with `git rev-list --count origin/main ^origin/dev` before quoting it.
 
