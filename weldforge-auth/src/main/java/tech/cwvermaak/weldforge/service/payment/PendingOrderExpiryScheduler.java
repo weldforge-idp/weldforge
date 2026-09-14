@@ -2,6 +2,7 @@ package tech.cwvermaak.weldforge.service.payment;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -21,7 +22,10 @@ public class PendingOrderExpiryScheduler {
 
     private final OrderService orderService;
 
+    // Cluster-wide single execution. Runs every minute; the lease must expire well
+    // before the next tick.
     @Scheduled(fixedDelayString = "${app.payment.expiry-scan-interval-ms:60000}")
+    @SchedulerLock(name = "pendingOrderExpiry", lockAtMostFor = "PT2M", lockAtLeastFor = "PT30S")
     public void expire() {
         int expired = orderService.expireStaleCheckouts();
         if (expired > 0) {

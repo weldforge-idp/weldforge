@@ -16,9 +16,24 @@ import java.util.function.Function;
  * — each with independent capacity and refill cadence so we can tune aggressively
  * on the hot endpoints without starving legitimate traffic to the others.
  *
- * The store is in-memory ({@link ConcurrentHashMap}) which is fine for a single
- * node. For a multi-instance deployment the same API can be backed by a shared
- * bucket4j-redis without changes to the callers.
+ * <p><strong>The store is in-memory ({@link ConcurrentHashMap}), so every
+ * instance counts separately.</strong> That is not a detail — it means the
+ * effective limit is the configured limit multiplied by the replica count. Two
+ * replicas and a login limit of 10/15min is really 20/15min to an attacker who
+ * is load-balanced across both, and the operator who configured 10 has no way
+ * to see that from the configuration.
+ *
+ * <p>This is the one thing that does not simply scale out. Before raising
+ * replicas, either divide the configured limits by the replica count, or move
+ * these buckets onto the cluster's Redis with {@code bucket4j-redis} — the
+ * caller-facing API here does not change either way. The scheduled jobs were
+ * the other obstacle and are already handled, by ShedLock.
+ *
+ * <p>What does <em>not</em> weaken with replicas: account lockout, which counts
+ * failures in the database, and is the control that actually stops a
+ * credential-stuffing run. Rate limiting is the cheap first line, not the last.
+ *
+ * @see tech.cwvermaak.weldforge.config.SchedulerLockConfig
  */
 @Service
 @RequiredArgsConstructor

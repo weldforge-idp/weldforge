@@ -2,6 +2,7 @@ package tech.cwvermaak.weldforge.service.payment;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import tech.cwvermaak.weldforge.model.payment.OrderStatus;
@@ -49,7 +50,12 @@ public class ProvisioningRetryScheduler {
         }
     }
 
+    // Cluster-wide single execution. Provisioning creates a tenant. Running it
+    // twice for one paid order is the defect this whole mechanism exists to
+    // prevent, so the ceiling is long enough to cover a slow provision rather than
+    // merely a typical one.
     @Scheduled(fixedDelayString = "${app.payment.retry-interval-ms:300000}")
+    @SchedulerLock(name = "provisioningRetry", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
     public void retryOrRefund() {
         List<PendingOrder> stuck = pendingOrderRepository.findByStatus(OrderStatus.PROVISIONING_FAILED);
         LocalDateTime budgetCutoff = LocalDateTime.now().minusHours(retryBudgetHours);
