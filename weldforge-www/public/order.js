@@ -6,19 +6,22 @@
    cheapest configured gateway, creates a checkout session with it,
    and returns the hosted-checkout URL. We then redirect.
 
-   While BACKEND_ENABLED is false (no live Stripe account + no Pty
-   Ltd yet) every self-serve click degrades cleanly to a mailto: so
-   no button on the marketing site is ever dead. Flip the flag the
-   day Stripe is live.
+   The backend records the order whether or not a payment gateway is
+   configured. With one it returns a hosted-checkout URL and we
+   redirect. Without one it returns nextStep=MANUAL_FOLLOW_UP, having
+   already reserved the slug and emailed sales -- so the sign-up is
+   captured either way, and the visitor gets a real confirmation
+   instead of a mailto: they may never send.
    ============================================================ */
 (function () {
     'use strict';
 
     /* ---- Config ---------------------------------------------- */
 
-    // Flip to true once the WeldForge (Pty) Ltd Stripe account is
-    // live and the sso.weldforge.org backend has a gateway configured.
-    var BACKEND_ENABLED = false;
+    // The backend is the source of truth for what happens next, and it no
+    // longer needs a configured gateway to accept an order. The mailto:
+    // path survives only for when the API itself is unreachable.
+    var BACKEND_ENABLED = true;
 
     var API_BASE      = 'https://sso.weldforge.org';
     var OSS_URL       = 'https://github.com/weldforge-idp/weldforge';
@@ -149,9 +152,18 @@
             .then(function (resp) {
                 if (resp && resp.checkoutUrl) {
                     window.location.href = resp.checkoutUrl;
-                } else {
-                    throw new Error('backend did not return a checkout URL');
+                    return;
                 }
+                // There is no checkout to send them to, but the order IS
+                // recorded and the slug reserved. Read the explicit nextStep
+                // rather than inferring intent from the missing URL.
+                if (resp && resp.nextStep === 'MANUAL_FOLLOW_UP') {
+                    window.location.href = '/order-received.html?token=' +
+                        encodeURIComponent(resp.orderToken || '') +
+                        '&slug=' + encodeURIComponent(payload.tenantSlug || '');
+                    return;
+                }
+                throw new Error('the order service gave an unexpected answer');
             })
             .catch(function (e) {
                 $('submit-btn').disabled = false;

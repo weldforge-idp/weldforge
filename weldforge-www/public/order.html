@@ -206,14 +206,18 @@
     <div class="container">
         <div class="callout">
             <span class="kicker">What happens after you click</span>
-            Self-serve tiers redirect you to Stripe Checkout — we never see
-            your card. Once payment is confirmed, the provisioning script
-            creates your tenant, generates a one-shot <code>SUPER_ADMIN</code>
-            service-account token, and emails you the credentials plus a
-            link to the admin portal. Typical end-to-end time: under two
-            minutes. Sales-gated tiers route the form to our sales inbox and
-            we reply within one business day to schedule a short onboarding
-            call.
+            Your sign-up is recorded and the tenant name you choose is held for
+            you straight away — that part does not depend on payment.
+            Where card checkout is available for your billing region you go
+            to the payment page next (we never see your card), and once
+            payment confirms we create your tenant, mint a one-shot
+            <code>TENANT_ADMIN</code> service-account token, and email you the
+            credentials and a link to the admin portal — typically under two
+            minutes. Where it is not yet available, we email you within one
+            business day to activate it by hand; your sign-up is safe in the
+            meantime and you do not need to submit it twice. Sales-gated tiers
+            always route to our sales inbox, with a reply within one business
+            day to schedule a short onboarding call.
         </div>
     </div>
 </section>
@@ -243,214 +247,10 @@
 </footer>
 
 <!-- Client wiring is in /order.js (external, to honour the CSP script-src 'self'). -->
-<!-- script moved to /order.js --><!--
-(function () {
-    'use strict';
-
-    // ---- Config (edit these when Stripe is live) ----
-    var CHECKOUT_URLS = {
-        'self-host-supported':  'https://buy.stripe.com/PLACEHOLDER_SELF_HOST_SUPPORTED',
-        'cloud-starter':        'https://buy.stripe.com/PLACEHOLDER_CLOUD_STARTER',
-        'cloud-team':           'https://buy.stripe.com/PLACEHOLDER_CLOUD_TEAM',
-        'cloud-business':       'https://buy.stripe.com/PLACEHOLDER_CLOUD_BUSINESS'
-    };
-    var OSS_URL = 'https://github.com/weldforge-idp/weldforge';
-    var SALES_EMAIL = 'sales@weldforge.org';
-    var ORDERS_WEBHOOK = '';  // optional: Formspree / Basin / Getform endpoint
-
-    // ---- State ----
-    var selectedTier = null;
-    var selectedMode = null;
-
-    // ---- Helpers ----
-    function $(id) { return document.getElementById(id); }
-    function qs(sel) { return document.querySelector(sel); }
-    function qsAll(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
-
-    function getQueryTier() {
-        var m = window.location.search.match(/[?&]tier=([a-z0-9-]+)/i);
-        return m ? m[1].toLowerCase() : null;
-    }
-
-    function showForm(tier, mode) {
-        selectedTier = tier;
-        selectedMode = mode;
-        $('selected-tier').value = tier;
-        $('selected-mode').value = mode;
-
-        var formSection = $('form');
-        var selectorSection = $('selector');
-        var heading = $('form-heading');
-        var lead = $('form-lead');
-
-        qsAll('.self-serve-only').forEach(function (el) {
-            el.style.display = mode === 'self-serve' ? '' : 'none';
-        });
-        qsAll('.sales-only').forEach(function (el) {
-            el.style.display = mode === 'sales' ? '' : 'none';
-        });
-
-        if (mode === 'self-serve') {
-            heading.textContent = 'Your details';
-            lead.textContent = 'This information powers your tenant provisioning. You\'ll receive your admin credentials, initial service-account token, and a link to the admin portal within a few minutes of checkout.';
-            $('tenant-slug').required = true;
-            $('submit-btn').textContent = 'Continue to checkout';
-        } else if (mode === 'sales') {
-            heading.textContent = 'Tell us about your deployment';
-            lead.textContent = 'We review your requirements, send an onboarding plan, and schedule a short call. Typical response time is one business day.';
-            $('tenant-slug').required = false;
-            $('submit-btn').textContent = 'Send to sales';
-        }
-
-        formSection.style.display = '';
-        formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    function emailIsBusinessDomain(email) {
-        var blocked = ['gmail.com', 'yahoo.com', 'yahoo.co.uk', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'aol.com', 'proton.me', 'protonmail.com'];
-        var domain = email.split('@')[1];
-        return domain && blocked.indexOf(domain.toLowerCase()) === -1;
-    }
-
-    function buildMailtoFallback(tier, payload) {
-        var subject = encodeURIComponent('[Order — ' + tier + '] ' + (payload.organisation || 'New enquiry'));
-        var body = encodeURIComponent(
-            'Tier: ' + tier + '\n' +
-            'Mode: ' + selectedMode + '\n\n' +
-            'Organisation: ' + (payload.organisation || '') + '\n' +
-            'Contact:       ' + (payload.contactName || '') + ' <' + (payload.contactEmail || '') + '>\n' +
-            'Tenant slug:   ' + (payload.tenantSlug || '(not provided)') + '\n' +
-            'Region:        ' + (payload.region || '(not provided)') + '\n' +
-            'Billing cycle: ' + (payload.billingCycle || '(not provided)') + '\n' +
-            'MAU estimate:  ' + (payload.mauEstimate || '(not provided)') + '\n\n' +
-            'Compliance / notes:\n' + (payload.complianceNotes || '(none)') + '\n'
-        );
-        return 'mailto:' + SALES_EMAIL + '?subject=' + subject + '&body=' + body;
-    }
-
-    function redirectToCheckout(tier, payload) {
-        var url = CHECKOUT_URLS[tier];
-        if (!url || url.indexOf('PLACEHOLDER') !== -1) {
-            // Stripe not yet configured — fall back to a mailto so the
-            // button is never dead.
-            window.location.href = buildMailtoFallback(tier, payload);
-            return;
-        }
-        // Append prefill parameters Stripe Checkout understands.
-        var sep = url.indexOf('?') === -1 ? '?' : '&';
-        var params = new URLSearchParams({
-            prefilled_email: payload.contactEmail || '',
-            client_reference_id: encodeURIComponent(JSON.stringify({
-                organisation: payload.organisation,
-                contactName:  payload.contactName,
-                tenantSlug:   payload.tenantSlug,
-                region:       payload.region,
-                billingCycle: payload.billingCycle
-            })).slice(0, 200)  // Stripe limits client_reference_id to 200 chars
-        });
-        window.location.href = url + sep + params.toString();
-    }
-
-    // ---- Tier-select click ----
-    qsAll('.tier-option').forEach(function (card) {
-        card.addEventListener('click', function () {
-            var tier = card.getAttribute('data-tier');
-            var mode = card.getAttribute('data-mode');
-
-            if (mode === 'opensource') {
-                window.location.href = OSS_URL;
-                return;
-            }
-            showForm(tier, mode);
-        });
-    });
-
-    // ---- Form submit ----
-    $('order-form').addEventListener('submit', function (ev) {
-        ev.preventDefault();
-
-        var form = ev.target;
-        var payload = {
-            tier:             selectedTier,
-            mode:             selectedMode,
-            organisation:     form.organisation.value.trim(),
-            contactName:      form.contactName.value.trim(),
-            contactEmail:     form.contactEmail.value.trim(),
-            tenantSlug:       form.tenantSlug.value.trim(),
-            region:           form.region.value,
-            billingCycle:     form.billingCycle.value,
-            mauEstimate:      form.mauEstimate.value.trim(),
-            complianceNotes:  form.complianceNotes.value.trim(),
-            termsAccepted:    form.termsAccepted.checked
-        };
-
-        // Client-side validation.
-        var errs = [];
-        if (!payload.organisation) errs.push('organisation');
-        if (!payload.contactName)  errs.push('contactName');
-        if (!payload.contactEmail) errs.push('contactEmail');
-        if (!payload.termsAccepted) errs.push('termsAccepted');
-
-        $('email-error').textContent = '';
-        $('slug-error').textContent = '';
-
-        if (payload.contactEmail && !emailIsBusinessDomain(payload.contactEmail)) {
-            $('email-error').textContent = 'Please use a work email on your own domain — generic mailbox providers are not accepted.';
-            errs.push('contactEmail');
-        }
-        if (selectedMode === 'self-serve') {
-            if (!payload.tenantSlug) errs.push('tenantSlug');
-            if (payload.tenantSlug && !/^[a-z0-9-]+$/.test(payload.tenantSlug)) {
-                $('slug-error').textContent = 'Only lowercase letters, digits and hyphens.';
-                errs.push('tenantSlug');
-            }
-        }
-        if (errs.length) return;
-
-        // Optionally ping a form-to-email webhook so the order metadata
-        // (which Stripe Checkout won't see) reaches sales@ even before
-        // the customer pays.
-        if (ORDERS_WEBHOOK) {
-            try {
-                fetch(ORDERS_WEBHOOK, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                    mode: 'no-cors'
-                });
-            } catch (e) { /* non-fatal */ }
-        }
-
-        if (selectedMode === 'self-serve') {
-            redirectToCheckout(selectedTier, payload);
-        } else if (selectedMode === 'sales') {
-            window.location.href = buildMailtoFallback(selectedTier, payload);
-        }
-    });
-
-    $('back-btn').addEventListener('click', function () {
-        $('form').style.display = 'none';
-        $('selector').scrollIntoView({ behavior: 'smooth' });
-    });
-
-    // ---- Pre-select tier from ?tier=... ----
-    var preTier = getQueryTier();
-    if (preTier) {
-        var card = document.querySelector('[data-tier="' + preTier + '"]');
-        if (card) {
-            var prefillNote = $('tier-prefilled');
-            if (prefillNote) prefillNote.style.display = '';
-            // Auto-show form only for self-serve tiers; sales-gated still
-            // asks the user to click, so they can see what they're
-            // committing to.
-            if (card.getAttribute('data-mode') === 'self-serve') {
-                showForm(preTier, 'self-serve');
-            } else {
-                card.classList.add('highlighted');
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        }
-    }
-})();
---></body>
+<!-- The previous inline copy of this logic lived here, with PLACEHOLDER_
+     Stripe URLs that would have sent customers to a 404 the day the
+     flag was flipped. It was already superseded by /order.js and is
+     deleted rather than left commented out: two copies of a payment
+     funnel is one too many. -->
+</body>
 </html>

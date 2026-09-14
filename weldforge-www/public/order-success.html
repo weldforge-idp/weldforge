@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payment received — WeldForge</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="/weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+<section class="hero">
+    <div class="container">
+        <h1>Payment received — <span class="accent">building your tenant.</span></h1>
+        <p class="lead">
+            Thank you. Your payment cleared and WeldForge is provisioning your
+            tenant now. This usually takes well under a minute.
+        </p>
+        <p class="lead">
+            <strong>What happens next:</strong> we create your tenant, mint a
+            <code>TENANT_ADMIN</code> service-account token, and email the
+            activation details to the address you gave us. That token is shown
+            <em>once</em>, in that email — store it somewhere safe before you
+            close it.
+        </p>
+        <p class="lead">
+            Provisioning deliberately happens after payment clears, never
+            before, so there is a short gap between this page and that email. If
+            it has not arrived within fifteen minutes, reply to your receipt or
+            email <a href="mailto:support@weldforge.org">support@weldforge.org</a>
+            with your order reference and we will finish it by hand — your
+            payment is recorded either way, and a failed provision is our
+            problem to fix, not yours to re-pay.
+        </p>
+
+        <div class="panel" id="order-detail" hidden>
+            <h2>Your reference</h2>
+            <dl class="kv">
+                <dt>Order reference</dt><dd><code id="order-token">&mdash;</code></dd>
+            </dl>
+        </div>
+
+        <div class="cta-row">
+            <a class="btn primary" href="/tutorials.html">Set up your first application</a>
+            <a class="btn ghost" href="/agents.html">Integration guide for AI agents</a>
+        </div>
+    </div>
+</section>
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="/weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</footer>
+
+<script src="/order-received.js" defer></script>
+</body>
+</html>

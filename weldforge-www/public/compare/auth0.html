@@ -59,12 +59,21 @@
     <div class="container">
         <h2>Monthly cost at common MAU tiers</h2>
         <p class="lead">
-            Retail list prices for roughly equivalent plans. Auth0 figures
-            are from auth0.com/pricing as of 2026-Q2 and include the base
-            fee plus per-MAU overage where the tier caps out. WeldForge
-            pricing is from <a href="/pricing.html">our pricing page</a>
-            (annual billing).
+            Retail list prices, Auth0 figures taken from auth0.com/pricing and
+            re-checked <strong>14 September 2026</strong>. WeldForge pricing is
+            from <a href="/pricing.html">our pricing page</a> (annual billing).
         </p>
+        <div class="callout">
+            <span class="kicker">Read this before the table</span>
+            Auth0&rsquo;s free tier now covers <strong>25,000 monthly active
+            users</strong>. Below that line Auth0 costs nothing and our hosted
+            tiers do not beat it &mdash; an earlier version of this page claimed
+            savings there, and it was wrong. If price at low volume is your only
+            question, use Auth0&rsquo;s free tier or self-host WeldForge, which
+            is free at any scale. The honest comparison starts with what the
+            free tier does not include: <strong>no MFA</strong>, one enterprise
+            connection, and no SLA.
+        </div>
 
         <table class="pricing">
             <thead>
@@ -79,47 +88,54 @@
             <tbody>
                 <tr>
                     <td><strong>500 MAU</strong></td>
-                    <td class="price">$0 <span class="overage">Cloud Starter, free under 500</span></td>
-                    <td class="price">$0 <span class="overage">Free tier</span></td>
+                    <td class="price">$0 <span class="overage">self-hosted</span><br>$29 <span class="overage">Cloud Starter</span></td>
+                    <td class="price">$0 <span class="overage">Free, no MFA</span></td>
                     <td>&mdash;</td><td>&mdash;</td>
                 </tr>
                 <tr>
                     <td><strong>1 000 MAU</strong></td>
-                    <td class="price">$29 <span class="overage">Cloud Starter</span></td>
-                    <td class="price">$240 <span class="overage">B2C Essentials, base fee</span></td>
-                    <td class="price">$211</td>
-                    <td class="price">$2 532</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span><br>$29 <span class="overage">Cloud Starter</span></td>
+                    <td class="price">$0 <span class="overage">Free, no MFA</span></td>
+                    <td>&mdash;</td><td>&mdash;</td>
                 </tr>
                 <tr>
                     <td><strong>10 000 MAU</strong></td>
-                    <td class="price">$149 <span class="overage">Cloud Team, MAU included</span></td>
-                    <td class="price">~$540 <span class="overage">B2C Essentials + MAU overage</span></td>
-                    <td class="price">$391</td>
-                    <td class="price">$4 692</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span><br>$149 <span class="overage">Cloud Team</span></td>
+                    <td class="price">$0 <span class="overage">Free, no MFA</span></td>
+                    <td>&mdash;</td><td>&mdash;</td>
                 </tr>
                 <tr>
                     <td><strong>25 000 MAU</strong></td>
-                    <td class="price">$524 <span class="overage">Cloud Team + overage</span></td>
-                    <td class="price">~$1 100 <span class="overage">B2C Essentials + MAU overage</span></td>
-                    <td class="price">$576</td>
-                    <td class="price">$6 912</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span><br>$524 <span class="overage">Cloud Team + overage</span></td>
+                    <td class="price">$0 <span class="overage">top of the Free tier</span></td>
+                    <td>&mdash;</td><td>&mdash;</td>
                 </tr>
                 <tr>
                     <td><strong>50 000 MAU</strong></td>
-                    <td class="price">$699 <span class="overage">Cloud Business, MAU included</span></td>
-                    <td class="price">~$1 800 <span class="overage">B2C Professional, base + overage</span></td>
-                    <td class="price">$1 101</td>
-                    <td class="price">$13 212</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span><br>$699 <span class="overage">Cloud Business</span></td>
+                    <td class="price">$240+ <span class="overage">B2C Professional, past the free cap</span></td>
+                    <td class="price">$0 &ndash; $459</td>
+                    <td class="price">depends on plan</td>
                 </tr>
                 <tr>
                     <td><strong>250 000 MAU</strong></td>
-                    <td class="price">$2 499 <span class="overage">Cloud Scale, MAU included</span></td>
-                    <td class="price">~$5 500+ <span class="overage">B2C Professional + overage</span></td>
-                    <td class="price">$3 001+</td>
-                    <td class="price">$36 000+</td>
+                    <td class="price">$0 <span class="overage">self-hosted</span><br>$2 499 <span class="overage">Cloud Scale</span></td>
+                    <td class="price">Contact sales <span class="overage">Enterprise</span></td>
+                    <td class="price">not comparable</td>
+                    <td class="price">not comparable</td>
                 </tr>
             </tbody>
         </table>
+
+        <p class="lead">
+            The table above is Auth0&rsquo;s <strong>B2C</strong> line. If you
+            sell to businesses and need enterprise SSO connections, Auth0 prices
+            that separately and much higher: B2B Essentials starts at
+            <strong>$150/mo</strong> and B2B Professional at
+            <strong>$800/mo</strong>, both quoted from 500 MAU, with enterprise
+            connections metered. That is the comparison where a per-tenant SAML
+            IdP you run yourself changes the arithmetic, not the consumer one.
+        </p>
 
         <div class="callout">
             <span class="kicker">See the numbers for your workload</span>

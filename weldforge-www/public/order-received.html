@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign-up received — WeldForge</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="site-header">
+    <div class="container">
+        <a href="/" class="brand">
+            <img src="/weldforge-logo.svg" alt="WeldForge">
+            <span class="wordmark">WELDFORGE</span>
+        </a>
+        <nav class="primary">
+            <a href="/">Home</a>
+            <a href="/workforce-sso.html">Workforce SSO</a>
+            <a href="/customer-identity.html">Customer Identity</a>
+            <a href="/api-authentication.html">API &amp; M2M</a>
+            <a href="/pki.html">PKI</a>
+            <a href="/compliance.html">Compliance</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+<section class="hero">
+    <div class="container">
+        <h1>Got it — <span class="accent">your sign-up is in.</span></h1>
+        <p class="lead">
+            Your order is recorded and the tenant name you asked for is being
+            held for you. A person reads these. You will hear from us within one
+            business day with activation details and how to pay.
+        </p>
+        <p class="lead">
+            <strong>Why you were not sent to a card form:</strong> WeldForge is
+            run by a small team and card checkout is not switched on for your
+            billing region yet. Nothing about your sign-up was lost, and you do
+            not need to submit it again.
+        </p>
+
+        <div class="panel" id="order-detail" hidden>
+            <h2>Your reference</h2>
+            <dl class="kv">
+                <dt>Order reference</dt><dd><code id="order-token">&mdash;</code></dd>
+                <dt>Tenant name held</dt><dd><code id="order-slug">&mdash;</code></dd>
+            </dl>
+            <p class="fine">
+                Quote the reference if you email us — it is the fastest way for
+                us to find your sign-up.
+            </p>
+        </div>
+
+        <div class="cta-row">
+            <a class="btn primary" href="mailto:sales@weldforge.org?subject=WeldForge%20sign-up">Email us</a>
+            <a class="btn ghost" href="/tutorials.html">Start reading the docs</a>
+        </div>
+
+        <p class="lead">
+            In a hurry? You do not have to wait for us. WeldForge is
+            source-available and the self-hosted edition is free and complete —
+            <a href="https://github.com/weldforge-idp/weldforge">run it yourself
+            today</a> and move to the hosted tenant when we activate it.
+        </p>
+    </div>
+</section>
+</main>
+
+<footer class="site-footer">
+    <div class="container">
+        <div>
+            <span class="brand"><img src="/weldforge-logo.svg" alt=""><span class="wordmark">WELDFORGE</span></span>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/deployment.html">Deployment</a>
+            <a href="/tutorials.html">Tutorials</a>
+            <a href="/agents.html">AI Agents</a>
+        </nav>
+    </div>
+</footer>
+
+<script src="/order-received.js" defer></script>
+</body>
+</html>

@@ -40,6 +40,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -70,6 +72,7 @@ public class PaymentPlatformBillingSteps {
 
     // Wired services.
     private OrderService               orderService;
+    private tech.cwvermaak.weldforge.service.mail.MailService mailService;
     private TenantProvisioningService  provisioningService;
     private WebhookService             webhookService;
 
@@ -196,7 +199,11 @@ public class PaymentPlatformBillingSteps {
         tech.cwvermaak.weldforge.service.TenantSlugValidator slugValidator =
                 mock(tech.cwvermaak.weldforge.service.TenantSlugValidator.class);
         when(slugValidator.validate(anyString())).thenAnswer(inv -> inv.getArgument(0));
-        orderService = new OrderService(orderRepo, txRepo, routing, slugValidator, List.of(fakeGateway));
+        // Mailing sales is a side effect of the no-gateway path, so it is a
+        // mock -- but a field one, because whether it was called IS the
+        // assertion for "the lead reached a human".
+        mailService = mock(tech.cwvermaak.weldforge.service.mail.MailService.class);
+        orderService = new OrderService(orderRepo, txRepo, routing, slugValidator, mailService, List.of(fakeGateway));
         provisioningService = new TenantProvisioningService(
                 tenantRepo, saRepo, subRepo, orderRepo, orderService, auditService, slugValidator);
         webhookService = new WebhookService(gatewayRepo, orderService, provisioningService, List.of(fakeGateway));
@@ -241,6 +248,15 @@ public class PaymentPlatformBillingSteps {
         gatewaysById.put(g.getId(), g);
     }
 
+    @Given("the platform has no payment gateway configured")
+    public void platformHasNoGateway() {
+        ensureWired();
+        // The Background wires a fake gateway for every scenario; this removes
+        // it, which is the state of a platform whose operator has not opened a
+        // merchant account yet.
+        gatewaysById.clear();
+    }
+
     @Given("the tier {string} costs {int} cents monthly")
     public void tierCost(String tier, int cents) {
         // Declarative — asserted by the fact that OrderService computes
@@ -280,6 +296,40 @@ public class PaymentPlatformBillingSteps {
     @Then("the customer received a checkout URL")
     public void receivedCheckoutUrl() {
         assertThat(lastCreateResponse.getCheckoutUrl()).startsWith("https://checkout.fake/");
+    }
+
+    @Then("the customer did not receive a checkout URL")
+    public void didNotReceiveCheckoutUrl() {
+        assertThat(lastCreateResponse.getCheckoutUrl()).isNull();
+    }
+
+    @Then("the next step is {string}")
+    public void nextStepIs(String step) {
+        assertThat(lastCreateResponse.getNextStep())
+                .as("a null checkoutUrl must be accompanied by an explicit next step")
+                .isEqualTo(CreateOrderResponse.NextStep.valueOf(step));
+    }
+
+    @Then("the slug {string} is still reserved")
+    public void slugStillReserved(String slug) {
+        PendingOrder order = ordersByToken.get(lastCreateResponse.getOrderToken());
+        assertThat(order.getRequestedTenantSlug()).isEqualTo(slug);
+        assertThat(order.getStatus().isActive())
+                .as("an active status is what holds the partial unique index")
+                .isTrue();
+        // Long enough for a human to reply to an email, not the 10 minutes a
+        // card payment gets.
+        assertThat(order.getSlugReservationExpires())
+                .isAfter(LocalDateTime.now().plusHours(1));
+    }
+
+    @Then("sales was notified about the order")
+    public void salesWasNotified() {
+        org.mockito.ArgumentCaptor<String> body = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(mailService, times(1)).send(anyString(), anyString(), body.capture());
+        // The token is what lets the operator find the row; a notification
+        // without it is not actionable.
+        assertThat(body.getValue()).contains(lastCreateResponse.getOrderToken());
     }
 
     // ---- Webhooks -------------------------------------------------
