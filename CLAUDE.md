@@ -95,6 +95,18 @@ the audit/lockout writes when next touched here.
      Pre-deploy dump before a migration:
      `kubectl -n postgres create job <name> --from=cronjob/postgres-backup`
      (dumps land at `/var/backups/postgres` on the node, hostPath).
+  3. **Before promoting, run `./scripts/Test-PrePromotion.ps1`** against
+     staging, and again against production afterwards. Read-only, ~20 checks,
+     each one a defect that reached production at some point — ingress routing,
+     public `/actuator` exposure, 415/400-not-500 handling, edge security
+     headers, wildcard TLS expiry. The unit and integration suites cannot see
+     any of it, because it lives in the other repo.
+- **External uptime check:** `.github/workflows/uptime.yml` probes the public
+  surface every 15 minutes from GitHub's infrastructure and opens a labelled
+  `uptime` issue when it fails. It exists because the in-cluster monitoring runs
+  *on* `tech01` and therefore cannot report that `tech01` is down. Set the
+  optional `NTFY_UPTIME_URL` repo secret to a topic on a server that is **not**
+  `tech01` to get a push as well.
 - **CI workflow:** `.github/workflows/ci.yml`. The backend job runs
   `./mvnw -B -ntp verify -Dtests.integration=true` — the `-Dtests.integration`
   flag is set **only** in CI; a local `./mvnw clean verify` skips the

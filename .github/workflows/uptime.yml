@@ -1,0 +1,183 @@
+name: uptime
+
+# The external half of monitoring.
+#
+# Prometheus, Alertmanager and ntfy all run ON tech01, so they cannot tell you
+# tech01 is down -- if the node loses power or network they go with it and you
+# hear nothing. That is the one alert the in-cluster stack structurally cannot
+# send, and this workflow is the answer: it runs on GitHub's infrastructure,
+# which fails independently of the node.
+#
+# It deliberately needs no third-party uptime service and no new account. This
+# repository is public, so scheduled minutes are free and the endpoints it
+# probes are already public.
+#
+# WHAT IT DOES NOT DO: catch a short blip. GitHub delays scheduled runs under
+# load, sometimes by many minutes, and `schedule` has a 5-minute floor. This is
+# a "the platform has been down for a while and nobody noticed" net, not a
+# latency monitor -- the in-cluster alerts cover the fast signals.
+
+on:
+  schedule:
+    # Every 15 minutes. Finer than this is wasted: GitHub's own scheduling
+    # jitter is larger than the extra resolution would buy.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Needed to open and close the outage issue.
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      # The `secrets` context is not available in a step-level `if:`, so the
+      # optional ntfy target is mapped to an env var here and tested as one.
+      NTFY_UPTIME_URL: ${{ secrets.NTFY_UPTIME_URL }}
+    steps:
+      - name: Probe the public surface
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          report=""
+
+          check() {
+            local name="$1" url="$2" expect_type="$3"
+            local code type
+            # --max-time generously: a slow answer is still an answer, and a
+            # false alarm at 03:00 is worse than a late one.
+            read -r code type < <(curl -sS -o /tmp/body -w '%{http_code} %{content_type}\n' \
+                                   --max-time 30 --retry 2 --retry-delay 5 "$url" 2>/dev/null || echo "000 -")
+            if [ "$code" != "200" ]; then
+              report+="- **$name** returned HTTP \`$code\` (expected 200) — $url"$'\n'
+              fail=1
+              return
+            fi
+            case "$type" in
+              *"$expect_type"*) ;;
+              *)
+                # A JSON endpoint answering text/html means the request fell
+                # through to the SPA -- the API is not routing, even though
+                # something returned 200.
+                report+="- **$name** returned 200 but \`$type\` (expected $expect_type) — $url"$'\n'
+                fail=1
+                ;;
+            esac
+          }
+
+          # Liveness, and the two things that prove the API itself is serving
+          # rather than the SPA answering in its place.
+          check "health"          "https://sso.weldforge.org/health" "json"
+          check "OIDC discovery"  "https://sso.weldforge.org/t/leap/.well-known/openid-configuration" "json"
+          check "JWKS"            "https://sso.weldforge.org/t/leap/oauth2/jwks" "json"
+          check "SAML metadata"   "https://sso.weldforge.org/t/leap/saml2/idp/metadata" "xml"
+          # The admin portal and the marketing site are separate hosts and fail
+          # separately.
+          check "admin portal"    "https://sso.weldforge.org/login" "html"
+          check "marketing site"  "https://www.weldforge.org/" "html"
+
+          # TLS expiry. cert-manager renews at 30 days; under 10 means renewal
+          # has been failing for three weeks and nobody saw it.
+          for host in sso.weldforge.org www.weldforge.org; do
+            end=$(echo | openssl s_client -servername "$host" -connect "$host":443 2>/dev/null \
+                  | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+            if [ -z "$end" ]; then
+              report+="- **TLS $host** — could not read the certificate"$'\n'
+              fail=1
+              continue
+            fi
+            days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+            echo "TLS $host expires in $days days"
+            if [ "$days" -lt 10 ]; then
+              report+="- **TLS $host** expires in $days days — renewal is failing"$'\n'
+              fail=1
+            fi
+          done
+
+          {
+            echo "failed=$fail"
+            echo "report<<EOF"
+            echo "${report:-All probes passed.}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          [ "$fail" -eq 0 ] || echo "::error::Public surface check failed"
+
+      - name: Push to ntfy
+        # Optional and best-effort. NTFY_UPTIME_URL should point at a topic on
+        # a server that is NOT tech01 (the self-hosted one is down exactly when
+        # this matters) -- e.g. https://ntfy.sh/<a-long-random-topic>. If the
+        # secret is unset the step is skipped and the issue below still opens.
+        if: steps.probe.outputs.failed == '1' && env.NTFY_UPTIME_URL != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          REPORT: ${{ steps.probe.outputs.report }}
+        run: |
+          curl -sS --max-time 20 \
+            -H "Title: WeldForge production is not answering" \
+            -H "Priority: urgent" \
+            -H "Tags: rotating_light" \
+            --data-binary "$REPORT" \
+            "$NTFY_UPTIME_URL"
+
+      - name: Open or update the outage issue
+        if: steps.probe.outputs.failed == '1'
+        uses: actions/github-script@v7
+        env:
+          REPORT: ${{ steps.probe.outputs.report }}
+        with:
+          script: |
+            const title = 'Production is not answering its public endpoints';
+            const body = [
+              `Automated check at ${new Date().toISOString()} found:`,
+              '',
+              process.env.REPORT,
+              '',
+              `[Run log](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              '',
+              'This issue closes itself on the next passing run.',
+            ].join('\n');
+            const open = await github.rest.issues.listForRepo({
+              ...context.repo, state: 'open', labels: 'uptime',
+            });
+            // One issue per outage, updated -- not a new issue every 15 minutes.
+            if (open.data.length) {
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number: open.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                ...context.repo, title, body, labels: ['uptime'],
+              });
+            }
+
+      - name: Close the outage issue
+        if: steps.probe.outputs.failed == '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const open = await github.rest.issues.listForRepo({
+              ...context.repo, state: 'open', labels: 'uptime',
+            });
+            for (const issue of open.data) {
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number: issue.number,
+                body: `Recovered — all probes passed at ${new Date().toISOString()}.`,
+              });
+              await github.rest.issues.update({
+                ...context.repo, issue_number: issue.number, state: 'closed',
+              });
+            }
+
+      - name: Fail the run so GitHub notifies
+        if: steps.probe.outputs.failed == '1'
+        run: exit 1
