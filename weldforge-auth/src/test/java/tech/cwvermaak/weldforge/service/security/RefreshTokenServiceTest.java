@@ -30,6 +30,8 @@ import static org.mockito.Mockito.*;
  */
 class RefreshTokenServiceTest {
 
+    /** The row the current test has put behind findByTokenHash, so claim() can mirror the real predicate. */
+    private RefreshToken claimTarget;
     private RefreshTokenRepository repo;
     private AuditService auditService;
     private RefreshTokenProperties props;
@@ -56,6 +58,28 @@ class RefreshTokenServiceTest {
             RefreshToken r = inv.getArgument(0);
             if (r.getId() == null) r.setId(idSeq.getAndIncrement());
             return r;
+        });
+
+        // claim() is the conditional UPDATE the real repository performs, and
+        // Mockito answers an unstubbed int with 0 -- which the service reads,
+        // correctly, as "another caller already holds this token". Default it
+        // to a won claim here; the reuse and revoked cases override it, because
+        // losing the claim IS how those states now present.
+        when(repo.claim(any(), any(java.time.LocalDateTime.class))).thenAnswer(inv -> {
+            java.time.LocalDateTime now = inv.getArgument(1);
+            RefreshToken target = claimTarget;
+            if (target != null) {
+                if (target.getUsedAt() != null || target.getRevokedAt() != null) return 0;
+                target.setUsedAt(now);
+            }
+            return 1;
+        });
+        when(repo.markReplacedBy(any(), any())).thenAnswer(inv -> {
+            // Mirrors the targeted UPDATE the service now issues instead of
+            // mutating the entity, so assertions about the predecessor
+            // recording its successor still mean what they did.
+            if (claimTarget != null) claimTarget.setReplacedBy(inv.getArgument(1));
+            return 1;
         });
     }
 
@@ -87,7 +111,7 @@ class RefreshTokenServiceTest {
                 .issuedAt(LocalDateTime.now().minusMinutes(1))
                 .expiresAt(LocalDateTime.now().plusDays(7))
                 .build();
-        when(repo.findByTokenHash(existingHash)).thenReturn(Optional.of(existing));
+        when(repo.findByTokenHash(existingHash)).thenReturn(Optional.of(claimTarget = existing));
 
         RefreshTokenService.Issued issued = service.rotate("existing-raw", "1.2.3.4", "ua");
 
@@ -114,7 +138,7 @@ class RefreshTokenServiceTest {
                 .expiresAt(LocalDateTime.now().plusDays(7))
                 .usedAt(LocalDateTime.now().minusMinutes(3))
                 .build();
-        when(repo.findByTokenHash(existingHash)).thenReturn(Optional.of(alreadyUsed));
+        when(repo.findByTokenHash(existingHash)).thenReturn(Optional.of(claimTarget = alreadyUsed));
         when(revoker.revoke(eq(familyId), eq("reuse_detected"))).thenReturn(4);
 
         assertThatThrownBy(() -> service.rotate("stolen-raw", "1.2.3.4", "ua"))
@@ -143,7 +167,7 @@ class RefreshTokenServiceTest {
                 .issuedAt(LocalDateTime.now().minusDays(30))
                 .expiresAt(LocalDateTime.now().minusDays(1))
                 .build();
-        when(repo.findByTokenHash(hash)).thenReturn(Optional.of(expired));
+        when(repo.findByTokenHash(hash)).thenReturn(Optional.of(claimTarget = expired));
 
         assertThatThrownBy(() -> service.rotate("old-raw", "1.2.3.4", "ua"))
                 .isInstanceOf(BadCredentialsException.class)
@@ -181,7 +205,7 @@ class RefreshTokenServiceTest {
                 .issuedAt(LocalDateTime.now().minusMinutes(1))
                 .expiresAt(LocalDateTime.now().plusDays(7))
                 .build();
-        when(repo.findByTokenHash(RefreshTokenService.hash(raw))).thenReturn(Optional.of(row));
+        when(repo.findByTokenHash(RefreshTokenService.hash(raw))).thenReturn(Optional.of(claimTarget = row));
         return row;
     }
 

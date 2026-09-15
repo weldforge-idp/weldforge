@@ -226,9 +226,16 @@ public class RefreshTokenService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        // Reuse detection — a token that's already been used or explicitly
-        // revoked is a strong signal of compromise. Nuke the family.
-        if (row.getUsedAt() != null || row.getRevokedAt() != null) {
+        // Claim the token before doing anything with it. The UPDATE carries the
+        // `usedAt is null and revokedAt is null` predicate, so exactly one of N
+        // concurrent rotations can win. Testing the fields here in Java instead
+        // let two callers both pass against the same stale snapshot, both mint
+        // a successor, and reuse detection never run -- losing the control at
+        // the precise moment it was being exercised (B-AUTH-6).
+        //
+        // A zero return is not "try again": it means this token was already
+        // spent or revoked, which is the compromise signal below.
+        if (repository.claim(row.getId(), now) != 1) {
             // Committed independently: this method throws to reject the
             // refresh, and that rollback would otherwise undo the revocation,
             // leaving the stolen family alive with an audit event claiming
@@ -254,8 +261,15 @@ public class RefreshTokenService {
             throw new BadCredentialsException("Refresh token expired");
         }
 
-        // Mark current token used, then mint the successor in the same family.
-        row.setUsedAt(now);
+        // Deliberately NOT row.setUsedAt(now) here, and not setReplacedBy below.
+        // Mutating this entity makes it dirty, and JPA then flushes every
+        // column at commit from a snapshot taken at load time -- overwriting
+        // any change another transaction made in between. A concurrent reuse
+        // sweep revoking this family was being undone exactly that way: the
+        // containment ran, audited itself, and the winner's commit quietly
+        // reverted it. Both writes go through targeted UPDATEs instead.
+        //
+        // Mint the successor in the same family.
 
         // The successor describes the same authentication event as its
         // predecessor — rotation is not a re-authentication — and it carries
@@ -265,7 +279,7 @@ public class RefreshTokenService {
                 ipAddress, userAgent, row.getAmr(), row.getGrantedScopes(),
                 row.getAuthTime() == null ? null
                         : row.getAuthTime().atZone(java.time.ZoneId.systemDefault()).toInstant());
-        row.setReplacedBy(successor.row.getId());
+        repository.markReplacedBy(row.getId(), successor.row.getId());
 
         auditService.recordUserAction(AUDIT_REFRESH_ROTATE, row.getUser(),
                 "refresh_token", String.valueOf(row.getId()),

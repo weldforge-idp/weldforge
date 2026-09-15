@@ -33,6 +33,8 @@ import static org.mockito.Mockito.*;
  */
 class RefreshTokenClientBindingTest {
 
+    /** The row the current test has put behind findByTokenHash, so claim() can mirror the real predicate. */
+    private RefreshToken claimTarget;
     private RefreshTokenRepository repo;
     private AuditService auditService;
     private RefreshTokenFamilyRevoker revoker;
@@ -61,6 +63,28 @@ class RefreshTokenClientBindingTest {
             if (r.getId() == null) r.setId(idSeq.getAndIncrement());
             return r;
         });
+
+        // claim() is the conditional UPDATE the real repository performs, and
+        // Mockito answers an unstubbed int with 0 -- which the service reads,
+        // correctly, as "another caller already holds this token". Default it
+        // to a won claim here; the reuse and revoked cases override it, because
+        // losing the claim IS how those states now present.
+        when(repo.claim(any(), any(java.time.LocalDateTime.class))).thenAnswer(inv -> {
+            java.time.LocalDateTime now = inv.getArgument(1);
+            RefreshToken target = claimTarget;
+            if (target != null) {
+                if (target.getUsedAt() != null || target.getRevokedAt() != null) return 0;
+                target.setUsedAt(now);
+            }
+            return 1;
+        });
+        when(repo.markReplacedBy(any(), any())).thenAnswer(inv -> {
+            // Mirrors the targeted UPDATE the service now issues instead of
+            // mutating the entity, so assertions about the predecessor
+            // recording its successor still mean what they did.
+            if (claimTarget != null) claimTarget.setReplacedBy(inv.getArgument(1));
+            return 1;
+        });
     }
 
     private RefreshToken existingFor(OidcClient client, String rawToken) {
@@ -75,7 +99,7 @@ class RefreshTokenClientBindingTest {
                 .expiresAt(LocalDateTime.now().plusDays(6))
                 .build();
         when(repo.findByTokenHash(RefreshTokenService.hash(rawToken)))
-                .thenReturn(Optional.of(row));
+                .thenReturn(Optional.of(claimTarget = row));
         return row;
     }
 

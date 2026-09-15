@@ -43,6 +43,9 @@ import static org.mockito.Mockito.when;
 class OidcCodeReplayRevocationTest {
 
     private OidcAuthorizationService service;
+    /** Row the current test put behind findByCodeHash, so claim() can mirror the real predicate. */
+    private tech.cwvermaak.weldforge.model.OAuthAuthorizationCode claimTarget;
+
     private OAuthAuthorizationCodeRepository codeRepository;
     private RefreshTokenFamilyRevoker familyRevoker;
 
@@ -53,6 +56,21 @@ class OidcCodeReplayRevocationTest {
     @BeforeEach
     void setUp() {
         codeRepository = mock(OAuthAuthorizationCodeRepository.class);
+
+        // claim() is the conditional UPDATE the real repository performs, and an
+        // unstubbed Mockito int is 0 -- which the service reads, correctly, as a
+        // replay. Mirror the predicate so the happy path wins the claim and an
+        // already-spent code loses it, which is how reuse now presents.
+        when(codeRepository.claim(any(), any(java.time.LocalDateTime.class))).thenAnswer(inv -> {
+            java.time.LocalDateTime now = inv.getArgument(1);
+            tech.cwvermaak.weldforge.model.OAuthAuthorizationCode target = claimTarget;
+            if (target != null) {
+                if (target.getUsedAt() != null) return 0;
+                target.setUsedAt(now);
+            }
+            return 1;
+        });
+
         familyRevoker = mock(RefreshTokenFamilyRevoker.class);
 
         service = new OidcAuthorizationService(
@@ -82,7 +100,7 @@ class OidcCodeReplayRevocationTest {
                 .usedAt(LocalDateTime.now().minusMinutes(1))
                 .expiresAt(LocalDateTime.now().plusMinutes(4))
                 .build();
-        when(codeRepository.findByCodeHash(any())).thenReturn(Optional.of(row));
+        when(codeRepository.findByCodeHash(any())).thenReturn(Optional.of(claimTarget = row));
     }
 
     private void replay() {
@@ -130,7 +148,7 @@ class OidcCodeReplayRevocationTest {
                 .scopes("openid email")
                 .expiresAt(LocalDateTime.now().plusMinutes(4))
                 .build();
-        when(codeRepository.findByCodeHash(any())).thenReturn(Optional.of(fresh));
+        when(codeRepository.findByCodeHash(any())).thenReturn(Optional.of(claimTarget = fresh));
 
         replay();
 

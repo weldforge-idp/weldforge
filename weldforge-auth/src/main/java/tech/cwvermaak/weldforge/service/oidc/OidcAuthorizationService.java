@@ -262,7 +262,24 @@ public class OidcAuthorizationService {
         if (!row.getClient().getClientId().equals(request.clientId())) {
             throw reject("invalid_grant", "Code was issued to a different client");
         }
-        if (row.getUsedAt() != null) {
+        // Claim the code before doing anything with it. The UPDATE carries the
+        // `used_at is null` predicate, so exactly one of N concurrent exchanges
+        // can win -- testing row.getUsedAt() here instead would let two callers
+        // both pass against the same stale snapshot and both mint tokens, with
+        // the replay path below never running (B-OIDC-6).
+        //
+        // Why it works, because it is not obvious: T2's UPDATE blocks on T1's
+        // row lock, and when T1 commits, Postgres re-evaluates the WHERE clause
+        // against the updated row before proceeding. T2 then matches zero rows
+        // and takes the replay path. If T1 instead rolls back, T2 sees the code
+        // still unspent and wins it. Either way exactly one caller proceeds.
+        //
+        // Note this claim is rolled back with the transaction, so a genuine
+        // client that fails the redirect_uri or PKCE check below can still
+        // retry -- the checks are ordered after this only so the row lock is
+        // taken before the work, not to burn the code on a validation failure.
+        boolean won = codeRepository.claim(row.getId(), LocalDateTime.now()) == 1;
+        if (!won) {
             // CONF-1.2 / RFC 6749 §4.1.2. Two parties presented this code, so it
             // left the legitimate client's control. Rejecting the second attempt
             // is not enough: whoever exchanged it first is holding live tokens,
@@ -329,8 +346,9 @@ public class OidcAuthorizationService {
             throw reject("invalid_client", "Client secret mismatch");
         }
 
-        row.setUsedAt(LocalDateTime.now());
-        codeRepository.save(row);
+        // No setUsedAt/save here: the claim above already wrote it, and writing
+        // it again through the entity would overwrite the authoritative value
+        // with one this transaction chose.
 
         auditService.recordUserAction(OIDC_CODE_EXCHANGED, row.getUser(),
                 AuditEventTypes.TARGET_USER, String.valueOf(row.getUser().getId()),
