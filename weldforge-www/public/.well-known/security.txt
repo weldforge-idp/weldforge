@@ -1,0 +1,22 @@
+# Security contact for WeldForge (RFC 9116).
+#
+# WeldForge is an identity platform, so a vulnerability here is a vulnerability
+# in everyone who signs in through it. We would much rather hear from you.
+#
+# BEFORE YOU TEST: sso.weldforge.org is live production carrying real tenants
+# and real end users, some belonging to other organisations. Do not test against
+# production tenants, and do not run load or fuzzing against the hosted service.
+# Use the open `leap` demo tenant, or self-host — `docker compose up` gives you
+# the whole platform locally. Full rules and our safe-harbour commitment are in
+# the policy linked below.
+
+Contact: https://github.com/weldforge-idp/weldforge/security/advisories/new
+Policy: https://github.com/weldforge-idp/weldforge/blob/main/SECURITY.md
+Acknowledgments: https://github.com/weldforge-idp/weldforge/security/advisories
+Preferred-Languages: en
+Canonical: https://www.weldforge.org/.well-known/security.txt
+
+# Renew before this date. An expired security.txt is treated as invalid by
+# tooling, which is the same as having none — the uptime workflow warns 30 days
+# out so this does not rot quietly.
+Expires: 2027-09-01T00:00:00.000Z
