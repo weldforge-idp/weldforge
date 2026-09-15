@@ -155,6 +155,21 @@ class RefreshCookieTenantIsolationIntegrationTest {
         Cookie own = r.getResponse().getCookie(AuthService.refreshCookieName("default"));
         assertThat(own.isHttpOnly()).isTrue();
         assertThat(own.getPath()).isEqualTo("/api/auth");
+
+        // B-AUTH-7: this attribute was simply absent until 2026-09-15, leaving
+        // the longest-lived credential in the system to browser defaults while
+        // the session cookie beside it set Lax on purpose. Asserted because its
+        // absence is invisible -- nothing fails, the cookie just travels more
+        // freely than intended.
+        //
+        // Strict, not Lax: /api/auth/refresh is never a cross-site top-level
+        // navigation target, so it can afford what the session cookie cannot.
+        assertThat(own.getAttribute("SameSite"))
+                .as("the refresh cookie must pin SameSite rather than inherit a browser default")
+                .isEqualTo("Strict");
+        assertThat(r.getResponse().getCookie(AuthService.REFRESH_COOKIE).getAttribute("SameSite"))
+                .as("the legacy cookie is written by the same code path and must match")
+                .isEqualTo("Strict");
     }
 
     @Test
