@@ -15,6 +15,11 @@
 # That pulls prebuilt images — no JDK or Node needed. To build from source
 # instead (contributors), add --build. Pin a release with WF_VERSION=v1.2.3.
 #
+# `pull_policy: always` below is what makes the first line true. Compose BUILDS
+# a service that declares `build:` when its image is not already present
+# locally — it does not pull first — so without that policy a new self-hoster
+# got a source build they were told they would not need.
+#
 # Admin portal:  http://localhost:8080
 # Backend API:   http://localhost:8076
 # ============================================================
@@ -40,10 +45,13 @@ services:
 
   app:
     # Published multi-arch image (linux/amd64 + linux/arm64). `build:` is kept
-    # alongside it deliberately: `docker compose up -d` pulls the image, while
-    # `docker compose up -d --build` builds from source and tags it locally.
-    # Self-hosters need no JDK; contributors keep the source workflow.
+    # alongside it deliberately so contributors can `--build` from source;
+    # `pull_policy: always` is what keeps plain `up -d` on the published image
+    # for everyone else. Without it Compose builds whenever the image is not
+    # already local, which is the opposite of what a self-hoster wants and was
+    # the behaviour until 2026-09-15.
     image: ghcr.io/weldforge-idp/weldforge-auth:${WF_VERSION:-latest}
+    pull_policy: always
     build: ./weldforge-auth
     restart: unless-stopped
     ports:
@@ -74,6 +82,7 @@ services:
 
   admin-portal:
     image: ghcr.io/weldforge-idp/weldforge-admin-portal:${WF_VERSION:-latest}
+    pull_policy: always
     build: ./weldforge-admin-portal
     restart: unless-stopped
     ports:
