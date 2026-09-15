@@ -12,6 +12,13 @@
 # CRLF, and nothing ever reconciled them.
 #
 # `text eol=lf` pins these regardless of the local autocrlf setting.
+#
+# WARNING for anyone repeating this on Windows: `git add --renormalize` rewrites
+# the index entry from the working tree, and Windows has no executable bit to
+# preserve, so it silently downgrades 100755 to 100644. That is what broke CI
+# on 2026-09-15 -- `./mvnw` became "Permission denied", exit 126. Renormalising
+# is still right; just check `git ls-files -s` afterwards and restore any mode
+# it dropped with `git update-index --chmod=+x <file>`.
 * text=auto
 
 mvnw            text eol=lf
