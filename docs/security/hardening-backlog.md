@@ -102,6 +102,15 @@ single-use**, and (3) **governance documentation**.
 > Sprint 6. The standards position these add up to is in
 > [`../compliance/standards-conformance.md`](../compliance/standards-conformance.md).
 
+> **2026-09-14 review.** A fresh pass added eight findings not listed below —
+> two of them High: single-use enforcement on authorization codes and refresh
+> tokens is a check-then-write race (`B-OIDC-6`, `B-AUTH-6`), which defeats the
+> replay detection those controls exist to provide. Also: the refresh cookie
+> carries no `SameSite`, client secrets are reversibly encrypted where the
+> neighbouring field is hashed, there is no vulnerability-disclosure channel,
+> and the threat model still analyses the decommissioned GCP architecture.
+> Full write-up with reasoning and suggested order: **`review-2026-09-14.md`**.
+
 ## Open items
 
 Severity key: **Critical / High / Medium / Low**. Each item lists the gap, the
