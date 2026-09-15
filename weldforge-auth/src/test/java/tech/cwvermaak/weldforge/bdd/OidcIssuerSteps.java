@@ -143,6 +143,23 @@ public class OidcIssuerSteps {
         });
         when(codeRepo.findByCodeHash(any())).thenAnswer(inv ->
                 Optional.ofNullable(codeStore.get((String) inv.getArgument(0))));
+        // claim() models the conditional UPDATE the real repository runs: 1 if
+        // this caller won the code, 0 if it was already spent. Stubbing it is
+        // not optional -- an unstubbed Mockito int returns 0, which the service
+        // correctly reads as a replay, so every code exchange in the suite
+        // would revoke its own family and fail.
+        when(codeRepo.claim(any(), any(java.time.LocalDateTime.class))).thenAnswer(inv -> {
+            Long wanted = inv.getArgument(0);
+            java.time.LocalDateTime now = inv.getArgument(1);
+            for (OAuthAuthorizationCode row : codeStore.values()) {
+                if (wanted.equals(row.getId())) {
+                    if (row.getUsedAt() != null) return 0;
+                    row.setUsedAt(now);
+                    return 1;
+                }
+            }
+            return 0;
+        });
         // recordIssuedFamily looks codes up by primary key, not by hash. Without
         // this the family link is silently never recorded and a code replay
         // revokes nothing -- which is the whole behaviour under test.
@@ -174,6 +191,31 @@ public class OidcIssuerSteps {
         });
         when(refreshRepo.findByTokenHash(any())).thenAnswer(inv ->
                 Optional.ofNullable(refreshStore.get((String) inv.getArgument(0))));
+        // Same reason as the code repository above: an unstubbed claim() returns
+        // 0, the service reads that as "someone else holds this token", and
+        // every refresh in these scenarios becomes a reuse detection.
+        when(refreshRepo.claim(any(), any(java.time.LocalDateTime.class))).thenAnswer(inv -> {
+            Long wanted = inv.getArgument(0);
+            java.time.LocalDateTime now = inv.getArgument(1);
+            for (tech.cwvermaak.weldforge.model.RefreshToken r : refreshStore.values()) {
+                if (wanted.equals(r.getId())) {
+                    if (r.getUsedAt() != null || r.getRevokedAt() != null) return 0;
+                    r.setUsedAt(now);
+                    return 1;
+                }
+            }
+            return 0;
+        });
+        when(refreshRepo.markReplacedBy(any(), any())).thenAnswer(inv -> {
+            Long wanted = inv.getArgument(0);
+            for (tech.cwvermaak.weldforge.model.RefreshToken r : refreshStore.values()) {
+                if (wanted.equals(r.getId())) {
+                    r.setReplacedBy(inv.getArgument(1));
+                    return 1;
+                }
+            }
+            return 0;
+        });
         // Revoking a family marks every row carrying that family id, which is
         // what the assertions read back.
         familyRevoker = mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class);

@@ -72,6 +72,33 @@ public class RefreshTokenRotationSteps {
         });
         when(repo.findByTokenHash(anyString())).thenAnswer(inv ->
                 Optional.ofNullable(rowsByHash.get((String) inv.getArgument(0))));
+        // claim() models the conditional UPDATE the real repository runs:
+        // 1 if this caller won the row, 0 if it was already used or revoked.
+        // Stubbing it is not optional -- an unstubbed Mockito int returns 0,
+        // which the service correctly reads as "someone else holds this token"
+        // and every rotation in the suite becomes a reuse detection.
+        when(repo.claim(any(Long.class), any(LocalDateTime.class))).thenAnswer(inv -> {
+            Long id = inv.getArgument(0);
+            LocalDateTime now = inv.getArgument(1);
+            for (RefreshToken r : rowsByHash.values()) {
+                if (id.equals(r.getId())) {
+                    if (r.getUsedAt() != null || r.getRevokedAt() != null) return 0;
+                    r.setUsedAt(now);
+                    return 1;
+                }
+            }
+            return 0;
+        });
+        when(repo.markReplacedBy(any(Long.class), any(Long.class))).thenAnswer(inv -> {
+            Long id = inv.getArgument(0);
+            for (RefreshToken r : rowsByHash.values()) {
+                if (id.equals(r.getId())) {
+                    r.setReplacedBy(inv.getArgument(1));
+                    return 1;
+                }
+            }
+            return 0;
+        });
         when(repo.revokeFamily(any(UUID.class), any(), anyString())).thenAnswer(inv -> {
             UUID family = inv.getArgument(0);
             LocalDateTime now = inv.getArgument(1);

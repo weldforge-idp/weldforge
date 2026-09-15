@@ -48,6 +48,24 @@ class OidcAuthorizationServiceTest {
     void setUp() {
         clientRepo = mock(OidcClientRepository.class);
         codeRepo = mock(OAuthAuthorizationCodeRepository.class);
+
+        // claim() is the conditional UPDATE the real repository performs, and an
+        // unstubbed Mockito int is 0 -- which the service reads, correctly, as a
+        // replay. Mirror the predicate so the happy path wins the claim and an
+        // already-spent code loses it, which is how reuse now presents.
+        when(codeRepo.claim(any(), any(java.time.LocalDateTime.class))).thenAnswer(inv -> {
+            Long wanted = inv.getArgument(0);
+            java.time.LocalDateTime now = inv.getArgument(1);
+            for (tech.cwvermaak.weldforge.model.OAuthAuthorizationCode row : codeStore.values()) {
+                if (wanted.equals(row.getId())) {
+                    if (row.getUsedAt() != null) return 0;
+                    row.setUsedAt(now);
+                    return 1;
+                }
+            }
+            return 0;
+        });
+
         auditService = mock(AuditService.class);
         var mfaFactorRepo = mock(tech.cwvermaak.weldforge.repository.MfaFactorRepository.class);
         var mfaPolicyService = mock(tech.cwvermaak.weldforge.service.TenantMfaPolicyService.class);
