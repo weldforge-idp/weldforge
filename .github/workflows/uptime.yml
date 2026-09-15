@@ -111,6 +111,38 @@ jobs:
 
           [ "$fail" -eq 0 ] || echo "::error::Public surface check failed"
 
+      - name: Check security.txt has not expired
+        # RFC 9116 tooling treats an expired security.txt as invalid, which is
+        # the same as publishing none at all -- and nothing else would notice,
+        # because the file keeps returning 200 the whole time. This is the only
+        # thing watching that date.
+        #
+        # Deliberately not folded into the probe above: a security.txt drifting
+        # toward expiry is not an outage, and raising it as one would open an
+        # issue titled "production is not answering" for a file that is fine.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          url="https://www.weldforge.org/.well-known/security.txt"
+          body=$(curl -sS --max-time 30 "$url" || true)
+          expires=$(printf '%s' "$body" | sed -n 's/^Expires:[[:space:]]*//p' | head -1 | tr -d '[:space:]')
+
+          if [ -z "$expires" ]; then
+            echo "::warning::security.txt has no Expires field, or could not be fetched from $url"
+            exit 0
+          fi
+
+          days=$(( ( $(date -d "$expires" +%s) - $(date +%s) ) / 86400 ))
+          echo "security.txt expires in $days days ($expires)"
+
+          if [ "$days" -lt 0 ]; then
+            echo "::error::security.txt EXPIRED $(( -days )) days ago — tooling now treats it as invalid. Renew it and the Expires date."
+          elif [ "$days" -lt 30 ]; then
+            echo "::warning::security.txt expires in $days days. Renew the Expires date in weldforge-www/public/.well-known/security.txt."
+          fi
+
       - name: Push to ntfy
         # Optional and best-effort. NTFY_UPTIME_URL should point at a topic on
         # a server that is NOT tech01 (the self-hosted one is down exactly when
