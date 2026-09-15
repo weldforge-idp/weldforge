@@ -1,0 +1,32 @@
+# Line endings.
+#
+# This machine has core.autocrlf=true, which rewrites checked-out files to CRLF.
+# For most files that is harmless. For the two Maven wrapper scripts it is not:
+# they are executed as shell scripts, and a CRLF `#!/bin/sh\r` makes the kernel
+# look for an interpreter named "sh\r". Inside the Docker build that surfaces as
+# `exit code 127` on `./mvnw` with no useful message, which is exactly how
+# `docker compose --build` failed on 2026-09-15.
+#
+# It also explains why `weldforge-auth/mvnw` has shown as permanently modified
+# in `git status` for months: the committed file is LF, the working copy is
+# CRLF, and nothing ever reconciled them.
+#
+# `text eol=lf` pins these regardless of the local autocrlf setting.
+* text=auto
+
+mvnw            text eol=lf
+*.sh            text eol=lf
+gradlew         text eol=lf
+
+# Windows-native scripts stay CRLF.
+*.cmd           text eol=crlf
+*.bat           text eol=crlf
+mvnw.cmd        text eol=crlf
+
+# Binary, never touched.
+*.png           binary
+*.jpg           binary
+*.svg           text
+*.woff          binary
+*.woff2         binary
+*.jar           binary

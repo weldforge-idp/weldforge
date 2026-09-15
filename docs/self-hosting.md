@@ -33,7 +33,7 @@ or Apple Silicon pulls the same tag as everyone else.
 on a `main` build), but pinning is still the right habit:
 
 ```bash
-echo 'WF_VERSION=v1.2.3' >> .env
+echo 'WF_VERSION=v0.1.0' >> .env
 ```
 
 Contributors who want to build from source instead of pulling can add `--build`
@@ -41,7 +41,8 @@ to any `up` command — `build:` is retained in the compose file for exactly tha
 
 ## Quick start (Docker Compose — full stack)
 
-This brings up the **API + Postgres + admin portal** from source.
+This brings up the **API + Postgres + admin portal** from published images —
+no JDK, Maven or Node required. Add `--build` to compile from source instead.
 
 ```bash
 git clone https://github.com/weldforge-idp/weldforge
