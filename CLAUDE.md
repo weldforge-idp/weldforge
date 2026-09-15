@@ -550,6 +550,77 @@ Infrastructure section above.
   resolve), competitor pricing re-checked and corrected where it had gone stale
   in our favour.
 
+### Session log 2026-09-15 — security review + the atomic-claim fix  *(project)*
+
+**`docs/security/review-2026-09-14.md`** is the expert read of implementation
+and documentation: eight findings not already in the hardening backlog, with a
+suggested order. Two were High and are now **fixed** (PR #109).
+
+**B-OIDC-6 / B-AUTH-6 — single-use enforcement was a check-then-write race.**
+Authorization codes and refresh tokens were guarded by reading the row, testing
+`usedAt` in Java, and writing afterwards. Under READ COMMITTED two concurrent
+redemptions both passed. Demonstrated, not argued: with the fix's predicate
+removed, eight concurrent rotations of one refresh token gave *"8 succeeded and
+0 were refused"*. Both claims are now conditional `UPDATE`s returning a row
+count; zero means the reuse path, never a retry.
+
+Two hazards the new test found that were not the bug being fixed — **read these
+before touching either service**:
+
+1. **The refresh claim must stay `REQUIRES_NEW`.** A lost claim is followed by
+   the family revoke, itself `REQUIRES_NEW` so the rejection cannot roll the
+   containment back — and both target the same row. In one transaction the
+   failed claim holds a tuple lock the revoke waits for, while the caller waits
+   for the revoke to return. **Postgres sees no cycle, so the deadlock detector
+   never fires and the request hangs.** The authorization-code claim
+   deliberately does *not* do this: its reuse path revokes `refresh_tokens`, a
+   different table.
+2. **Never mutate the managed `RefreshToken` in the rotation path.** JPA flushes
+   every column at commit from a snapshot taken at load, so a concurrent reuse
+   sweep's `revoked_at` was being overwritten with a stale `null` — the
+   containment ran, audited itself as successful, and was silently undone. Both
+   writes go through targeted `UPDATE`s (`claim`, `markReplacedBy`).
+
+**Test-mock trap.** Mockito answers an unstubbed `int` with `0`, which these
+services read — correctly — as "already spent". Any mock of
+`RefreshTokenRepository` or `OAuthAuthorizationCodeRepository` must stub
+`claim()`, or every rotation and code exchange in that suite becomes a reuse
+detection. Five classes needed it.
+
+### Product decisions taken 2026-09-15
+
+- **Dynamic client registration:** gated on the hosted `weldforge.org` tenants,
+  open on self-hosted deployments. Implement RFC 7592 rather than keep
+  returning a `registration_client_uri` that 404s — the Dynamic OP conformance
+  profile exercises it anyway.
+- **Password composition:** relax toward 800-63B, **and** make the rules
+  per-tenant configurable in the management interface. To be planned,
+  documented and implemented properly — not yet started.
+- **OpenID certification: yes.** Self-certification against the OpenID
+  Foundation suite, Basic OP first. The known blockers are `prompt=login` being
+  ignored and `max_age` enforced as MFA-factor freshness ending in a browser
+  400 — the suite tests both directly.
+- **Out of scope, confirmed:** Spring Authorization Server (assumes one issuer
+  per application; would rebuild the per-tenant design on an abstraction that
+  fights it), FAPI 2.0, SCIM ETags. **Back-channel logout is the one worth
+  funding** — the only item enterprise buyers ask for by name, and today
+  RP-initiated logout leaves every relying party signed in. RFC 9068 when a
+  breaking audience change happens anyway.
+
+### Next, in the agreed order
+
+1. ~~B-OIDC-6 / B-AUTH-6~~ — done, PR #109.
+2. **`SECURITY.md` + `/.well-known/security.txt`** — none exist on a public
+   identity product.
+3. **`SameSite=Strict` on the refresh cookie** — one line; the session cookie
+   beside it sets `Lax` deliberately and the longer-lived credential sets
+   nothing.
+4. **Rewrite the threat model against k3s** — it still analyses GKE, which
+   invalidates the trust boundaries drawn on it.
+5. Expired-refresh-token purge; then B-OIDC-7, B-AUTH-5, B-PROV-2, B-JWT-2.
+
+---
+
 ### Answered, so it does not get re-asked
 
 **`/login` serves the admin portal SPA, not this service's `LoginController`,

@@ -1,3 +1,5 @@
+- [Security review 2026-09-14](../security/review-2026-09-14.md) — eight findings; the two High ones (single-use race) are fixed, the rest are ordered
+- [Dirty JPA entities clobber concurrent writes](feedback_jpa_managed_entity_clobber.md) — a managed entity flushes every column from a load-time snapshot; it silently undid refresh-token reuse containment
 - [Session 2026-09-14](session_2026_09_14.md) — ten production defects fixed (sha-0992ad2) plus the first monitoring stack on tech01; what is still open
 - [Shared working tree, shared index](feedback_shared_repo_index.md) — several Claude sessions commit in the infrastructure repo; use `git commit -- <paths>`, a bare commit sweeps their staged files
 - [Session 2026-09-10](session_2026_09_10.md) — Sprint 5 gaps + Sprint 6 live as sha-797c70b; Flux deploy procedure from the node; max_age/prompt=login and B-API-2 open
