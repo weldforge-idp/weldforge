@@ -573,6 +573,25 @@ public class AuthService {
         Cookie cookie = new Cookie(name, rawToken);
         cookie.setHttpOnly(true);
         cookie.setSecure(publicHost.isSecureCookies());
+        // Strict, and stricter than the session cookie's Lax on purpose.
+        //
+        // This attribute was absent until 2026-09-15 (B-AUTH-7), which left the
+        // longer-lived, higher-value credential to browser defaults while the
+        // session cookie beside it set Lax deliberately. That was the wrong way
+        // round.
+        //
+        // Strict rather than Lax because /api/auth/refresh is never a
+        // legitimate cross-site top-level navigation target -- it is called by
+        // already-loaded same-site script, so Strict costs nothing here. The
+        // session cookie cannot do this: it IS sent on a top-level redirect,
+        // when an OIDC relying party bounces the user to /authorize.
+        //
+        // Safe across tenant subdomains: SameSite is evaluated on the
+        // registrable domain, so acme.sso.weldforge.org and sso.weldforge.org
+        // are the same site. And it does not affect the legacy `refresh_token`
+        // cookie's server-to-server use by the Safe Space proxy, which replays
+        // it as a header rather than as a browser cookie.
+        cookie.setAttribute("SameSite", "Strict");
         cookie.setPath("/api/auth");
         // Scope to the public base-domain so the cookie set on
         // {slug}.sso.weldforge.org is also sent when /api/auth/refresh runs
