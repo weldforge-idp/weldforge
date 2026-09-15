@@ -13,7 +13,7 @@
 #   docker compose -f docker-compose.selfhost.yml up -d
 #
 # That pulls prebuilt images — no JDK or Node needed. To build from source
-# instead (contributors), add --build. Pin a release with WF_VERSION=v1.2.3.
+# instead (contributors), add --build. Pin a release with WF_VERSION=0.1.0.
 #
 # `pull_policy: always` below is what makes the first line true. Compose BUILDS
 # a service that declares `build:` when its image is not already present

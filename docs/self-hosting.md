@@ -33,7 +33,7 @@ or Apple Silicon pulls the same tag as everyone else.
 on a `main` build), but pinning is still the right habit:
 
 ```bash
-echo 'WF_VERSION=v0.1.0' >> .env
+echo 'WF_VERSION=0.1.0' >> .env
 ```
 
 Contributors who want to build from source instead of pulling can add `--build`
