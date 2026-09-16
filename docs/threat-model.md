@@ -32,15 +32,30 @@ mitigation (cited to real code/spec) and the residual risk.
 WeldForge is a multi-tenant SSO/IAM platform: a hand-rolled OIDC/OAuth2 issuer
 and SAML 2.0 IdP, per-tenant RS256 signing keys, MFA (TOTP / WebAuthn / SMS /
 backup codes), SCIM provisioning, per-tenant PKI, and HMAC-signed audit
-webhooks. It runs as one Spring Boot jar + PostgreSQL on GKE Autopilot (GCP
-`africa-south1`), public at `https://sso.weldforge.org` with per-tenant
-subdomains `https://{slug}.sso.weldforge.org`.
+webhooks. It runs as one Spring Boot jar + PostgreSQL on a **single-node k3s
+cluster (`tech01`)**, public at `https://sso.weldforge.org` with per-tenant
+subdomains `https://{slug}.sso.weldforge.org`, which are live and covered by a
+wildcard certificate.
+
+> **Rewritten 2026-09-16, and the reason matters.** Until this revision the
+> document analysed GKE Autopilot, a GKE/nginx edge and GCP Secret Manager —
+> an estate decommissioned on 2026-08-31. A stale runbook wastes an afternoon;
+> a stale *architecture* in a threat model invalidates the reasoning built on
+> it, because trust boundaries and blast radius are drawn against a system that
+> no longer exists.
+>
+> The application-level analysis below (§3 STRIDE, §4 scenarios) survived the
+> move almost unchanged, because it was written against the software rather
+> than the platform. What genuinely changed is the **bottom** of the stack, and
+> it changed in the direction of more responsibility, not less — see **TB9**
+> and the rewritten "out of scope" in §6. On Autopilot, Google patched the
+> nodes and isolated the workloads. On `tech01` we do.
 
 ### Trust boundaries
 
 ```
                           (TB1) browser ⇄ edge
-   End user / browser ───────────────────────────► GKE ingress / nginx
+   End user / browser ───────────────────────────► Traefik (k3s ingress)
        │  per-tenant subdomain   apex                     │
        │  {slug}.sso…/login      sso…/t/{slug}/oauth2     │ (TB2) edge ⇄ app
        ▼                                                  ▼
@@ -66,13 +81,14 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | # | Boundary | What crosses it | Who is trusted on the far side |
 |---|----------|-----------------|--------------------------------|
 | **TB1** | Browser ⇄ edge | Credentials, session/refresh cookies, OIDC redirects | Untrusted end users; **a malicious tenant operator is a peer on a sibling subdomain** (base-domain cookie scope) |
-| **TB2** | Edge (ingress/nginx) ⇄ app | `X-Forwarded-*`, `Host`, `X-Tenant-Slug`, `X-WF-Tenant` | Edge trusted to set `X-Forwarded-*`; app must not trust client-supplied forwarding |
+| **TB2** | Edge (Traefik) ⇄ app | `X-Forwarded-*`, `Host`, `X-Tenant-Slug`, `X-WF-Tenant` | Edge trusted to set `X-Forwarded-*`; app must not trust client-supplied forwarding |
 | **TB3** | App ⇄ DB | Tenant-scoped queries | DB trusted; isolation enforced at the DAO by `tenant_id` filtering |
 | **TB4** | App ⇄ outbound | Webhook/CRM/SMTP/LDAP/SMS calls to admin-configured URLs | Targets are **tenant-admin-supplied and untrusted** |
 | **TB5** | Relying party ⇄ issuer | OIDC tokens, SAML assertions, JWKS, discovery | RPs validate our signatures; we must not over-disclose |
 | **TB6** | External consumer ⇄ shared HMAC | HS512 platform tokens for Tech Metropolis (Safe Space / Krusty / Commons) | All consumers share **one** symmetric key — mutual blast radius |
 | **TB7** | SCIM client ⇄ app | Bearer-token provisioning of Users/Groups | Authenticated per `app_clients`; tenant-scoped |
 | **TB8** | Tenant admin ⇄ platform super-admin | Admin-console reads/writes, cross-tenant switch | Tenant admins confined to their tenant; super-admins cross boundaries explicitly + audited |
+| **TB9** | Operator ⇄ node, and WeldForge ⇄ co-located workloads | SSH, kubeconfig, the container runtime, and the shared Postgres | **New since the k3s move.** On Autopilot this boundary was Google's. `tech01` also runs KeyCrypt, NoteForge, Sentinel, Traefik, cert-manager and the monitoring stack, and **every application shares one Postgres instance**. A compromise of any co-located workload is now adjacent to WeldForge's database, and whoever holds SSH holds everything. |
 
 ### Two distinct token systems (important)
 
@@ -94,7 +110,7 @@ subdomains `https://{slug}.sso.weldforge.org`.
 | Asset | Why it matters | Where it lives |
 |-------|----------------|----------------|
 | **Per-tenant RS256 private keys** | Sign OIDC tokens + SAML assertions; compromise = forge identity for that tenant's RPs | `tenant_signing_keys` (encrypted under `app.crypto.secret`) |
-| **Shared platform HMAC** (`app.jwt.secret`) | Signs every session JWT **and** is mirrored to all three Tech Metropolis consumers' `WELDFORGE_JWT_SECRET` | GCP Secret Manager `wf-jwt-secret`; **single key, many holders** |
+| **Shared platform HMAC** (`app.jwt.secret`) | Signs every session JWT **and** is mirrored to all three Tech Metropolis consumers' `WELDFORGE_JWT_SECRET` | SOPS/age-encrypted in the infrastructure repo, decrypted in-cluster by Flux; **single key, many holders** |
 | **Password hashes** | Credential DB | `users.password`, BCrypt cost 12 (`SecurityConfig`) |
 | **MFA secrets** | TOTP shared secrets, WebAuthn public keys, backup-code hashes | `mfa_factors`, `backup_codes` (BCrypt-hashed) |
 | **Session / access / refresh tokens** | Live authentication material | Cookies (`HttpOnly`, `Secure`, base-domain scope), `refresh_tokens` |
@@ -238,7 +254,7 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   to Safe Space, Krusty, and Commons. A leak anywhere lets an attacker forge
   session tokens for **all** of them; and a token minted for one consumer is
   structurally valid against another.
-- **Mitigation.** Secret lives only in GCP Secret Manager (`wf-jwt-secret`),
+- **Mitigation.** Secret lives only in the SOPS/age-encrypted overlay secret,
   injected at deploy, never committed; `SecretHygieneValidator` refuses to boot
   on a known dev/placeholder default when `APP_REQUIRE_SECURE_SECRETS=true`
   (set on all cluster deploys).
@@ -320,7 +336,8 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   user, inactive user, locked account, and bad password all return an identical
   generic error (`AuthService.login`). BCrypt cost 12.
 - **Residual risk.** IP buckets key on a spoofable first `X-Forwarded-For` hop
-  and are in-memory (don't span GKE replicas) (`B-AUTH-1`). Weaker legacy
+  and are in-memory, so they do not span replicas and N replicas multiply
+  every configured limit (`B-AUTH-1`, and see `docs/scaling.md`). Weaker legacy
   password hashes are now upgraded to the current BCrypt cost on successful
   login (`B-AUTH-2`, F17). Per-user lockout is the backstop against the
   XFF-spoof bypass.
@@ -341,7 +358,9 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
 
 ### S10 — SSRF via webhooks
 - **Threat.** A tenant admin points a webhook (or CRM provider URL) at
-  `http://169.254.169.254/…` (GCP metadata), `127.0.0.1`, or an RFC-1918
+  `http://169.254.169.254/…` (cloud metadata — no longer a credential
+  oracle now that there is no cloud metadata service, but still link-local and
+  still denied), `127.0.0.1`, or an RFC-1918
   service, using WeldForge as an SSRF pivot inside the VPC.
 - **Mitigation.** Creating a webhook/CRM target requires TENANT_ADMIN+
   (RBAC-gated, per `VALIDATION_REPORT_2026-04-17.md`); delivery runs inside a
@@ -356,6 +375,67 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   validated IP into the request would close it.
 
 ---
+
+### S11 — Co-located workload or node compromise (new since the k3s move)
+
+- **Attack.** An attacker gets code execution in *any* workload on `tech01` —
+  KeyCrypt, NoteForge, Sentinel, the monitoring stack, or a vulnerable
+  dependency in one of them — and pivots. Every application on the node shares
+  one PostgreSQL instance, so reaching it does not require breaking WeldForge
+  at all; it requires breaking the weakest neighbour. Alternatively the
+  attacker obtains SSH to the node, which is game over for every tenant at once.
+- **Why it is new.** On GKE Autopilot the node was Google's, workloads were
+  isolated by the platform, and this scenario was legitimately out of scope.
+  Consolidating onto one self-managed machine moved it firmly in scope, and
+  nothing in this document said so until 2026-09-16.
+- **Mitigations today** — verified against the live cluster on 2026-09-16
+  rather than assumed, and better than a first reading suggests:
+  - **A database per application** — `weldforge`, `weldforge_prod`,
+    `keycrypt_auth`, `keycrypt_secrets`, `keycrypt_vault`, `noteforge`,
+    `sentinel`, `intelli_accounting` are all distinct.
+  - **A login role per application, none of them superuser.** WeldForge
+    connects as `weldforge_prod`; `postgres` is the only superuser and no
+    application uses it. So reaching the Postgres port does not hand an
+    attacker the estate — they still need that application's credential.
+  - Separate namespaces, `runAsNonRoot` containers, SOPS-encrypted secrets
+    mounted per-namespace, nightly dumps, and column-level encryption of the
+    highest-value fields (`EncryptedStringConverter`).
+- **What is genuinely weak.**
+  - **No application-level NetworkPolicies.** The only three on the cluster
+    belong to `flux-system`; nothing restricts pod-to-pod traffic, so any
+    workload can open a connection to Postgres and attempt authentication as
+    any role. Credentials are the only thing in the way.
+  - **Namespaces are not a security boundary** against a container escape, and
+    every workload shares one kernel.
+  - **The `postgres` superuser password is a single top-tier secret**, and so
+    is the age key that decrypts every environment's secrets.
+- **Proportionate next steps**, cheapest first: a NetworkPolicy restricting
+  Postgres ingress to the namespaces that need it — the one real gap, and a
+  small change; then, only if warranted, moving the identity platform off the
+  shared node. Per-application roles were the other obvious recommendation and
+  turn out to already be in place. None of this is urgent at current scale, but
+  it should be a decision rather than an oversight.
+
+### S12 — Newly exposed management surfaces
+
+- **Attack.** The monitoring stack put two new internet-facing services on the
+  same host as the identity platform: Grafana (`grafana.cwvermaak.tech`) and
+  ntfy (`ntfy.cwvermaak.tech`). Grafana holds a queryable history of every
+  metric, including tenant slugs and request URIs; ntfy carries the alert
+  stream. Either is a reconnaissance surface, and Grafana has a login worth
+  attacking.
+- **Mitigations.** Grafana: no anonymous access, no self-service sign-up, admin
+  password generated and held in the SOPS secret rather than the chart's known
+  `prom-operator` default. ntfy: `auth-default-access: deny-all` with a
+  write-only publisher and a read-only subscriber, so knowing the topic name
+  grants nothing. Prometheus and Alertmanager have no Ingress at all.
+- **Residual.** Both are single-factor username/password. Neither is behind
+  WeldForge's own SSO, which is an irony worth noting and a reasonable future
+  improvement.
+- **Also new:** `POST /api/public/orders` is an unauthenticated write endpoint
+  that creates rows and reserves tenant slugs. Rate-limited (`PUBLIC_ORDER`
+  bucket) and validated, but see `B-PROV-2` for the 72-hour anonymous slug
+  reservation.
 
 ## 5. Known open risks (cross-reference)
 
@@ -392,15 +472,20 @@ external consumer repos (Safe Space / Krusty / Commons), not just this repo.
 
 **Assumptions (must hold for the controls above to be valid):**
 
-1. The GKE ingress / nginx edge is the **only** network path to the backend and
-   correctly sets `X-Forwarded-*`; the backend is not directly reachable. (If
-   violated, `B-AUTH-1` becomes trivially exploitable.)
-2. `app.jwt.secret` and `app.crypto.secret` are high-entropy, set via Secret
-   Manager, and `APP_REQUIRE_SECURE_SECRETS=true` on every cluster deploy.
+1. Traefik is the **only** network path to the backend and correctly sets
+   `X-Forwarded-*`; the backend is not directly reachable. (If violated,
+   `B-AUTH-1` becomes trivially exploitable.) Note this is now an assumption
+   about a cluster we operate rather than a managed edge: a second Service or a
+   careless `hostPort` on `tech01` would break it silently.
+2. `app.jwt.secret` and `app.crypto.secret` are high-entropy, supplied from the
+   SOPS/age-encrypted overlay secret, and `APP_REQUIRE_SECURE_SECRETS=true` on
+   every cluster deploy. The age private key is now a **top-tier asset**: it
+   decrypts every environment's secrets, and unlike a cloud KMS it is a file.
 3. The wildcard TLS cert for `*.sso.weldforge.org` is valid and HSTS is in
    force, so cookies (`Secure`) and host-based password-manager distinctness
-   actually bind. (Per `CLAUDE.md`, wildcard DNS/TLS provisioning is operator
-   work — verify before relying on per-tenant URL behaviour in prod.)
+   actually bind. This now holds: cert-manager issues `*.sso.weldforge.org`
+   over DNS-01, verified against subdomains that have never existed. Renewal
+   failure is the live risk, which is why `CertificateExpiringSoon` exists.
 4. Tenant operators are **semi-trusted** at most: a paying operator is a peer on
    a sibling subdomain and is treated as a potential adversary to other tenants.
 5. RPs validate token signatures, `iss`, `aud`, and (for OIDC) `nonce`; SAML SPs
@@ -410,9 +495,28 @@ external consumer repos (Safe Space / Krusty / Commons), not just this repo.
 
 **Out of scope for this document:**
 
-- GCP/GKE platform security, Cloud SQL hardening, node/OS patching, and IAM on
-  the `weldforge` GCP project (infra responsibility).
-- Physical/operational security of GCP `africa-south1`.
+- The application internals of co-located workloads (KeyCrypt, NoteForge,
+  Sentinel). Their *adjacency* to WeldForge is in scope — see TB9 and S11 — but
+  their own code is not analysed here.
+- Supply-chain analysis of third-party dependencies.
+
+> **What used to be here, and why its removal is the most important edit in
+> this revision.** This section previously declared out of scope: *"GCP/GKE
+> platform security, Cloud SQL hardening, node/OS patching, and IAM on the
+> `weldforge` GCP project"* and *"physical/operational security of GCP
+> `africa-south1`"*.
+>
+> On GKE Autopilot that was accurate and reasonable — Google patched the nodes,
+> isolated the workloads and guarded the building, and the document correctly
+> pointed at them. **None of that is true now.** `tech01` is a single machine we
+> operate: we patch its kernel, we hold its SSH keys, we run every workload on
+> it side by side, and its physical security is a hosting provider's rack rather
+> than a Google datacentre.
+>
+> The migration did not merely move the software. It **transferred an entire
+> category of risk from a hyperscaler to us**, silently, while this document
+> went on disclaiming it. That is the kind of gap that survives precisely
+> because nothing fails — until it does.
 - The marketing site (`weldforge-www`) except where it funnels into auth.
 - Source-code supply-chain / dependency SCA beyond noting it was in the April
   2026 audit scope.
