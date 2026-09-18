@@ -140,7 +140,7 @@ for the purpose, unless a law requires longer or the data subject consented.
 | **Active user accounts** | Life of the account + **TODO** grace period after tenant offboarding | Tenant instruction (Operator) | Hard-deleted on demand via `AdminService.deleteUser` (tenant-admin only) |
 | **Inactive / deactivated accounts** (`active = false`) | **TODO** — propose auto-purge after N months of inactivity | Minimisation | **No automatic purge today** — deactivated rows persist indefinitely |
 | **Audit / security log** (`audit_events`) | **TODO** — propose 12 months online + archive (security logs are a legitimate-interest justification under §14) | Security, forensics | **Append-only; never deleted by the app.** No purge/rotation job exists |
-| **Refresh tokens** | Until expiry/revocation; purge expired rows after **TODO** (e.g. 30 days post-expiry) | Session lifecycle | Revoked on logout, password change, tenant deletion; **no purge of expired rows** |
+| **Refresh tokens** | Until expiry, then **7 days** (`app.security.refresh-token.purge-after-expiry-days`). Revoked rows are retained indefinitely — see note. | Session lifecycle | Revoked on logout, password change, tenant deletion. `RefreshTokenPurgeScheduler` deletes expired **unrevoked** rows nightly (2026-09-18). |
 | **Password-reset tokens** | Delete after expiry (short TTL) | One-time use | Expire by `expiresAt`; **TODO** add cleanup job for spent/expired rows |
 | **Email-verification tokens** | Delete after expiry | One-time use | Same as above — **no cleanup job** |
 | **CRM provisioning log** | **TODO** — tie to user lifetime | Dedupe ledger | Persists; not auto-purged |
@@ -149,8 +149,20 @@ for the purpose, unless a law requires longer or the data subject consented.
 | **Pending orders** (unpaid) | Slug reservation 10 min TTL where a payment gateway is configured, **72 h** on the manual follow-up path (2026-09-14) — see `B-PROV-2` in `docs/security/review-2026-09-14.md`, which flags the longer anonymous hold as a slug-squatting vector; order rows transition to `EXPIRED`/`CANCELLED`/`REFUNDED` | Sales funnel | `OrderExpiryScheduler` transitions states; rows are **not deleted** |
 | **Billing transactions / subscriptions** | **Retain ≈ 5 years** to satisfy SARS / Companies Act record-keeping (a §14 "required by law" exception) — **TODO confirm exact statutory period with accountant/lawyer** | Tax / accounting / dispute | Retained indefinitely today |
 
-**Cross-cutting TODO:** there is currently **no scheduled data-retention /
-purge job** for any category except order-expiry. Implementing a retention
+> **Why revoked refresh tokens are kept and not purged.** It is not an
+> oversight or a retention preference. `JwtAuthenticationFilter` decides whether
+> an access token's session was terminated by asking whether its family has a
+> revoked row, and it reads the *absence* of one as "not terminated". Deleting
+> revoked rows would therefore make every logged-out session authenticate again
+> for the remaining life of its access token, silently undoing SAML
+> single-logout and logout-all. They are also a tiny fraction of the volume —
+> the growth is rotation churn, which is unrevoked — so retaining them costs
+> almost nothing.
+
+**Cross-cutting status (updated 2026-09-18):** refresh tokens now have a
+scheduled purge, the first retention job in the system besides order-expiry.
+Audit events, deactivated accounts, CRM logs and expired slug holdbacks still
+have **none**. Implementing a retention
 sweeper is the single biggest technical gap for POPIA condition 3.
 
 ---

@@ -137,4 +137,28 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
     @Modifying
     @Query("update RefreshToken r set r.replacedBy = :successorId where r.id = :id")
     int markReplacedBy(@Param("id") Long id, @Param("successorId") Long successorId);
+
+    /**
+     * Delete expired token rows that were never revoked. Returns the count.
+     *
+     * <p><strong>`revokedAt is null` is a security predicate, not tidiness.</strong>
+     * {@code JwtAuthenticationFilter.sessionTerminated} decides whether an
+     * access token's session was ended by asking
+     * {@link #existsByFamilyIdAndRevokedAtIsNotNull} — and it returns FALSE
+     * when no revoked row exists. Purging revoked rows would therefore make a
+     * logged-out session look live again for as long as its access token
+     * survived, silently undoing SAML single-logout and logout-all.
+     *
+     * <p>Excluding them costs nothing. Revoked rows are produced only by
+     * logout-all, tenant deletion and reuse detection, so they are a tiny
+     * fraction of the table; the growth is entirely rotation churn, which
+     * leaves {@code usedAt} set and {@code revokedAt} null. Those are exactly
+     * what this deletes.
+     */
+    @Modifying
+    @Query("""
+        delete from RefreshToken r
+        where r.expiresAt < :cutoff and r.revokedAt is null
+        """)
+    int purgeExpiredUnrevoked(@Param("cutoff") LocalDateTime cutoff);
 }
