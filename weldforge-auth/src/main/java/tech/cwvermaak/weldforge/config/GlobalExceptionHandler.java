@@ -103,8 +103,30 @@ public class GlobalExceptionHandler {
             return respond(HttpStatus.BAD_REQUEST, "missing_value",
                     "A required value is missing from the request", request);
         }
+        // A duplicate email inside a tenant has a published contract:
+        // 400 bad_request, "Email already in use for this tenant" (/llms.txt).
+        // AuthService.register normally produces that from its own pre-check --
+        // but a pre-check is not a constraint, and two concurrent registrations
+        // for the same address both pass it. When the V59 index is what catches
+        // the second one, the caller must still see the SAME answer; otherwise
+        // the error a client gets depends on who won a race, and an integration
+        // has to handle the condition twice.
+        if (violates(ex, "users_tenant_email_unique")) {
+            return respond(HttpStatus.BAD_REQUEST, "bad_request",
+                    "Email already in use for this tenant", request);
+        }
         return respond(HttpStatus.CONFLICT, "conflict",
                 "The request conflicts with existing data", request);
+    }
+
+    /** True when the violation names this constraint or index anywhere in the cause chain. */
+    private static boolean violates(Throwable ex, String constraintName) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            String m = t.getMessage();
+            if (m != null && m.contains(constraintName)) return true;
+            if (t.getCause() == t) break;
+        }
+        return false;
     }
 
     private static boolean isMissingValue(Throwable ex) {

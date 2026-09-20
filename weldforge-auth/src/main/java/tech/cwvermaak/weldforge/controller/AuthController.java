@@ -96,6 +96,8 @@ public class AuthController {
                 .imageUrl(user.getImageUrl())
                 .provider(user.getProvider())
                 .role(user.getRole() != null ? user.getRole().getName() : null)
+                .adminRole(user.getAdminRole())
+                .emailVerified(user.isEmailVerified())
                 .build());
     }
 
