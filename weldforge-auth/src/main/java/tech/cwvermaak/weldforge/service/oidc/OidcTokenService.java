@@ -147,6 +147,11 @@ public class OidcTokenService {
         if (user != null) {
             claims.put("sub", String.valueOf(user.getId()));
             claims.put("email", user.getEmail());
+            // OIDC Core §5.1 standard claim. Emitted beside `email` so a
+            // resource server can refuse an unverified address without a round
+            // trip to /api/auth/me -- without it, gating degrades to trusting
+            // whatever the front end says, which is not gating at all.
+            claims.put("email_verified", user.isEmailVerified());
             if (user.getName() != null) claims.put("name", user.getName());
             // Tenant-scoped role propagation: relying parties read this claim
             // to drive their own RBAC (e.g. Spring Security's
@@ -185,6 +190,7 @@ public class OidcTokenService {
         claims.put("aud", client.getClientId());
         claims.put("sub", String.valueOf(user.getId()));
         claims.put("email", user.getEmail());
+        claims.put("email_verified", user.isEmailVerified());
         if (user.getName() != null) claims.put("name", user.getName());
         claims.put("roles", rolesFor(user));
         if (nonce != null && !nonce.isBlank()) claims.put("nonce", nonce);
@@ -246,7 +252,7 @@ public class OidcTokenService {
                  // user authenticated, or bind the token to an access token of
                  // its choosing -- both are things a relying party acts on.
                  "auth_time", "at_hash",
-                 "client_id", "scope", "token_type", "email", "name", "nonce", "roles",
+                 "client_id", "scope", "token_type", "email", "email_verified", "name", "nonce", "roles",
                  // A tenant custom claim must never be able to assert an
                  // authentication method: a relying party gating on a
                  // phishing-resistant amr would be trusting tenant config

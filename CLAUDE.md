@@ -73,8 +73,9 @@ the audit/lockout writes when next touched here.
   runners are only free for public repos.)
 - **Where it runs (since 2026-08-31):** a single-node **k3s** cluster on
   `tech01`, not GCP. Namespaces `weldforge-staging` and `weldforge-production`.
-  Everything below about GKE, Artifact Registry, Cloud SQL and Secret Manager
-  is **history, not current state** — see the dormant-GCP note further down.
+  **This is not the only live instance** — a second one runs on GKE and is the
+  identity provider for Safe Space, Krusty and Commentalk. See the two-instance
+  table below before touching anything GCP-related.
 - **Deploy = two repos, and there is no push-to-deploy.**
   1. Merging to `main` runs `.github/workflows/publish-images.yml`, which
      builds `ghcr.io/weldforge-idp/{weldforge-auth,weldforge-admin-portal}`
@@ -123,12 +124,44 @@ the audit/lockout writes when next touched here.
   not. After editing a secret, `kubectl rollout restart` the deployment or the
   change deploys and silently does nothing (this is exactly how the SendGrid
   settings looked live on 2026-09-13 while the pods still held the old ones).
-- **GCP is dormant, not deleted.** `.github/workflows/deploy-gcp.yml` had its
-  push trigger removed on 2026-08-16; every run since 2026-06-05 failed with
-  "This API method requires billing to be enabled". It is kept as a record of
-  the old topology (Artifact Registry + GKE Autopilot + Workload Identity
-  Federation), and as the starting point if the estate is ever rebuilt there.
-  Don't cite it as the deploy path.
+- **⚠️ THERE ARE TWO LIVE WELDFORGE INSTANCES. Read this before touching GCP.**
+  An earlier version of this file said "GCP is dormant". **That was wrong, and
+  acting on it could take down the identity provider for three production
+  apps.** Corrected 2026-09-20 after the Safe Space session flagged it; verified
+  by request, not taken on trust.
+
+  | | **tech01 (k3s)** | **GKE `weldforge-499409`, namespace `sso`** |
+  |---|---|---|
+  | Host | `https://sso.weldforge.org` → 196.40.100.82 | `https://sso-api.weldforge.org` → 136.68.154.69 |
+  | Database | `weldforge_prod`, in-cluster | Cloud SQL `weldforge-db` via cloudsql-proxy |
+  | Mail | SendGrid | Xneelo SMTP, hand-patched |
+  | Deploy | Flux from the infrastructure repo | `kubectl set image` — **never `helm upgrade`** |
+  | Image | current | `weldforge-auth:r2`, built **2026-06-17** |
+  | Serves | the portal, `leap`, `cwvermaak-tech`, `intellisuite` | **Safe Space, Krusty, Commentalk** via `techmetropolis` |
+
+  The deploy workflow `deploy-gcp.yml` is genuinely dormant — its push trigger
+  was removed on 2026-08-16 and it fails on billing. **The dormant thing is the
+  workflow, not the cluster.** Confusing the two is how this error happened.
+
+  **Before changing anything, check which hostname the caller uses.** Safe Space
+  calls `sso-api.weldforge.org`. Never `helm upgrade` the GKE release: revision 5
+  is FAILED and an upgrade wipes the hand-patched mail secret. Roll images with
+  `kubectl set image`; the public GHCR tags pull fine from GKE.
+
+- **⚠️ The two instances share `techmetropolis`'s private signing key.** Verified
+  2026-09-20: both publish `kid: wf-66256c5b-a66c-4044-bd98-a3d97b81adc0` for
+  that tenant, under different issuers. tech01's copy is a restored clone (same
+  9 users). Consequences, none of them recorded anywhere before now:
+  - Compromise of **either** instance compromises the tenant on **both**.
+  - A token minted by one validates against the other's JWKS. Only the `iss`
+    claim separates them, so any relying party that does not check `iss`
+    strictly accepts tokens from either.
+  - The platform HS512 `app.jwt.secret` is shared the same way, so rotating it
+    is a **four-way** coordination (GKE, tech01, and three app backends), not
+    the three-way one the handover describes.
+
+  Do not treat tech01's `techmetropolis` as authoritative. Safe Space's data
+  lives in Cloud SQL.
 - **Public URLs:** production `https://sso.weldforge.org`, staging
   `https://staging.weldforge.org`. Per-tenant subdomains resolve on both
   (`*.sso.weldforge.org`, `*.staging.weldforge.org`) with matching wildcard
@@ -718,6 +751,23 @@ row works, rest are empty" pattern is the tell. Fix: initialise the optional
 draft eagerly in the data-load callback, or guard with `@if (t.x) { ... }`.
 *(Bit us in PR #23.)* When you see "only the first iteration works", check the
 DevTools console for a runtime throw before assuming a CD/iteration bug.
+
+### Email identity is `(tenant, lower(email))` — never email alone
+
+A person legitimately holds accounts in several tenants under one address, and
+production already contains one. `/llms.txt` publishes it: *"The same address
+may exist in another tenant."* Enforced by `users_tenant_email_unique` since
+**V59**; before that nothing stopped two rows sharing an address inside a
+tenant, because the application's pre-check is a check-then-insert and two
+concurrent registrations both pass it.
+
+**How to apply:** never add a global unique on `users.email` — it would fail to
+apply against live data and, if forced, break a real user. Keep `lower()` in any
+uniqueness or lookup logic; every lookup is already case-insensitive
+(`findByTenant_SlugAndEmailIgnoreCase`), so a case-distinct duplicate would be
+two rows the login path treats as one. A violation of that index is mapped back
+to the documented `400 bad_request` rather than a generic 409, so a client sees
+one answer regardless of whether the pre-check or the constraint won.
 
 ### Admin calls: one tenant selector, refuse don't fall back
 Which tenant an admin call acts in has exactly **one** answer: the JWT's tenant,

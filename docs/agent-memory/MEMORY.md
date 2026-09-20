@@ -1,3 +1,4 @@
+- [Email identity is tenant-scoped](feedback_email_identity_scope.md) — uniqueness is (tenant, lower(email)); a global unique on email would break a real user
 - [Security review 2026-09-14](../security/review-2026-09-14.md) — eight findings; the two High ones (single-use race) are fixed, the rest are ordered
 - [Dirty JPA entities clobber concurrent writes](feedback_jpa_managed_entity_clobber.md) — a managed entity flushes every column from a load-time snapshot; it silently undid refresh-token reuse containment
 - [Session 2026-09-14](session_2026_09_14.md) — ten production defects fixed (sha-0992ad2) plus the first monitoring stack on tech01; what is still open

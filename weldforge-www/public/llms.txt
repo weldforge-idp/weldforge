@@ -119,7 +119,7 @@ Failures, all of which an integration should handle distinctly:
 | Status | `error` | Meaning |
 | --- | --- | --- |
 | 400 | `password_policy` | `message` lists every unmet rule. Default: ≥10 chars, upper, lower, digit, symbol. Per-tenant policy can be stricter. |
-| 400 | `bad_request` | Email already in use **for this tenant**. The same address may exist in another tenant. |
+| 400 | `bad_request` | Email already in use **for this tenant**. The same address may exist in another tenant — uniqueness is `(tenant, lower(email))`, enforced by a database index since V59, so this answer is the same whether the application's pre-check or the constraint catches it. Matching is case-insensitive: `Alice@` and `alice@` are one account. |
 | 404 | `not_found` | The tenant has `registrationEnabled: false`. Not a missing endpoint — self-service sign-up is switched off. |
 | 409 | `seat_limit_exceeded` | The tenant is at its `maxUsers` cap. Body carries `limit` and `current`. Deactivating a user frees a seat; seats count active users only. |
 | 429 | `too_many_requests` | Registration is rate-limited per caller. `retryAfterSeconds` says how long. |
