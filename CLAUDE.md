@@ -150,18 +150,51 @@ the audit/lockout writes when next touched here.
 
 - **⚠️ The two instances share `techmetropolis`'s private signing key.** Verified
   2026-09-20: both publish `kid: wf-66256c5b-a66c-4044-bd98-a3d97b81adc0` for
-  that tenant, under different issuers. tech01's copy is a restored clone (same
-  9 users). Consequences, none of them recorded anywhere before now:
+  that tenant. tech01's copy began as a restored clone and, since the catch-up
+  on 2026-09-20, holds the same **10** users with **all 10 password hashes
+  identical**. Consequences, none of them recorded anywhere before now:
   - Compromise of **either** instance compromises the tenant on **both**.
-  - A token minted by one validates against the other's JWKS. Only the `iss`
-    claim separates them, so any relying party that does not check `iss`
-    strictly accepts tokens from either.
+  - A token minted by one validates against the other's JWKS.
+  - **`iss` does NOT separate them.** An earlier version of this note said it
+    did. It is wrong, and it is the kind of wrong that gets built on. Both
+    instances set `APP_PUBLIC_BASE_DOMAIN=sso.weldforge.org`, and the legacy
+    access token's issuer is derived from *config*, not from the request host —
+    so both stamp the identical `https://sso.weldforge.org/t/techmetropolis`.
+    Same key, same `kid`, same `iss`, same `tenant`: **nothing in a token says
+    which instance minted it.** (OIDC *discovery* documents do differ per host;
+    that is a different code path and is where the confusion came from.)
+  - Because of the above, the instance that served a request can only be
+    identified from the server side. Use `sso_auth_login_total{tenant="..."}`,
+    which both images export (the tenant tag predates the GKE build). Note the
+    tech01 edge has **no Traefik `--accesslog`** — there is no per-request edge
+    trail to fall back on.
   - The platform HS512 `app.jwt.secret` is shared the same way, so rotating it
     is a **four-way** coordination (GKE, tech01, and three app backends), not
     the three-way one the handover describes.
 
-  Do not treat tech01's `techmetropolis` as authoritative. Safe Space's data
-  lives in Cloud SQL.
+  **Cutover status: DONE 2026-09-20.** Data catch-up applied and verified
+  (10/10 accounts, 10/10 password hashes identical, delta clean before *and*
+  after the repoint). Safe Space and Krusty both now point at
+  `https://sso.weldforge.org`; verified with `printenv` inside the running
+  safe-space pod, plus JWKS 200 and `/health` 200 from that pod. An estate-wide
+  scan of Secrets, ConfigMaps, Deployments, StatefulSets and CronJobs across
+  `safe-space`, `krusty` and `default` finds **no remaining reference to
+  `sso-api.weldforge.org`**. GKE stays up as the parallel window; decommission
+  is the operator's call.
+
+  **⚠️ What moved is the SSO pointer ONLY — the apps did not move.** An earlier
+  instruction ("only the tech01 instance is used by TechMetropolis
+  applications") reads as though the apps migrate to tech01. They do not, and
+  clarified by the operator 2026-09-20:
+
+  | | stays / goes |
+  |---|---|
+  | `techmetropolis-501911` — Safe Space, Krusty, (Commons) | **STAYS on GKE** |
+  | `weldforge-499409` ns `sso` — the old WeldForge SSO | **decommission** |
+
+  Only the `WELDFORGE_BASE_URL` / `WELDFORGE_LEGACY_BASE_URL` /
+  `WELDFORGE_JWKS_URI` values in each app's secret were repointed. The Tech
+  Metropolis apps keep running where they always have.
 - **Public URLs:** production `https://sso.weldforge.org`, staging
   `https://staging.weldforge.org`. Per-tenant subdomains resolve on both
   (`*.sso.weldforge.org`, `*.staging.weldforge.org`) with matching wildcard
