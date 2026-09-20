@@ -194,8 +194,17 @@ the audit/lockout writes when next touched here.
   username the literal string `apikey`, password in `SPRING_MAIL_PASSWORD` in
   the SOPS secret. Sender domain authenticated via the `em1505` CNAME and
   `s1/s2._domainkey` on `weldforge.org`. From address `no-reply@weldforge.org`.
-- Pre-existing quirk: `/api/auth/tenants/*/{branding,social-providers,saml-providers}`
-  are gated by `AppAuthorizationFilter` (require an `x-app-authorization` header).
+- ~~Pre-existing quirk: `/api/auth/tenants/*/{branding,social-providers,saml-providers}`
+  are gated by `AppAuthorizationFilter`.~~ **Not true — corrected 2026-09-20.**
+  `AppAuthorizationFilter` exempts `path.startsWith("/api/auth/")` wholesale, so
+  those endpoints take no `x-app-authorization` at all. Verified against both
+  live instances: they answer **200 with a bogus key and with no key**.
+
+  Worth knowing because it is an easy way to fool yourself. I used one of these
+  endpoints to "prove" a legacy API key still authenticated after a cutover;
+  the 200 meant nothing. If you need to test whether a key is accepted, pick a
+  path the filter actually guards — `/api/admin/**` — not one under
+  `/api/auth/`.
 
 > Memories record what was true when written — verify cluster names, accounts,
 > and branch state against the live repo/infra before relying on them.
