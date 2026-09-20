@@ -1,6 +1,8 @@
 package tech.cwvermaak.weldforge.controller;
 
 import lombok.RequiredArgsConstructor;
+import tech.cwvermaak.weldforge.model.dto.PasswordPolicyDto;
+import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import tech.cwvermaak.weldforge.model.dto.*;
@@ -19,6 +21,21 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
+    private final PasswordPolicyService passwordPolicyService;
+
+    /**
+     * The deployment-wide password baseline, before any tenant override.
+     *
+     * <p>Exists so the admin portal can show an administrator <em>why</em> an
+     * override did nothing: tenant policies may only tighten, so a value weaker
+     * than the baseline is stored and then ignored. Without the baseline on
+     * screen that looks indistinguishable from a failed save. See
+     * {@code docs/password-policy-spec.md} §6.
+     */
+    @GetMapping("/password-policy/baseline")
+    public ResponseEntity<PasswordPolicyDto> passwordPolicyBaseline() {
+        return ResponseEntity.ok(PasswordPolicyDto.from(passwordPolicyService.baseline()));
+    }
 
     // Roles ------------------------------------------------------------
     @GetMapping("/roles")

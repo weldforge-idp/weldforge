@@ -96,8 +96,10 @@ public class AuthService {
         // username + surfaced in SAML attributes / emails).
         validateDisplayName(request.getName());
 
-        // Pre-check password policy before we allocate a user row.
-        passwordPolicyService.validate(request.getPassword());
+        // Pre-check password policy before we allocate a user row. Resolved
+        // against this tenant, which may require more than the deployment
+        // baseline (docs/password-policy-spec.md).
+        passwordPolicyService.validate(request.getPassword(), tenant);
 
         if (userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), request.getEmail()).isPresent()) {
             throw new IllegalArgumentException("Email already in use for this tenant");
@@ -411,7 +413,7 @@ public class AuthService {
             failedLoginRecorder.badCurrentPassword(user);
             throw new BadCredentialsException("Current password is incorrect");
         }
-        passwordPolicyService.validate(newPassword);
+        passwordPolicyService.validate(newPassword, tenant);
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);

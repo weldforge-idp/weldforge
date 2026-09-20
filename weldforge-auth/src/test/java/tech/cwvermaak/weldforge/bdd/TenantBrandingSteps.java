@@ -116,7 +116,8 @@ public class TenantBrandingSteps {
                                     mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class),
                                     auditService, publicHost,
                                     new tech.cwvermaak.weldforge.service.TenantSlugValidator(
-                                            publicHost, mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class)));
+                                            publicHost, mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class)),
+                new tech.cwvermaak.weldforge.service.security.PasswordPolicyOverrideValidator(), new tech.cwvermaak.weldforge.service.security.PasswordPolicyService(new tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties(), tech.cwvermaak.weldforge.service.security.BreachedPasswordScreen.DISABLED));
     }
 
     private void ensureAuthWired() {

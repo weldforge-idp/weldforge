@@ -3,6 +3,7 @@ package tech.cwvermaak.weldforge.bdd;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
 import tech.cwvermaak.weldforge.service.security.PasswordPolicyViolation;
@@ -58,6 +59,61 @@ public class PasswordPolicySteps {
     public void iValidate(String password) {
         try {
             service.validate(password);
+            world.lastResult = "accepted";
+        } catch (PasswordPolicyViolation e) {
+            world.lastError = e;
+        }
+    }
+
+    // ---- Per-tenant overrides -----------------------------------------
+
+    /** The tenant under test; its passwordPolicy map is built up step by step. */
+    private Tenant tenant;
+
+    private Tenant tenantNamed(String slug) {
+        if (tenant == null || !slug.equals(tenant.getSlug())) {
+            tenant = new Tenant();
+            tenant.setSlug(slug);
+            tenant.setPasswordPolicy(new java.util.HashMap<>());
+        }
+        return tenant;
+    }
+
+    private void override(String slug, String key, Object value) {
+        Tenant t = tenantNamed(slug);
+        java.util.Map<String, Object> p = new java.util.HashMap<>(t.getPasswordPolicy());
+        p.put(key, value);
+        t.setPasswordPolicy(p);
+    }
+
+    @Given("the tenant {string} requires at least {int} characters")
+    public void tenantRequiresMinLength(String slug, int min) {
+        override(slug, "minLength", min);
+    }
+
+    @Given("the tenant {string} requires a symbol")
+    public void tenantRequiresSymbol(String slug) {
+        override(slug, "requireSymbol", true);
+    }
+
+    @Given("the tenant {string} does not require a symbol")
+    public void tenantDoesNotRequireSymbol(String slug) {
+        // Stored, but inert against a deployment that does require one — the
+        // scenario using this asserts exactly that.
+        override(slug, "requireSymbol", false);
+    }
+
+    @Given("the tenant {string} has no password policy of its own")
+    public void tenantInherits(String slug) {
+        tenant = new Tenant();
+        tenant.setSlug(slug);
+        tenant.setPasswordPolicy(null);
+    }
+
+    @When("I validate {string} for that tenant")
+    public void iValidateForTenant(String password) {
+        try {
+            service.validate(password, tenant);
             world.lastResult = "accepted";
         } catch (PasswordPolicyViolation e) {
             world.lastError = e;

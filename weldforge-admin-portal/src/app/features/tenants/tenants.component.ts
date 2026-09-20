@@ -20,7 +20,9 @@ import {
   SocialProviderType,
   SUPPORTED_PROVIDERS,
   Tenant,
-  TenantService
+  TenantService,
+  PasswordPolicyOverride,
+  ResolvedPasswordPolicy
 } from '../../core/services/tenant.service';
 import { OidcClient, OidcClientService } from '../../core/services/oidc-client.service';
 import {
@@ -41,6 +43,20 @@ interface BrandingDraft {
   brand: Record<string, string>;
 }
 
+/**
+ * Editable password-policy override. Blank/null means "inherit", which is why
+ * every field is nullable rather than defaulted — a 0 or false would be an
+ * override that says something, and an empty box must say nothing.
+ */
+interface PasswordPolicyDraft {
+  minLength: number | null;
+  maxLength: number | null;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireDigit: boolean;
+  requireSymbol: boolean;
+}
+
 interface TenantRow extends Tenant {
   providers?: SocialProvider[];
   samlProviders?: SamlProvider[];
@@ -52,6 +68,9 @@ interface TenantRow extends Tenant {
   twilioDraft?: TwilioProvider;
   mfaPolicy?: MfaPolicy;
   brandingDraft?: BrandingDraft;
+  passwordDraft?: PasswordPolicyDraft;
+  /** Server-resolved rules for this tenant; refreshed after every save. */
+  effectivePassword?: ResolvedPasswordPolicy;
 }
 
 @Component({
@@ -702,6 +721,62 @@ interface TenantRow extends Tenant {
               </div>
             </section>
 
+            <!-- ==================== Password policy ==================== -->
+            <section class="wf-subsection">
+              <h4>Password policy</h4>
+              <p class="wf-hint">
+                Rules for this tenant's users. Leave a field blank to inherit the
+                deployment default. A policy can only make the deployment default
+                <strong>stricter</strong> — a weaker value is kept but has no
+                effect until the default relaxes, which is what the
+                <em>In effect</em> column shows.
+              </p>
+
+              <div class="wf-grid">
+                <mat-form-field appearance="outline">
+                  <mat-label>Minimum length</mat-label>
+                  <input matInput type="number" min="1" max="72" placeholder="inherit"
+                         [(ngModel)]="t.passwordDraft!.minLength">
+                  <mat-hint>{{ lengthHint(t, 'minLength') }}</mat-hint>
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Maximum length</mat-label>
+                  <input matInput type="number" min="1" max="72" placeholder="inherit"
+                         [(ngModel)]="t.passwordDraft!.maxLength">
+                  <mat-hint>{{ lengthHint(t, 'maxLength') }}</mat-hint>
+                </mat-form-field>
+              </div>
+
+              <div class="wf-toggle-row">
+                @for (rule of compositionRules; track rule.key) {
+                  <div>
+                    <mat-slide-toggle [(ngModel)]="t.passwordDraft![rule.key]"
+                                      [disabled]="baseRequires(rule.key)">
+                      Require {{ rule.label }}
+                    </mat-slide-toggle>
+                    <p class="sub">{{ ruleHint(t, rule.key) }}</p>
+                  </div>
+                }
+              </div>
+
+              <p class="wf-hint">
+                Breach screening is set for the whole deployment and cannot be
+                changed per tenant.
+              </p>
+
+              <div class="wf-actions">
+                <span class="spacer"></span>
+                <button mat-stroked-button (click)="clearPasswordPolicy(t)"
+                        title="Remove this tenant's override and inherit the deployment default">
+                  Inherit default
+                </button>
+                <button mat-stroked-button (click)="resetPasswordDraft(t)">Reset</button>
+                <button mat-raised-button color="primary" (click)="savePasswordPolicy(t)">
+                  Save policy
+                </button>
+              </div>
+            </section>
+
             <div class="wf-panel-footer">
               <button mat-stroked-button color="warn" (click)="deleteTenant(t)">
                 <mat-icon>delete_forever</mat-icon> Delete Tenant
@@ -896,6 +971,7 @@ interface TenantRow extends Tenant {
     }
     .wf-toggle-row .sub { margin: 8px 0 0; font-size: 12px; }
     .wf-branding-grid { margin-top: 16px; }
+
     .wf-subhead {
       font-family: 'Syne', sans-serif;
       font-size: 13px;
@@ -953,6 +1029,25 @@ export class TenantsComponent implements OnInit {
   creating = signal(false);
   providerTypes = SUPPORTED_PROVIDERS;
 
+  /**
+   * Deployment-wide password baseline, fetched once. A signal rather than a
+   * plain field because this page is zoneless — an HTTP callback that only
+   * mutates a field schedules no change detection, and the policy table would
+   * render "—" forever.
+   */
+  passwordBaseline = signal<ResolvedPasswordPolicy | null>(null);
+
+  /** The four composition rules, rendered as one row each. */
+  readonly compositionRules: ReadonlyArray<{
+    key: 'requireUppercase' | 'requireLowercase' | 'requireDigit' | 'requireSymbol';
+    label: string;
+  }> = [
+    { key: 'requireUppercase', label: 'Uppercase letter' },
+    { key: 'requireLowercase', label: 'Lowercase letter' },
+    { key: 'requireDigit',     label: 'Digit' },
+    { key: 'requireSymbol',    label: 'Symbol' },
+  ];
+
   newTenant: Partial<Tenant> = { slug: '', name: '', displayName: '' };
 
   // The TenantPickerComponent (in the Users / Roles / GroupRoleMappings
@@ -998,6 +1093,12 @@ export class TenantsComponent implements OnInit {
 
   ngOnInit() {
     this.refresh();
+    this.api.passwordPolicyBaseline().subscribe({
+      next: b => this.passwordBaseline.set(b),
+      // Non-fatal: the table still renders, the baseline column shows "—".
+      // Failing the whole page over a reference value would be worse.
+      error: () => this.passwordBaseline.set(null),
+    });
   }
 
   refresh() {
@@ -1008,6 +1109,7 @@ export class TenantsComponent implements OnInit {
         samlDraft: this.freshSamlDraft(),
         twilioDraft: this.freshTwilioDraft(),
         brandingDraft: this.brandingDraftFrom(t),
+        passwordDraft: this.passwordDraftFrom(t),
       }))),
       error: err => this.err('Failed to load tenants', err),
     });
@@ -1079,6 +1181,131 @@ export class TenantsComponent implements OnInit {
 
   resetBrandingDraft(t: TenantRow) {
     t.brandingDraft = this.brandingDraftFrom(t);
+  }
+
+  // ---- Password policy ----------------------------------------------
+
+  private passwordDraftFrom(t: Tenant): PasswordPolicyDraft {
+    const p = (t.passwordPolicy ?? {}) as PasswordPolicyOverride;
+    return {
+      // null, not 0 — an empty box must mean "inherit", and 0 would be an
+      // override that says something.
+      minLength: typeof p.minLength === 'number' ? p.minLength : null,
+      maxLength: typeof p.maxLength === 'number' ? p.maxLength : null,
+      requireUppercase: p.requireUppercase === true,
+      requireLowercase: p.requireLowercase === true,
+      requireDigit:     p.requireDigit === true,
+      requireSymbol:    p.requireSymbol === true,
+    };
+  }
+
+  resetPasswordDraft(t: TenantRow) {
+    t.passwordDraft = this.passwordDraftFrom(t);
+  }
+
+  /** True when the deployment default already demands this rule. */
+  baseRequires(key: 'requireUppercase' | 'requireLowercase' | 'requireDigit' | 'requireSymbol'): boolean {
+    return this.passwordBaseline()?.[key] === true;
+  }
+
+  effectiveRequires(t: TenantRow,
+                    key: 'requireUppercase' | 'requireLowercase' | 'requireDigit' | 'requireSymbol'): boolean {
+    // Prefer the server's answer; fall back to the local OR so the row is not
+    // blank before the first fetch lands.
+    return t.effectivePassword?.[key] ?? (this.baseRequires(key) || t.passwordDraft?.[key] === true);
+  }
+
+  /**
+   * True when the tenant typed a length the baseline overrules. A plain method,
+   * not a computed(): the draft is a plain object mutated by ngModel, and on
+   * this zoneless page a computed() over a non-signal memoises its first value
+   * forever.
+   */
+  isOverridden(t: TenantRow, field: 'minLength' | 'maxLength'): boolean {
+    const base = this.passwordBaseline();
+    const typed = t.passwordDraft?.[field];
+    if (!base || typeof typed !== 'number') return false;
+    return field === 'minLength' ? typed < base.minLength : typed > base.maxLength;
+  }
+
+  /**
+   * The line under each length box. Says the deployment default, what is
+   * actually in force, and — when those disagree — why, because a value that
+   * saved successfully and then did nothing is otherwise indistinguishable
+   * from a failed save.
+   */
+  lengthHint(t: TenantRow, field: 'minLength' | 'maxLength'): string {
+    const base = this.passwordBaseline();
+    if (!base) return 'Blank inherits the deployment default';
+    const effective = t.effectivePassword?.[field];
+    const parts = [`Default ${base[field]}`];
+    if (typeof effective === 'number') parts.push(`in effect ${effective}`);
+    if (this.isOverridden(t, field)) {
+      parts.push(field === 'minLength'
+        ? 'your value is weaker, so it is ignored'
+        : 'your value is looser, so it is ignored');
+    }
+    return parts.join(' · ');
+  }
+
+  ruleHint(t: TenantRow,
+           key: 'requireUppercase' | 'requireLowercase' | 'requireDigit' | 'requireSymbol'): string {
+    if (this.baseRequires(key)) {
+      return 'Required by the deployment default — cannot be switched off here';
+    }
+    return this.effectiveRequires(t, key)
+      ? 'Required for this tenant'
+      : 'Not required';
+  }
+
+  /** Drops the override entirely, so the tenant inherits the deployment default. */
+  clearPasswordPolicy(t: TenantRow) {
+    // An empty object is the server's signal to store NULL.
+    this.persistPasswordPolicy(t, {}, `${t.slug} now inherits the deployment password policy`);
+  }
+
+  savePasswordPolicy(t: TenantRow) {
+    if (!t.passwordDraft) return;
+    const d = t.passwordDraft;
+    const override: PasswordPolicyOverride = {};
+
+    // Only send what was actually set. Sending false for an unticked box would
+    // be an override meaning "not required", which reads as an attempt to
+    // weaken the baseline rather than as silence.
+    if (typeof d.minLength === 'number' && !Number.isNaN(d.minLength)) override.minLength = d.minLength;
+    if (typeof d.maxLength === 'number' && !Number.isNaN(d.maxLength)) override.maxLength = d.maxLength;
+    if (d.requireUppercase) override.requireUppercase = true;
+    if (d.requireLowercase) override.requireLowercase = true;
+    if (d.requireDigit)     override.requireDigit = true;
+    if (d.requireSymbol)    override.requireSymbol = true;
+
+    this.persistPasswordPolicy(t, override, `Password policy saved for ${t.slug}`);
+  }
+
+  private persistPasswordPolicy(t: TenantRow, override: PasswordPolicyOverride, message: string) {
+    this.api.update(t.id, { passwordPolicy: override }).subscribe({
+      next: updated => {
+        Object.assign(t, updated);
+        t.passwordDraft = this.passwordDraftFrom(updated);
+        this.refreshEffectivePolicy(t);
+        this.ok(message);
+      },
+      // The server validates the override and returns its reasons; surfacing
+      // them verbatim is more use than "save failed".
+      error: err => this.err('Failed to save password policy', err),
+    });
+  }
+
+  private refreshEffectivePolicy(t: TenantRow) {
+    this.api.effectivePasswordPolicy(t.slug).subscribe({
+      next: p => {
+        t.effectivePassword = p;
+        // Zoneless: mutating a row field schedules nothing on its own, so nudge
+        // the signal the table is rendered from.
+        this.tenants.set([...this.tenants()]);
+      },
+      error: () => { /* leave the previous value; the row still renders */ },
+    });
   }
 
   saveBranding(t: TenantRow) {
@@ -1163,6 +1390,11 @@ export class TenantsComponent implements OnInit {
   }
 
   loadProviders(t: TenantRow) {
+    // Resolved server-side, so the "In effect" column is the real answer rather
+    // than the portal's guess at the merge rules. Fetched on expand because it
+    // is one call per opened row, not one per tenant on page load.
+    if (!t.effectivePassword) this.refreshEffectivePolicy(t);
+
     if (t.providers) return;
     t.loadingProviders = true;
     this.api.listProviders(t.id).subscribe({

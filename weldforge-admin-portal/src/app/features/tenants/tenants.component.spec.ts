@@ -69,6 +69,18 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
             list: vi.fn().mockReturnValue(of([rowA, rowB])),
             listProviders: vi.fn().mockReturnValue(of([])),
             listSamlProviders: vi.fn().mockReturnValue(of([])),
+            // Both are called on init / row expand. Stubbed with the shipped
+            // defaults so the password-policy section renders like production.
+            passwordPolicyBaseline: vi.fn().mockReturnValue(of({
+              minLength: 12, maxLength: 72,
+              requireUppercase: false, requireLowercase: false,
+              requireDigit: false, requireSymbol: false,
+            })),
+            effectivePasswordPolicy: vi.fn().mockReturnValue(of({
+              minLength: 12, maxLength: 72,
+              requireUppercase: false, requireLowercase: false,
+              requireDigit: false, requireSymbol: false,
+            })),
           },
         },
         { provide: TenantTwilioService, useValue: { get: vi.fn().mockReturnValue(of(null)) } },

@@ -41,7 +41,8 @@ class TenantServiceReservedSlugTest {
     private final TenantService service = new TenantService(
             accessor, tenantRepository, socialRepo, userRepository,
             refreshTokenRepository, slugHoldbackRepository, auditService, publicHost,
-            new TenantSlugValidator(publicHost, slugHoldbackRepository));
+            new TenantSlugValidator(publicHost, slugHoldbackRepository),
+                new tech.cwvermaak.weldforge.service.security.PasswordPolicyOverrideValidator(), new tech.cwvermaak.weldforge.service.security.PasswordPolicyService(new tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties(), tech.cwvermaak.weldforge.service.security.BreachedPasswordScreen.DISABLED));
 
     @Test
     @DisplayName("Reserved slug 'oauth' is refused at creation")

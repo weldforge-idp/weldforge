@@ -15,6 +15,7 @@ import tech.cwvermaak.weldforge.model.dto.LoginRequestDto;
 import tech.cwvermaak.weldforge.model.dto.RegisterRequestDto;
 import tech.cwvermaak.weldforge.model.dto.SamlProviderDto;
 import tech.cwvermaak.weldforge.model.dto.SocialProviderDto;
+import tech.cwvermaak.weldforge.model.dto.PasswordPolicyDto;
 import tech.cwvermaak.weldforge.model.dto.TenantBrandingDto;
 import tech.cwvermaak.weldforge.model.dto.UserResponseDto;
 import tech.cwvermaak.weldforge.repository.UserRepository;
@@ -188,6 +189,18 @@ public class AuthController {
     @GetMapping("/tenants/{slug}/branding")
     public ResponseEntity<TenantBrandingDto> tenantBranding(@PathVariable String slug) {
         return ResponseEntity.ok(tenantService.getBrandingForSlug(slug));
+    }
+
+    /**
+     * The effective password rules for a tenant, so the register and reset
+     * forms can state them before the user submits rather than only when
+     * rejecting them. Public and unauthenticated, like its siblings here —
+     * {@code AppAuthorizationFilter} exempts {@code /api/auth/**} wholesale.
+     * See {@code docs/password-policy-spec.md} §6.
+     */
+    @GetMapping("/tenants/{slug}/password-policy")
+    public ResponseEntity<PasswordPolicyDto> tenantPasswordPolicy(@PathVariable String slug) {
+        return ResponseEntity.ok(tenantService.getPasswordPolicyForSlug(slug));
     }
 
     @GetMapping("/tenants/{slug}/social-providers")

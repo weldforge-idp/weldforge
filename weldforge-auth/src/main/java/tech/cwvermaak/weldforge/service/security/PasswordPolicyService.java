@@ -1,6 +1,7 @@
 package tech.cwvermaak.weldforge.service.security;
 
 import org.springframework.stereotype.Service;
+import tech.cwvermaak.weldforge.model.Tenant;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -34,7 +35,37 @@ public class PasswordPolicyService {
         this.breachScreen = breachScreen;
     }
 
+    /**
+     * Validates against the deployment baseline, with no tenant overrides.
+     * Retained for callers with no tenant in scope; the three real call sites
+     * (registration, self-service change, reset) pass the tenant.
+     */
     public void validate(String password) {
+        validate(password, EffectivePasswordPolicy.baseline(properties));
+    }
+
+    /**
+     * Validates against {@code tenant}'s effective policy — the deployment
+     * baseline with the tenant's overrides layered on. A null tenant, or one
+     * with no override, is identical to {@link #validate(String)}.
+     *
+     * <p>See {@code docs/password-policy-spec.md}. Overrides may only tighten.
+     */
+    public void validate(String password, Tenant tenant) {
+        validate(password, EffectivePasswordPolicy.resolve(properties, tenant));
+    }
+
+    /** The rules a given tenant's users must satisfy — for admin and form display. */
+    public EffectivePasswordPolicy effectivePolicyFor(Tenant tenant) {
+        return EffectivePasswordPolicy.resolve(properties, tenant);
+    }
+
+    /** The deployment baseline, shown in the admin UI beside a tenant's override. */
+    public EffectivePasswordPolicy baseline() {
+        return EffectivePasswordPolicy.baseline(properties);
+    }
+
+    private void validate(String password, EffectivePasswordPolicy policy) {
         List<String> reasons = new ArrayList<>();
 
         if (password == null || password.isEmpty()) {
@@ -43,28 +74,28 @@ public class PasswordPolicyService {
         }
 
         int length = password.length();
-        if (length < properties.getMinLength()) {
-            reasons.add("at least " + properties.getMinLength() + " characters");
+        if (length < policy.minLength()) {
+            reasons.add("at least " + policy.minLength() + " characters");
         }
         // bcrypt truncates at 72 bytes — anything longer would silently ignore
         // the tail and weaken the hash. Reject up-front.
         int utf8Bytes = password.getBytes(StandardCharsets.UTF_8).length;
-        if (utf8Bytes > properties.getMaxLength()) {
-            reasons.add("at most " + properties.getMaxLength() + " bytes");
+        if (utf8Bytes > policy.maxLength()) {
+            reasons.add("at most " + policy.maxLength() + " bytes");
         }
 
         // Off by default (NIST SP 800-63B §5.1.1.2); a deployment may still
-        // turn any of them back on.
-        if (properties.isRequireUppercase() && !containsUppercase(password)) {
+        // turn any of them back on, and a tenant may tighten further.
+        if (policy.requireUppercase() && !containsUppercase(password)) {
             reasons.add("at least one uppercase letter");
         }
-        if (properties.isRequireLowercase() && !containsLowercase(password)) {
+        if (policy.requireLowercase() && !containsLowercase(password)) {
             reasons.add("at least one lowercase letter");
         }
-        if (properties.isRequireDigit() && !containsDigit(password)) {
+        if (policy.requireDigit() && !containsDigit(password)) {
             reasons.add("at least one digit");
         }
-        if (properties.isRequireSymbol() && !containsSymbol(password)) {
+        if (policy.requireSymbol() && !containsSymbol(password)) {
             reasons.add("at least one symbol (non-alphanumeric character)");
         }
 
@@ -72,6 +103,7 @@ public class PasswordPolicyService {
         // refused anyway need not cost a round-trip to the corpus. UNAVAILABLE
         // is accepted -- the screen has already logged and counted it.
         if (reasons.isEmpty()
+                && policy.breachCheckEnabled()
                 && breachScreen.check(password) == BreachedPasswordScreen.Result.BREACHED) {
             reasons.add(BREACHED_REASON);
         }

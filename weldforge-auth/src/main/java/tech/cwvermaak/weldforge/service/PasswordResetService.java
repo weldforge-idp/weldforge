@@ -143,9 +143,15 @@ public class PasswordResetService {
             throw new IllegalArgumentException("Invalid or expired reset token");
         }
 
-        passwordPolicyService.validate(newPassword);
-
+        // Resolved before validation, because the policy is the token owner's
+        // tenant's, not the deployment baseline. There is no TenantContext on
+        // this path — a reset is completed from an emailed link, which may be
+        // opened anywhere — so the token is the only authority on which tenant
+        // this is (docs/password-policy-spec.md).
         User user = resetToken.getUser();
+
+        passwordPolicyService.validate(newPassword, user.getTenant());
+
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setTokenVersion(user.getTokenVersion() + 1);
         // A completed reset proves account ownership — clear any failed-login
