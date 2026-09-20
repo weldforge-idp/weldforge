@@ -50,6 +50,18 @@ public class TenantDto {
     private Map<String, Object> branding;
 
     /**
+     * Per-tenant password rule overrides — {@code minLength}, {@code maxLength},
+     * {@code requireUppercase/Lowercase/Digit/Symbol}. Null inherits the
+     * deployment baseline, and absent keys inherit individually.
+     *
+     * <p>Overrides may only <em>tighten</em> the baseline; a weaker value is
+     * stored but has no effect until the baseline relaxes. Breach screening is
+     * deployment-wide and deliberately absent here. See
+     * {@code docs/password-policy-spec.md}.
+     */
+    private Map<String, Object> passwordPolicy;
+
+    /**
      * Operator contact email — informational today; V2 of identity-proofing
      * will use it as the verification-challenge target.
      */

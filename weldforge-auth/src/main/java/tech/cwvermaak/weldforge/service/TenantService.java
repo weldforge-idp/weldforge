@@ -12,6 +12,7 @@ import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.TenantSocialProvider;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.model.dto.SocialProviderDto;
+import tech.cwvermaak.weldforge.model.dto.PasswordPolicyDto;
 import tech.cwvermaak.weldforge.model.dto.TenantBrandingDto;
 import tech.cwvermaak.weldforge.model.dto.TenantDto;
 import tech.cwvermaak.weldforge.model.TenantSlugHoldback;
@@ -24,6 +25,8 @@ import tech.cwvermaak.weldforge.repository.UserRepository;
 import java.time.LocalDateTime;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.security.PasswordPolicyOverrideValidator;
+import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
 
 import java.util.List;
 
@@ -59,6 +62,8 @@ public class TenantService {
     private final AuditService auditService;
     private final PublicHostProperties publicHost;
     private final TenantSlugValidator slugValidator;
+    private final PasswordPolicyOverrideValidator passwordPolicyOverrideValidator;
+    private final PasswordPolicyService passwordPolicyService;
 
     // ---- Tenant CRUD --------------------------------------------------
 
@@ -138,6 +143,15 @@ public class TenantService {
         if (dto.getReturnToCallerEnabled() != null)      t.setReturnToCallerEnabled(dto.getReturnToCallerEnabled());
         if (dto.getSamlWantAuthnRequestsSigned() != null) t.setSamlWantAuthnRequestsSigned(dto.getSamlWantAuthnRequestsSigned());
         if (dto.getBranding() != null)                   t.setBranding(dto.getBranding());
+        if (dto.getPasswordPolicy() != null) {
+            // Validated at write time so a bad value is a 400 the administrator
+            // reads now, rather than a registration failure their users hit
+            // later. The login path never throws on this column.
+            passwordPolicyOverrideValidator.validate(dto.getPasswordPolicy());
+            // An empty object is how the UI says "stop overriding" — stored as
+            // NULL so it reads as inherit rather than as an override of nothing.
+            t.setPasswordPolicy(dto.getPasswordPolicy().isEmpty() ? null : dto.getPasswordPolicy());
+        }
         // contactEmail can be updated freely; it is NOT a privileged field.
         // verifiedAt is deliberately NOT settable here — the explicit
         // verify/unverify endpoints are the only way to flip it, so a
@@ -338,6 +352,22 @@ public class TenantService {
      * Public, unauthenticated branding lookup. Used by the Angular login SPA
      * to render a tenant-customised login screen. Returns no secrets.
      */
+    /**
+     * Public, unauthenticated password-policy lookup — the <em>effective</em>
+     * rules for this tenant, so the register and reset forms can state them
+     * before the user submits rather than only on rejection.
+     *
+     * <p>Returns the deployment baseline for a tenant with no override, which
+     * is also what an unknown-but-valid slug would look like; the 404 for a
+     * missing tenant matches the sibling branding endpoint rather than
+     * inventing a different contract.
+     */
+    public PasswordPolicyDto getPasswordPolicyForSlug(String slug) {
+        Tenant t = tenantRepository.findBySlug(slug)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + slug + " not found"));
+        return PasswordPolicyDto.from(passwordPolicyService.effectivePolicyFor(t));
+    }
+
     public TenantBrandingDto getBrandingForSlug(String slug) {
         Tenant t = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant " + slug + " not found"));
@@ -382,6 +412,7 @@ public class TenantService {
                 .returnToCallerEnabled(t.getReturnToCallerEnabled())
                 .samlWantAuthnRequestsSigned(t.getSamlWantAuthnRequestsSigned())
                 .branding(t.getBranding())
+                .passwordPolicy(t.getPasswordPolicy())
                 .contactEmail(t.getContactEmail())
                 .verifiedAt(t.getVerifiedAt())
                 .verifiedByUserId(t.getVerifiedByUserId())

@@ -141,6 +141,22 @@ public class Tenant {
     private List<Map<String, Object>> claimTransforms;
 
     /**
+     * Per-tenant password rule overrides. {@code null} — the default for every
+     * tenant — inherits the deployment baseline {@code app.security.password.*}
+     * wholesale, and absent keys inherit individually, so a partial object is
+     * the normal case rather than an edge case.
+     *
+     * <p>Overrides may only <em>tighten</em> the baseline; a weakening value is
+     * a no-op rather than an error. The reasoning, and the full resolution
+     * table, are in {@code docs/password-policy-spec.md} §2. Enforcement lives
+     * in the resolver, not here, because it is a comparison against runtime
+     * configuration this entity cannot see.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "password_policy", columnDefinition = "jsonb")
+    private Map<String, Object> passwordPolicy;
+
+    /**
      * Operator contact email for the tenant. Used today only as an admin-
      * visible field; V2 of identity-proofing will send a verification
      * challenge here and auto-flip {@link #verifiedAt} on success.

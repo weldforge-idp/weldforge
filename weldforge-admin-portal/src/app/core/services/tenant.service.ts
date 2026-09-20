@@ -29,6 +29,41 @@ export interface Tenant {
   /** CONF-5.5. Advertised in IdP metadata as WantAuthnRequestsSigned. */
   samlWantAuthnRequestsSigned?: boolean;
   branding?: Record<string, unknown> | null;
+  /**
+   * Per-tenant password rule overrides. Null/absent inherits the deployment
+   * baseline, and absent keys inherit individually.
+   *
+   * Overrides may only TIGHTEN the baseline — a weaker value is stored and then
+   * ignored, which is why the UI shows the effective result beside it. See
+   * docs/password-policy-spec.md.
+   */
+  passwordPolicy?: PasswordPolicyOverride | null;
+}
+
+/**
+ * The writable subset of a password policy. Every field is optional: omitting
+ * one inherits it from the deployment baseline.
+ *
+ * `breachCheckEnabled` is deliberately absent — breach screening is
+ * deployment-wide, not per tenant.
+ */
+export interface PasswordPolicyOverride {
+  minLength?: number;
+  maxLength?: number;
+  requireUppercase?: boolean;
+  requireLowercase?: boolean;
+  requireDigit?: boolean;
+  requireSymbol?: boolean;
+}
+
+/** A fully-resolved policy — the deployment baseline, or a tenant's effective rules. */
+export interface ResolvedPasswordPolicy {
+  minLength: number;
+  maxLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireDigit: boolean;
+  requireSymbol: boolean;
 }
 
 export interface SocialProvider {
@@ -92,6 +127,27 @@ export class TenantService {
 
   delete(id: number): Observable<void> {
     return this.http.delete<void>(`${this.url}/${id}`);
+  }
+
+  /**
+   * The deployment-wide password baseline, before any tenant override.
+   * Fetched once so the UI can show an administrator why a weakening override
+   * had no effect — tenant policies may only tighten.
+   */
+  passwordPolicyBaseline(): Observable<ResolvedPasswordPolicy> {
+    return this.http.get<ResolvedPasswordPolicy>(
+      `${environment.apiBaseUrl}/api/admin/password-policy/baseline`);
+  }
+
+  /**
+   * A tenant's effective rules — baseline with its override applied, already
+   * resolved by the server. Public endpoint, and the same one the login and
+   * register forms read, so what the admin sees here is exactly what a user
+   * will be told.
+   */
+  effectivePasswordPolicy(slug: string): Observable<ResolvedPasswordPolicy> {
+    return this.http.get<ResolvedPasswordPolicy>(
+      `${this.publicUrl}/${encodeURIComponent(slug)}/password-policy`);
   }
 
   listProviders(tenantId: number): Observable<SocialProvider[]> {

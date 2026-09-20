@@ -109,7 +109,8 @@ public class EpicBStep1Steps {
                 auditService, publicHostProperties(),
                 new tech.cwvermaak.weldforge.service.TenantSlugValidator(
                         publicHostProperties(),
-                        mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class)));
+                        mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class)),
+                new tech.cwvermaak.weldforge.service.security.PasswordPolicyOverrideValidator(), new tech.cwvermaak.weldforge.service.security.PasswordPolicyService(new tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties(), tech.cwvermaak.weldforge.service.security.BreachedPasswordScreen.DISABLED));
 
         jwtService = new JwtService();
         ReflectionTestUtils.setField(jwtService, "secret", jwtSecret);
