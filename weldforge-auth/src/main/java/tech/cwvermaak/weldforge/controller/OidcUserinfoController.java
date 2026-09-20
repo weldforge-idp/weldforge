@@ -8,8 +8,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.TenantSigningKey;
@@ -53,7 +54,23 @@ public class OidcUserinfoController {
     private final TenantSigningKeyService signingKeyService;
     private final RevokedOidcTokenRepository revocationRepository;
 
-    @GetMapping("/t/{slug}/oauth2/userinfo")
+    /**
+     * OIDC Core §5.3.1: the UserInfo Endpoint <em>MUST</em> support both GET
+     * and POST. Only GET was mapped until 2026-09-20, so a conformant client
+     * POSTing here got {@code 405 Method Not Allowed} — found by the OpenID
+     * conformance suite (module {@code oidcc-userinfo-post-header}), not by any
+     * test in this repo, because nothing here exercised the HTTP method.
+     *
+     * <p>POST is not a second code path: the bearer token is read from the
+     * {@code Authorization} header either way, so both methods land in the same
+     * method body and cannot drift apart.
+     *
+     * <p>Note the spec also allows the access token in a form-encoded POST body
+     * ({@code access_token=...}); that remains unsupported, which the suite
+     * reports as a warning rather than a failure.
+     */
+    @RequestMapping(value = "/t/{slug}/oauth2/userinfo",
+                    method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Map<String, Object>> userinfo(@PathVariable String slug,
                                                         HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
