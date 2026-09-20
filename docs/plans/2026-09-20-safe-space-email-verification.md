@@ -139,6 +139,70 @@ tidy-up step to schedule later; it is a precondition, and the order is:
 
 Reversing those two steps is an outage for all three apps.
 
+## 3b. The legacy API key: investigated, and there is nothing to rotate
+
+I leaked `WELDFORGE_LEGACY_API_KEY` into a session transcript and said it needed
+rotating. Investigated properly, it does not — because it is not a credential.
+
+**What it is.** `safe-space-api`'s `AuthProxyService.createSsoHeaders()` sets
+`x-app-authorization: <key>` on every call it proxies to WeldForge. Those calls
+are `/api/auth/login`, `/api/auth/register` and `/api/auth/me`.
+
+**Why it does nothing.** `AppAuthorizationFilter` exempts
+`path.startsWith("/api/auth/")` wholesale. The header is sent and never read.
+Confirmed on both instances and in both code generations: the exemption was
+committed **2026-05-17**, a month before the GKE image was built, so it holds
+there too.
+
+**And it would fail if it were read.** Presented against a path the filter does
+guard, both instances answer `403 "Missing or invalid x-app-authorization
+header"`. It matches no `app_clients` row on tech01. It is not merely unused —
+it is invalid.
+
+So rotating it would be theatre: writing a fresh secret into a slot nothing
+reads, to replace a value that authorises nothing.
+
+### The real defect, which is latent rather than active
+
+The configuration *looks* like a security control and is not one. That matters
+in one specific way:
+
+> **If anyone ever adds gating to `/api/auth/**`, Safe Space breaks
+> immediately** — because the credential it would then need to present is
+> invalid, and nobody would discover that until logins started failing in
+> production.
+
+The legacy proxy is already marked for removal in `safe-space-api`'s own config
+(*"slated for removal once ss-mobile + ss-web are on the OIDC
+Authorization-Code+PKCE flow"*). So the proportionate fix is to delete the dead
+header when that path is retired — not to mint a real key for a route with a
+known end date.
+
+**Actions, in order of value:**
+
+1. Delete `WELDFORGE_LEGACY_API_KEY` from `safe-space-api-secret` and the
+   Helm values. It protects nothing, and its presence invites the belief that
+   it does. *(Not done here: that repository has another session's uncommitted
+   work in it.)*
+2. Do **not** mint a replacement app-client key unless the legacy proxy is
+   going to outlive the OIDC rollout.
+3. If `/api/auth/**` is ever gated, treat Safe Space as a blocking dependency
+   and issue it a valid key **first**.
+
+### One thing that does need doing
+
+The key sat in a transcript, so treat it as disclosed and remove it rather than
+leave it in place — not because it grants access, but because a value that
+looks like a live credential and is not is exactly what makes the next incident
+hard to triage.
+
+### Incidental, and good news
+
+`AuthProxyService` proxies `/api/auth/me` with `return response.getBody()` — an
+unmapped pass-through. The `emailVerified` field added in Step 1 therefore
+survives the proxy without any change on the Safe Space side. That was the
+coordination risk the handover flagged, and it is clear.
+
 ## 4. Plan
 
 Sequenced so each step is independently shippable and nothing blocks Nyasha
