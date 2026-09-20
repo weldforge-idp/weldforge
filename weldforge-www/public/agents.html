@@ -525,10 +525,19 @@ curl -X POST $HOST/api/admin/tenants/$TENANT_ID/ldap-providers/$ID/test-connecti
 
         <h3>B.1 — Hosted platform (sso.weldforge.org)</h3>
         <ol style="padding-left: 1.25rem; color: var(--ink-dim);">
-            <li style="margin-bottom: .5rem;">Open an issue at <a href="https://github.com/weldforge-idp/weldforge/issues">the issues tracker</a> titled <em>Tenant request: &lt;your org&gt;</em>, or email the platform operator.</li>
-            <li style="margin-bottom: .5rem;">The operator provisions your tenant and returns a one-shot <code>TENANT_ADMIN</code> service-account token.</li>
-            <li style="margin-bottom: .5rem;">You continue with <a href="#integrate">Flow A</a>.</li>
+            <li style="margin-bottom: .5rem;"><strong>Start at the sign-up funnel, not by email:</strong> <code>POST https://sso.weldforge.org/api/public/orders</code>. No API key, browser-facing. It records the order and reserves your slug. See <a href="#hosted-signup">Subscribing to the hosted service</a> for the request body and the <code>nextStep</code> branch.</li>
+            <li style="margin-bottom: .5rem;">Branch on <code>nextStep</code>, never on whether <code>checkoutUrl</code> is present. <code>CHECKOUT</code> means pay and the tenant is created once funds clear. <code>MANUAL_FOLLOW_UP</code> means the order is recorded and the operator completes provisioning — self-serve card checkout is not live yet, so this is the current outcome.</li>
+            <li style="margin-bottom: .5rem;">You receive the tenant slug and a one-shot <code>TENANT_ADMIN</code> service-account token, then continue with <a href="#integrate">Flow A</a>.</li>
         </ol>
+        <p style="color: var(--ink-dim);">
+            <strong>If you already have a credential, you do not need a second one.</strong>
+            A <code>SUPER_ADMIN</code> token administers any tenant by naming it in an
+            <code>X-WF-Tenant: &lt;slug&gt;</code> header on the <code>/api/admin/**</code> call.
+            There is <em>no</em> token-exchange step — a super-admin does not mint a
+            tenant-scoped token to act in another tenant. This is the step integrators
+            most often go looking for and cannot find, because it does not exist.
+            See <a href="#cross-tenant">Administering another tenant</a>.
+        </p>
 
         <h3>B.2 — Self-hosted (one-installation-serves-many-tenants)</h3>
         <p>If you are running your own copy of WeldForge and want to add an <em>additional</em> tenant to it, call:</p>

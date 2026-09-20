@@ -1,352 +1,395 @@
 {
-    "schemaVersion": "1.0",
-    "name": "WeldForge",
-    "alternateName": "weldforge",
-    "description": "Multi-tenant federated identity platform: SSO (OIDC, SAML 2.0), CIAM, SCIM 2.0 provisioning, MFA (TOTP/WebAuthn/SMS), internal per-tenant PKI (CA/CRL/OCSP), M2M auth (scoped API keys, service-account tokens, OAuth 2.0 client credentials), HMAC-signed audit webhooks.",
-    "homepage": "https://www.weldforge.org",
-    "sourceRepository": "https://github.com/weldforge-idp/weldforge",
-    "apiBaseUrl": "https://sso.weldforge.org",
-    "adminPortalUrl": "https://sso.weldforge.org",
-    "openApiSpecUrl": null,
-    "interactiveDocsUrl": null,
-    "openApiAccess": "Not routed on the public host. /v3/api-docs and /swagger-ui/index.html return the portal's HTML, not a spec, because the ingress forwards only /api, /t/, /saml2, /scim and /health to the backend. Run the container yourself (docker compose up) and read them at http://localhost:8076. Build integrations from /llms.txt and /agents.html, not from a fetched spec.",
-    "contact": {
-        "issues": "https://github.com/weldforge-idp/weldforge/issues"
-    },
-    "authScheme": {
-        "headerName": "x-app-authorization",
-        "tokenFormats": [
-            {
-                "prefix": "wf_live_",
-                "kind": "app-client-api-key",
-                "obtain": "POST /api/admin/app-clients",
-                "scoped": true,
-                "scopeShape": "[{path:'<ant-pattern>', methods:['GET','POST',...]}]",
-                "rotate": "POST /api/admin/app-clients/{id}/rotate",
-                "notes": "Returned once in response body as 'apiKey'. Stored hashed (SHA-256) server-side; plaintext is never retrievable."
-            },
-            {
-                "prefix": "wf_svc_",
-                "kind": "service-account-token",
-                "obtain": "POST /api/admin/service-accounts",
-                "carriesAdminRole": true,
-                "roles": [
-                    "SUPER_ADMIN",
-                    "TENANT_ADMIN",
-                    "READ_ONLY"
-                ],
-                "expirySupported": true,
-                "notes": "Returned once in response body as 'token'. Unlike app-client keys, these carry admin authorisation in SecurityContext — use for agents that must call admin endpoints."
-            }
-        ]
-    },
-    "crossTenantAdmin": {
-        "header": "X-WF-Tenant",
-        "appliesTo": "/api/admin/**",
-        "purpose": "An admin whose token carries SUPER_ADMIN / a global admin membership targets a tenant other than their own by adding 'X-WF-Tenant: <slug>'. The effective admin role is re-resolved against that tenant, the call is audited, and a caller with no reach into the target is rejected 403.",
-        "spec": "docs/cross-tenant-admin-spec.md"
-    },
-    "endUserAuthForms": {
-        "purpose": "User-facing auth screens -- where humans land in a browser to sign in, reset a password, register, or verify an email. Served both from the apex host https://sso.weldforge.org and from each tenant's own subdomain, so password managers (Chrome/Firefox/Safari/Bitwarden/1Password) treat each tenant as a distinct site.",
-        "hostPattern": "https://{slug}.sso.weldforge.org (live; wildcard DNS and TLS are provisioned)",
-        "slugPattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$",
-        "reservedRootLabels": [
-            "www",
-            "api",
-            "admin",
-            "app",
-            "mail",
-            "static"
+  "schemaVersion": "1.0",
+  "name": "WeldForge",
+  "alternateName": "weldforge",
+  "description": "Multi-tenant federated identity platform: SSO (OIDC, SAML 2.0), CIAM, SCIM 2.0 provisioning, MFA (TOTP/WebAuthn/SMS), internal per-tenant PKI (CA/CRL/OCSP), M2M auth (scoped API keys, service-account tokens, OAuth 2.0 client credentials), HMAC-signed audit webhooks.",
+  "homepage": "https://www.weldforge.org",
+  "sourceRepository": "https://github.com/weldforge-idp/weldforge",
+  "apiBaseUrl": "https://sso.weldforge.org",
+  "adminPortalUrl": "https://sso.weldforge.org",
+  "openApiSpecUrl": null,
+  "interactiveDocsUrl": null,
+  "openApiAccess": "Not routed on the public host. /v3/api-docs and /swagger-ui/index.html return the portal's HTML, not a spec, because the ingress forwards only /api, /t/, /saml2, /scim and /health to the backend. Run the container yourself (docker compose up) and read them at http://localhost:8076. Build integrations from /llms.txt and /agents.html, not from a fetched spec.",
+  "contact": {
+    "issues": "https://github.com/weldforge-idp/weldforge/issues"
+  },
+  "authScheme": {
+    "headerName": "x-app-authorization",
+    "tokenFormats": [
+      {
+        "prefix": "wf_live_",
+        "kind": "app-client-api-key",
+        "obtain": "POST /api/admin/app-clients",
+        "scoped": true,
+        "scopeShape": "[{path:'<ant-pattern>', methods:['GET','POST',...]}]",
+        "rotate": "POST /api/admin/app-clients/{id}/rotate",
+        "notes": "Returned once in response body as 'apiKey'. Stored hashed (SHA-256) server-side; plaintext is never retrievable."
+      },
+      {
+        "prefix": "wf_svc_",
+        "kind": "service-account-token",
+        "obtain": "POST /api/admin/service-accounts",
+        "carriesAdminRole": true,
+        "roles": [
+          "SUPER_ADMIN",
+          "TENANT_ADMIN",
+          "READ_ONLY"
         ],
-        "paths": {
-            "login": "/login",
-            "forgotPassword": "/forgot-password",
-            "resetPassword": "/reset-password?token={raw-token}",
-            "register": "/register",
-            "verifyEmail": "/verify-email?token={raw-token}"
-        },
-        "removedLegacyForm": "Old URLs of the form https://sso.weldforge.org/{path}?tenant={slug} have been removed. Do not generate them.",
-        "cookieScoping": "Session cookies (wf_session, refresh_token) are set without a Domain attribute, so they are scoped to the exact subdomain. A session on acme.sso.weldforge.org does not authenticate against contoso.sso.weldforge.org.",
-        "spec": "docs/auth-url-spec.md",
-        "apexHostPattern": "https://sso.weldforge.org (live; use when the tenant slug is unknown)",
-        "slugRules": "Leftmost host label. Must match ^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$ and may not be one of the reserved root labels: www, api, admin, app, mail, static.",
-        "tenantResolution": "A tenant subdomain sets the tenant implicitly, so requests to it need no X-Tenant-Slug header. On the apex host the header is required, or the request resolves to the 'default' tenant and succeeds in the wrong place.",
-        "indexing": "Every response from this host carries X-Robots-Tag: noindex, nofollow. Do not index or crawl the auth forms."
-    },
-    "endUserAuthentication": {
-        "register": "POST /api/auth/register",
-        "passwordLogin": "POST /api/auth/login",
-        "refresh": "POST /api/auth/refresh (cookie-borne refresh_token)",
-        "logout": "POST /api/auth/logout-all (revokes every refresh token for the user; there is no per-session /api/auth/logout - a browser session ends by clearing the cookie, and OIDC RPs use GET /t/{slug}/oauth2/logout)",
-        "signUpTenantHeader": "X-Tenant-Slug selects the tenant on POST /api/auth/register; without it the request resolves to the 'default' tenant",
-        "signUpApiKey": "none - /api/auth/** is exempt from x-app-authorization, because a browser calls it before the user has credentials",
-        "signUpErrors": {
-            "400 password_policy": "message lists every unmet rule",
-            "400 bad_request": "email already used in this tenant",
-            "404 not_found": "tenant has registrationEnabled=false",
-            "409 seat_limit_exceeded": "tenant at maxUsers; body carries limit and current",
-            "429 too_many_requests": "rate limited; retryAfterSeconds says how long"
-        },
-        "mfa": {
-            "enrollTotp": "POST /api/auth/mfa/totp/enroll then POST /api/auth/mfa/totp/activate",
-            "enrollSms": "POST /api/auth/mfa/sms/enroll then POST /api/auth/mfa/sms/activate",
-            "enrollWebauthn": "POST /api/auth/mfa/webauthn/registration/start then .../finish",
-            "listFactors": "GET /api/auth/mfa/factors",
-            "removeFactor": "DELETE /api/auth/mfa/factors/{id}",
-            "verify": "POST /api/auth/mfa/verify",
-            "backupCodes": "GET /api/auth/mfa/backup-codes, POST /api/auth/mfa/backup-codes/regenerate",
-            "methods": [
-                "TOTP",
-                "WEBAUTHN",
-                "SMS_OTP",
-                "BACKUP_CODES"
-            ]
-        },
-        "oauth2": {
-            "authorize": "GET  /t/{slug}/oauth2/authorize",
-            "token": "POST /t/{slug}/oauth2/token",
-            "userinfo": "GET  /t/{slug}/oauth2/userinfo",
-            "jwks": "GET  /t/{slug}/oauth2/jwks",
-            "discovery": "GET  /t/{slug}/.well-known/openid-configuration"
-        },
-        "saml": {
-            "spLogin": "GET /saml2/authenticate/{tenant-provider}",
-            "idpMetadata": "GET /t/{slug}/saml2/idp/metadata",
-            "idpSsoRedirect": "GET /t/{slug}/saml2/idp/sso",
-            "idpSsoPost": "POST /t/{slug}/saml2/idp/sso"
-        }
-    },
-    "perTenantPublicEndpoints": {
-        "oidcDiscovery": "/t/{slug}/.well-known/openid-configuration",
-        "oidcJwks": "/t/{slug}/oauth2/jwks",
-        "samlIdpMetadata": "/t/{slug}/saml2/idp/metadata",
-        "scimBase": "/scim/v2/{tenant-slug}",
-        "pkiCaBundle": "/t/{slug}/pki/ca.pem",
-        "pkiCrl": "/t/{slug}/pki/crl.pem",
-        "pkiOcsp": "/t/{slug}/pki/ocsp"
-    },
-    "keyAdminEndpoints": [
-        {
-            "method": "POST",
-            "path": "/api/admin/tenants",
-            "purpose": "Create a new tenant",
-            "requires": "SUPER_ADMIN"
-        },
-        {
-            "method": "GET",
-            "path": "/api/admin/tenants",
-            "purpose": "List tenants",
-            "requires": "SUPER_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/users/invite",
-            "purpose": "Invite a user — creates the user in an invited state and returns a 7-day reset token",
-            "requires": "SUPER_ADMIN",
-            "responseOneShot": "resetToken"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/app-clients",
-            "purpose": "Issue a scoped API key (wf_live_*)",
-            "requires": "TENANT_ADMIN",
-            "responseOneShot": "apiKey"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/app-clients/{id}/rotate",
-            "purpose": "Rotate an API key",
-            "requires": "TENANT_ADMIN",
-            "responseOneShot": "apiKey"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/service-accounts",
-            "purpose": "Issue a service-account token (wf_svc_*)",
-            "requires": "TENANT_ADMIN",
-            "responseOneShot": "token"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/saml/service-providers",
-            "purpose": "Register a SAML SP the IdP will assert to",
-            "requires": "TENANT_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/oidc/clients",
-            "purpose": "Register an OIDC relying party",
-            "requires": "TENANT_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/tenants/{id}/ldap-providers",
-            "purpose": "Wire an upstream AD/LDAP directory",
-            "requires": "TENANT_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/tenants/{id}/crm-providers",
-            "purpose": "Wire a CRM push target (Salesforce, HubSpot, Dynamics, Pipedrive)",
-            "requires": "TENANT_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/webhooks",
-            "purpose": "Subscribe to identity events (HMAC-signed delivery)",
-            "requires": "TENANT_ADMIN",
-            "responseOneShot": "secret"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/pki/ca",
-            "purpose": "Bootstrap a root CA for the tenant",
-            "requires": "TENANT_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/pki/certificates",
-            "purpose": "Issue a client certificate",
-            "requires": "TENANT_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/pki/certificates/{serial}/revoke",
-            "purpose": "Revoke a client certificate",
-            "requires": "TENANT_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/group-role-mappings",
-            "purpose": "Bind a SCIM group to an admin role",
-            "requires": "TENANT_ADMIN"
-        },
-        {
-            "method": "POST",
-            "path": "/api/admin/tenants/{id}/mfa-policy",
-            "purpose": "Configure per-tenant MFA enforcement",
-            "requires": "TENANT_ADMIN"
-        }
+        "expirySupported": true,
+        "notes": "Returned once in response body as 'token'. Unlike app-client keys, these carry admin authorisation in SecurityContext — use for agents that must call admin endpoints."
+      }
+    ]
+  },
+  "crossTenantAdmin": {
+    "header": "X-WF-Tenant",
+    "appliesTo": "/api/admin/**",
+    "purpose": "An admin whose token carries SUPER_ADMIN / a global admin membership targets a tenant other than their own by adding 'X-WF-Tenant: <slug>'. The effective admin role is re-resolved against that tenant, the call is audited, and a caller with no reach into the target is rejected 403.",
+    "spec": "docs/cross-tenant-admin-spec.md"
+  },
+  "endUserAuthForms": {
+    "purpose": "User-facing auth screens -- where humans land in a browser to sign in, reset a password, register, or verify an email. Served both from the apex host https://sso.weldforge.org and from each tenant's own subdomain, so password managers (Chrome/Firefox/Safari/Bitwarden/1Password) treat each tenant as a distinct site.",
+    "hostPattern": "https://{slug}.sso.weldforge.org (live; wildcard DNS and TLS are provisioned)",
+    "slugPattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$",
+    "reservedRootLabels": [
+      "www",
+      "api",
+      "admin",
+      "app",
+      "mail",
+      "static"
     ],
-    "standards": [
-        "RFC 6749 (OAuth 2.0)",
-        "RFC 7517 (JWK)",
-        "RFC 7519 (JWT)",
-        "OpenID Connect 1.0",
-        "SAML 2.0 (OASIS)",
-        "SCIM 2.0 (RFC 7643, RFC 7644)",
-        "WebAuthn (W3C)",
-        "X.509 (RFC 5280), CRL, OCSP (RFC 6960)",
-        "HMAC-SHA256 (RFC 2104) for webhook signatures"
-    ],
-    "eventCatalog": {
-        "auth": [
-            "auth.login.success",
-            "auth.login.failure",
-            "auth.mfa.challenge",
-            "auth.mfa.success",
-            "auth.logout",
-            "auth.password.reset"
-        ],
-        "admin": [
-            "admin.user.create",
-            "admin.user.update",
-            "admin.user.delete",
-            "admin.role.assign"
-        ],
-        "scim": [
-            "scim.user.create",
-            "scim.user.update",
-            "scim.user.delete",
-            "scim.group.create",
-            "scim.group.member.add",
-            "scim.group.member.remove"
-        ],
-        "pki": [
-            "pki.cert.issue",
-            "pki.cert.revoke",
-            "pki.cert.expiring",
-            "pki.ca.rotate"
-        ],
-        "oauth2": [
-            "oauth2.token.issued",
-            "oauth2.client.register"
-        ],
-        "saml": [
-            "saml.sp.register",
-            "saml.idp.assertion.issued"
-        ],
-        "tenant": [
-            "tenant.create",
-            "tenant.update",
-            "tenant.suspend"
-        ]
+    "paths": {
+      "login": "/login",
+      "forgotPassword": "/forgot-password",
+      "resetPassword": "/reset-password?token={raw-token}",
+      "register": "/register",
+      "verifyEmail": "/verify-email?token={raw-token}"
     },
-    "errorModel": {
-        "shape": {
-            "error": "string — machine-readable code (e.g. not_found, bad_request, unauthorized, forbidden, validation_error, provider_unavailable, internal_error)",
-            "message": "string — human-readable detail (never leaks a stack trace)",
-            "timestamp": "ISO-8601 instant",
-            "path": "string — the request URI"
-        },
-        "statusMap": {
-            "400": "bad_request | validation_error",
-            "401": "unauthorized",
-            "403": "forbidden",
-            "404": "not_found",
-            "405": "method_not_allowed",
-            "503": "provider_unavailable",
-            "500": "internal_error"
-        }
-    },
-    "observability": {
-        "health": "GET /health (public, JSON) -- the only externally reachable health endpoint.",
-        "liveness": "GET /actuator/health/liveness (cluster-internal)",
-        "readiness": "GET /actuator/health/readiness (cluster-internal)",
-        "prometheus": "GET /actuator/prometheus (cluster-internal)",
-        "actuatorNote": "/actuator/** is NOT routed by the public ingress; a request falls through to the SPA and returns HTML. The paths below exist inside the cluster only and are scraped in-cluster by Prometheus. Do not poll them from outside."
-    },
-    "rateLimits": {
-        "strategy": "per-identity (API key or service account), sliding window",
-        "notes": "Specific limits per endpoint are enforced but not published; expect 429 with Retry-After on overrun."
-    },
-    "adminPortalNote": "The admin SPA is served from the same host as the API; the ingress routes /api, /t/, /saml2, /scim and /health to the backend and everything else to the portal. admin.weldforge.org does not resolve -- do not use it.",
-    "hostedSignup": {
-        "purpose": "Subscribe to the hosted platform. This creates a tenant; it is not the same as registering a user inside an existing tenant (see endUserAuthForms).",
-        "endpoint": "POST https://sso.weldforge.org/api/public/orders",
-        "authentication": "None. Browser-facing, like /api/auth/**. Do not send x-app-authorization.",
-        "requestBody": "{tier, organisation, contactName, contactEmail, tenantSlug, region, billingCycle, currency, billingCountry, termsAccepted}",
-        "tiers": [
-            "cloud-starter",
-            "cloud-team",
-            "cloud-business",
-            "cloud-scale",
-            "cloud-dedicated",
-            "regulated",
-            "self-host-supported"
-        ],
-        "responseDiscriminator": "nextStep",
-        "nextStep": {
-            "CHECKOUT": "checkoutUrl is set; send the customer there to pay. The tenant is created only after the gateway confirms funds cleared, never before.",
-            "MANUAL_FOLLOW_UP": "checkoutUrl is null. The order is recorded and the slug reserved, but no payment gateway is configured for that currency/country, so a human completes it."
-        },
-        "criticalNote": "Branch on nextStep, never on whether checkoutUrl is present. A null checkoutUrl is not an error and must not be retried -- the sign-up has been accepted either way.",
-        "slugReservation": "The requested slug is validated with the same rules as the admin path and held while the order is live. A 400 naming the slug means choose another.",
-        "selfHostAlternative": "Self-hosting needs none of this. The source is complete and 'docker compose up' is the whole quick start: https://github.com/weldforge-idp/weldforge"
+    "removedLegacyForm": "Old URLs of the form https://sso.weldforge.org/{path}?tenant={slug} have been removed. Do not generate them.",
+    "cookieScoping": "Session cookies (wf_session, refresh_token) are set without a Domain attribute, so they are scoped to the exact subdomain. A session on acme.sso.weldforge.org does not authenticate against contoso.sso.weldforge.org.",
+    "spec": "docs/auth-url-spec.md",
+    "apexHostPattern": "https://sso.weldforge.org (live; use when the tenant slug is unknown)",
+    "slugRules": "Leftmost host label. Must match ^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$ and may not be one of the reserved root labels: www, api, admin, app, mail, static.",
+    "tenantResolution": "A tenant subdomain sets the tenant implicitly, so requests to it need no X-Tenant-Slug header. On the apex host the header is required, or the request resolves to the 'default' tenant and succeeds in the wrong place.",
+    "indexing": "Every response from this host carries X-Robots-Tag: noindex, nofollow. Do not index or crawl the auth forms."
+  },
+  "endUserAuthentication": {
+    "register": "POST /api/auth/register",
+    "passwordLogin": "POST /api/auth/login",
+    "refresh": "POST /api/auth/refresh (cookie-borne refresh_token)",
+    "logout": "POST /api/auth/logout-all (revokes every refresh token for the user; there is no per-session /api/auth/logout - a browser session ends by clearing the cookie, and OIDC RPs use GET /t/{slug}/oauth2/logout)",
+    "signUpTenantHeader": "X-Tenant-Slug selects the tenant on POST /api/auth/register; without it the request resolves to the 'default' tenant",
+    "signUpApiKey": "none - /api/auth/** is exempt from x-app-authorization, because a browser calls it before the user has credentials",
+    "signUpErrors": {
+      "400 password_policy": "message lists every unmet rule",
+      "400 bad_request": "email already used in this tenant",
+      "404 not_found": "tenant has registrationEnabled=false",
+      "409 seat_limit_exceeded": "tenant at maxUsers; body carries limit and current",
+      "429 too_many_requests": "rate limited; retryAfterSeconds says how long"
     },
     "mfa": {
-        "challenge": "POST /api/auth/login answers {mfaRequired: true, mfaChallengeToken: '<JWT>'} instead of a session. This is not a failure.",
-        "tokenShape": "The challenge token is a JWT, several hundred characters. Do not assume a short opaque string and do not use it as a database key.",
-        "redeem": "POST /api/auth/mfa/verify with {challengeToken, type, code, backupCode, webauthnResponse} -- the challenge token plus exactly one of the last three.",
-        "factors": {
-            "WEBAUTHN": "Passkeys, Windows Hello, Touch ID, security keys. First POST /api/auth/mfa/webauthn/assertion/start with {challengeToken}; it answers {publicKey: '<options JSON>'}. Run the browser ceremony and send the serialised result as webauthnResponse. There is no .../assertion/finish endpoint.",
-            "TOTP": "Six-digit code in 'code'.",
-            "BACKUP_CODE": "One-time recovery code in 'backupCode'. Issued when the user enrols their first factor; each works once. This path is taken whenever backupCode is non-blank, regardless of 'type'."
-        },
-        "responses": {
-            "200": "Session issued.",
-            "401": "Wrong factor.",
-            "429": "Account locked. Failed factor attempts feed the same lockout counter as failed passwords, so retrying in a loop locks the account."
-        }
+      "enrollTotp": "POST /api/auth/mfa/totp/enroll then POST /api/auth/mfa/totp/activate",
+      "enrollSms": "POST /api/auth/mfa/sms/enroll then POST /api/auth/mfa/sms/activate",
+      "enrollWebauthn": "POST /api/auth/mfa/webauthn/registration/start then .../finish",
+      "listFactors": "GET /api/auth/mfa/factors",
+      "removeFactor": "DELETE /api/auth/mfa/factors/{id}",
+      "verify": "POST /api/auth/mfa/verify",
+      "backupCodes": "GET /api/auth/mfa/backup-codes, POST /api/auth/mfa/backup-codes/regenerate",
+      "methods": [
+        "TOTP",
+        "WEBAUTHN",
+        "SMS_OTP",
+        "BACKUP_CODES"
+      ]
+    },
+    "oauth2": {
+      "authorize": "GET  /t/{slug}/oauth2/authorize",
+      "token": "POST /t/{slug}/oauth2/token",
+      "userinfo": "GET  /t/{slug}/oauth2/userinfo",
+      "jwks": "GET  /t/{slug}/oauth2/jwks",
+      "discovery": "GET  /t/{slug}/.well-known/openid-configuration"
+    },
+    "saml": {
+      "spLogin": "GET /saml2/authenticate/{tenant-provider}",
+      "idpMetadata": "GET /t/{slug}/saml2/idp/metadata",
+      "idpSsoRedirect": "GET /t/{slug}/saml2/idp/sso",
+      "idpSsoPost": "POST /t/{slug}/saml2/idp/sso"
     }
+  },
+  "perTenantPublicEndpoints": {
+    "oidcDiscovery": "/t/{slug}/.well-known/openid-configuration",
+    "oidcJwks": "/t/{slug}/oauth2/jwks",
+    "samlIdpMetadata": "/t/{slug}/saml2/idp/metadata",
+    "scimBase": "/scim/v2/{tenant-slug}",
+    "pkiCaBundle": "/t/{slug}/pki/ca.pem",
+    "pkiCrl": "/t/{slug}/pki/crl.pem",
+    "pkiOcsp": "/t/{slug}/pki/ocsp"
+  },
+  "keyAdminEndpoints": [
+    {
+      "method": "POST",
+      "path": "/api/admin/tenants",
+      "purpose": "Create a new tenant",
+      "requires": "SUPER_ADMIN"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/tenants",
+      "purpose": "List tenants",
+      "requires": "SUPER_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users/invite",
+      "purpose": "Invite a user — creates the user in an invited state and returns a 7-day reset token",
+      "requires": "SUPER_ADMIN",
+      "responseOneShot": "resetToken"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/app-clients",
+      "purpose": "Issue a scoped API key (wf_live_*)",
+      "requires": "TENANT_ADMIN",
+      "responseOneShot": "apiKey"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/app-clients/{id}/rotate",
+      "purpose": "Rotate an API key",
+      "requires": "TENANT_ADMIN",
+      "responseOneShot": "apiKey"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/service-accounts",
+      "purpose": "Issue a service-account token (wf_svc_*)",
+      "requires": "TENANT_ADMIN",
+      "responseOneShot": "token"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/saml/service-providers",
+      "purpose": "Register a SAML SP the IdP will assert to",
+      "requires": "TENANT_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/oidc/clients",
+      "purpose": "Register an OIDC relying party",
+      "requires": "TENANT_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/tenants/{id}/ldap-providers",
+      "purpose": "Wire an upstream AD/LDAP directory",
+      "requires": "TENANT_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/tenants/{id}/crm-providers",
+      "purpose": "Wire a CRM push target (Salesforce, HubSpot, Dynamics, Pipedrive)",
+      "requires": "TENANT_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/webhooks",
+      "purpose": "Subscribe to identity events (HMAC-signed delivery)",
+      "requires": "TENANT_ADMIN",
+      "responseOneShot": "secret"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/pki/ca",
+      "purpose": "Bootstrap a root CA for the tenant",
+      "requires": "TENANT_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/pki/certificates",
+      "purpose": "Issue a client certificate",
+      "requires": "TENANT_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/pki/certificates/{serial}/revoke",
+      "purpose": "Revoke a client certificate",
+      "requires": "TENANT_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/group-role-mappings",
+      "purpose": "Bind a SCIM group to an admin role",
+      "requires": "TENANT_ADMIN"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/tenants/{id}/mfa-policy",
+      "purpose": "Configure per-tenant MFA enforcement",
+      "requires": "TENANT_ADMIN"
+    }
+  ],
+  "standards": [
+    "RFC 6749 (OAuth 2.0)",
+    "RFC 7517 (JWK)",
+    "RFC 7519 (JWT)",
+    "OpenID Connect 1.0",
+    "SAML 2.0 (OASIS)",
+    "SCIM 2.0 (RFC 7643, RFC 7644)",
+    "WebAuthn (W3C)",
+    "X.509 (RFC 5280), CRL, OCSP (RFC 6960)",
+    "HMAC-SHA256 (RFC 2104) for webhook signatures"
+  ],
+  "eventCatalog": {
+    "auth": [
+      "auth.login.success",
+      "auth.login.failure",
+      "auth.mfa.challenge",
+      "auth.mfa.success",
+      "auth.logout",
+      "auth.password.reset"
+    ],
+    "admin": [
+      "admin.user.create",
+      "admin.user.update",
+      "admin.user.delete",
+      "admin.role.assign"
+    ],
+    "scim": [
+      "scim.user.create",
+      "scim.user.update",
+      "scim.user.delete",
+      "scim.group.create",
+      "scim.group.member.add",
+      "scim.group.member.remove"
+    ],
+    "pki": [
+      "pki.cert.issue",
+      "pki.cert.revoke",
+      "pki.cert.expiring",
+      "pki.ca.rotate"
+    ],
+    "oauth2": [
+      "oauth2.token.issued",
+      "oauth2.client.register"
+    ],
+    "saml": [
+      "saml.sp.register",
+      "saml.idp.assertion.issued"
+    ],
+    "tenant": [
+      "tenant.create",
+      "tenant.update",
+      "tenant.suspend"
+    ]
+  },
+  "errorModel": {
+    "shape": {
+      "error": "string — machine-readable code (e.g. not_found, bad_request, unauthorized, forbidden, validation_error, provider_unavailable, internal_error)",
+      "message": "string — human-readable detail (never leaks a stack trace)",
+      "timestamp": "ISO-8601 instant",
+      "path": "string — the request URI"
+    },
+    "statusMap": {
+      "400": "bad_request | validation_error",
+      "401": "unauthorized",
+      "403": "forbidden",
+      "404": "not_found",
+      "405": "method_not_allowed",
+      "503": "provider_unavailable",
+      "500": "internal_error"
+    }
+  },
+  "observability": {
+    "health": "GET /health (public, JSON) -- the only externally reachable health endpoint.",
+    "liveness": "GET /actuator/health/liveness (cluster-internal)",
+    "readiness": "GET /actuator/health/readiness (cluster-internal)",
+    "prometheus": "GET /actuator/prometheus (cluster-internal)",
+    "actuatorNote": "/actuator/** is NOT routed by the public ingress; a request falls through to the SPA and returns HTML. The paths below exist inside the cluster only and are scraped in-cluster by Prometheus. Do not poll them from outside."
+  },
+  "rateLimits": {
+    "strategy": "per-identity (API key or service account), sliding window",
+    "notes": "Specific limits per endpoint are enforced but not published; expect 429 with Retry-After on overrun."
+  },
+  "adminPortalNote": "The admin SPA is served from the same host as the API; the ingress routes /api, /t/, /saml2, /scim and /health to the backend and everything else to the portal. admin.weldforge.org does not resolve -- do not use it.",
+  "hostedSignup": {
+    "purpose": "Subscribe to the hosted platform. This creates a tenant; it is not the same as registering a user inside an existing tenant (see endUserAuthForms).",
+    "endpoint": "POST https://sso.weldforge.org/api/public/orders",
+    "authentication": "None. Browser-facing, like /api/auth/**. Do not send x-app-authorization.",
+    "requestBody": "{tier, organisation, contactName, contactEmail, tenantSlug, region, billingCycle, currency, billingCountry, termsAccepted}",
+    "tiers": [
+      "cloud-starter",
+      "cloud-team",
+      "cloud-business",
+      "cloud-scale",
+      "cloud-dedicated",
+      "regulated",
+      "self-host-supported"
+    ],
+    "responseDiscriminator": "nextStep",
+    "nextStep": {
+      "CHECKOUT": "checkoutUrl is set; send the customer there to pay. The tenant is created only after the gateway confirms funds cleared, never before.",
+      "MANUAL_FOLLOW_UP": "checkoutUrl is null. The order is recorded and the slug reserved, but no payment gateway is configured for that currency/country, so a human completes it."
+    },
+    "criticalNote": "Branch on nextStep, never on whether checkoutUrl is present. A null checkoutUrl is not an error and must not be retried -- the sign-up has been accepted either way.",
+    "slugReservation": "The requested slug is validated with the same rules as the admin path and held while the order is live. A 400 naming the slug means choose another.",
+    "selfHostAlternative": "Self-hosting needs none of this. The source is complete and 'docker compose up' is the whole quick start: https://github.com/weldforge-idp/weldforge"
+  },
+  "mfa": {
+    "challenge": "POST /api/auth/login answers {mfaRequired: true, mfaChallengeToken: '<JWT>'} instead of a session. This is not a failure.",
+    "tokenShape": "The challenge token is a JWT, several hundred characters. Do not assume a short opaque string and do not use it as a database key.",
+    "redeem": "POST /api/auth/mfa/verify with {challengeToken, type, code, backupCode, webauthnResponse} -- the challenge token plus exactly one of the last three.",
+    "factors": {
+      "WEBAUTHN": "Passkeys, Windows Hello, Touch ID, security keys. First POST /api/auth/mfa/webauthn/assertion/start with {challengeToken}; it answers {publicKey: '<options JSON>'}. Run the browser ceremony and send the serialised result as webauthnResponse. There is no .../assertion/finish endpoint.",
+      "TOTP": "Six-digit code in 'code'.",
+      "BACKUP_CODE": "One-time recovery code in 'backupCode'. Issued when the user enrols their first factor; each works once. This path is taken whenever backupCode is non-blank, regardless of 'type'."
+    },
+    "responses": {
+      "200": "Session issued.",
+      "401": "Wrong factor.",
+      "429": "Account locked. Failed factor attempts feed the same lockout counter as failed passwords, so retrying in a loop locks the account."
+    }
+  },
+  "relyingPartyOnboarding": {
+    "purpose": "Register an application as an OIDC relying party in a tenant, and obtain the three values the app needs: issuer, client id, client secret.",
+    "endpoint": "POST https://sso.weldforge.org/api/admin/oidc/clients",
+    "authentication": "x-app-authorization: wf_svc_* (SUPER_ADMIN, or TENANT_ADMIN on the target tenant). A user bearer JWT is also accepted.",
+    "actingInAnotherTenant": {
+      "header": "X-WF-Tenant: <tenant-slug>",
+      "note": "There is NO token-exchange step. A SUPER_ADMIN does not mint a tenant-scoped token to act in another tenant; it names the tenant in this header. Membership-checked, audited, and refused (403/404) rather than falling back to the caller's own tenant.",
+      "legacyAlias": "X-Tenant-Slug is accepted after authentication, but means something different before it. Prefer X-WF-Tenant."
+    },
+    "requestBody": {
+      "clientId": "string, optional - generated as wf_client_<uuid> if omitted",
+      "name": "string",
+      "grantTypes": "array, e.g. [\"authorization_code\",\"refresh_token\"]",
+      "scopes": "array, e.g. [\"openid\",\"profile\",\"email\"]",
+      "redirectUris": "array of exact URIs",
+      "webOrigins": "array, optional - drives CORS on the tenant OIDC endpoints; browser apps only",
+      "postLogoutRedirectUris": "array, optional",
+      "requirePkce": "boolean, optional - defaults TRUE. See clientTypes below.",
+      "publicClient": "boolean, optional",
+      "tokenEndpointAuthMethod": "string, optional - \"none\" makes the client public"
+    },
+    "clientTypes": {
+      "confidentialWithPkce": "Default when requirePkce is omitted. A client secret IS issued and PKCE is enforced - they are not alternatives. Correct for server-side web apps (Auth.js/NextAuth, Django, Rails).",
+      "public": "tokenEndpointAuthMethod:\"none\" or publicClient:true. PKCE-only, no secret is ever surfaced. Correct for browser SPAs and native apps (RFC 8252).",
+      "pkceDisabled": "requirePkce:false. Supported but rarely needed: libraries that send a client secret also send PKCE when discovery advertises S256, which it does. Request only if the client library cannot do PKCE at all."
+    },
+    "secretSemantics": "clientSecret is returned ONLY in the create response and in POST /api/admin/oidc/clients/{id}/rotate-secret. GET never returns it. If lost it cannot be read back - rotate, which invalidates the old secret.",
+    "returnsToTheApplication": {
+      "issuer": "https://sso.weldforge.org/t/<tenant-slug>",
+      "clientId": "clientId from the create response",
+      "clientSecret": "clientSecret from the create response (shown once)",
+      "discovery": "https://sso.weldforge.org/t/<tenant-slug>/.well-known/openid-configuration"
+    },
+    "scopeNotes": "scopes_supported advertises openid, profile, email. The standard scopes address, phone and offline_access are accepted but not advertised. Refresh tokens follow from grantTypes containing refresh_token, NOT from offline_access.",
+    "claimNotes": "Claims follow granted scopes (OIDC Core 5.4): sub always, email with the email scope, name/picture with profile. email_verified is emitted as a standard claim - treat an ABSENT value as unknown, not false, since tokens minted before the claim existed do not carry it.",
+    "tenantSlugRules": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$, not a reserved root label (www, api, admin, app, ...), and checked against a holdback list. A slug becomes a live subdomain.",
+    "dynamicClientRegistration": {
+      "advertised": true,
+      "working": false,
+      "endpoint": "https://sso.weldforge.org/t/{slug}/oauth2/register",
+      "status": "Returns 403 on every call as of 2026-09-20. The endpoint routes publicly but delegates to an admin-scoped service, so an anonymous RFC 7591 registration - the only kind - is refused. Known defect. Use the admin endpoint above; do not build a flow on this until this note changes."
+    }
+  }
 }
