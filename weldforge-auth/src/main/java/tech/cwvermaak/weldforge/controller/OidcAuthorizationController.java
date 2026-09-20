@@ -283,7 +283,9 @@ public class OidcAuthorizationController {
         AuthorizeRequest req = new AuthorizeRequest(
                 clientId, redirectUri,
                 grantedScopes,
-                state, nonce, codeChallenge, codeChallengeMethod, maxAge,
+                // blankToNull: the consent form posts these back as empty
+                // strings when the original request had no PKCE challenge.
+                state, nonce, blankToNull(codeChallenge), blankToNull(codeChallengeMethod), maxAge,
                 sessionAuthTime(request),
                 // How the user authenticated for this session, so the token
                 // endpoint can report it. Read from the request attribute the
@@ -658,6 +660,32 @@ public class OidcAuthorizationController {
     private static String hidden(String name, String value) {
         if (value == null) value = "";
         return "<input type=\"hidden\" name=\"" + escape(name) + "\" value=\"" + escape(value) + "\">";
+    }
+
+    /**
+     * An absent parameter and an empty one mean the same thing here: not
+     * supplied.
+     *
+     * <p>This is load-bearing rather than tidy-minded. The consent form replays
+     * every parameter as a hidden field, and {@link #hidden} renders a null as
+     * {@code value=""}. Submitting it posts {@code code_challenge=}, which
+     * Spring binds to an empty String rather than null — so a request that
+     * carried no PKCE challenge acquired one on the way through consent. The
+     * token endpoint then sees a non-null challenge, demands a
+     * {@code code_verifier} the client never had, and answers
+     * {@code 400 invalid_grant}. The authorization code was unredeemable from
+     * the moment it was issued.
+     *
+     * <p>Found by the OpenID conformance suite, 2026-09-20. Not reachable in
+     * production at the time because every browser-facing client there sets
+     * {@code require_pkce}; a client without it broke on every consent screen,
+     * and consent re-prompts whenever the requested scopes widen.
+     */
+    // Package-private so OidcAuthorizationControllerBlankParamTest can pin it
+    // directly. The alternative -- driving a full authenticated consent round
+    // trip -- buries the assertion under session and CSRF scaffolding.
+    static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     private static String escape(String s) {
