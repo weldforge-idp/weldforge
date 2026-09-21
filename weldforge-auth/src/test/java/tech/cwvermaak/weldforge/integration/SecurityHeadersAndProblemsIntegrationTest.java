@@ -55,7 +55,10 @@ class SecurityHeadersAndProblemsIntegrationTest {
                 .contains("default-src 'self'")
                 .contains("frame-ancestors 'none'")
                 .containsPattern("script-src 'self' 'nonce-[A-Za-z0-9+/=]+'");
-        assertThat(r.getResponse().getHeader("Referrer-Policy")).isEqualTo("no-referrer");
+        // same-origin, not no-referrer: under no-referrer a browser posts
+        // "Origin: null" even same-origin, and CORS refuses it. That broke the
+        // consent form until 2026-09-21 -- see ConsentFormOriginIntegrationTest.
+        assertThat(r.getResponse().getHeader("Referrer-Policy")).isEqualTo("same-origin");
         assertThat(r.getResponse().getHeader("X-Content-Type-Options")).isEqualTo("nosniff");
     }
 
