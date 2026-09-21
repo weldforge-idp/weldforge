@@ -228,16 +228,45 @@ if ($r.Status -eq 200) {
             "These are applied once at the edge; API responses bypass nginx entirely and would lose them."
     }
 
-    # CONF-7.2: weldforge-auth sends the stricter `no-referrer` itself because
-    # its protocol URLs carry codes, state and SAML payloads. Traefik OVERWRITES
-    # this header, so a referrerPolicy added to the edge middleware silently
-    # downgrades it.
+    # CONF-7.2: weldforge-auth sends `same-origin` itself -- NOT no-referrer.
+    # Both keep protocol URLs (codes, state, SAML payloads) out of Referer to
+    # third parties. But under no-referrer a browser posts "Origin: null" even
+    # on a same-origin form submit, CORS refuses it, and the OIDC consent form
+    # answered 403 in production from 2026-09-10 to 2026-09-21.
+    # Traefik OVERWRITES this header, so a referrerPolicy in the edge middleware
+    # would silently replace it with something else.
     $ref = if ($r.Headers.ContainsKey('Referrer-Policy')) { ($r.Headers['Referrer-Policy'] -join ' ') } else { '' }
-    Assert-Check "Referrer-Policy is no-referrer on API responses" `
-        ($ref -match 'no-referrer') `
+    Assert-Check "Referrer-Policy is same-origin (not no-referrer)" `
+        ($ref -eq 'same-origin') `
         "got '$ref'" `
-        "If this says strict-origin-when-cross-origin, the edge middleware is overwriting the app's header."
+        "no-referrer makes browsers send Origin: null on same-origin POSTs and breaks the consent form. Anything else here means the edge middleware is overwriting the app's header."
 }
+
+# ---------------------------------------------------------------------------
+Write-Host "`nBrowser form submission" -ForegroundColor Cyan
+
+# The consent form POSTs to /authorize/decide from a page this service renders.
+# A browser sends that page's own origin -- or "null", under no-referrer. curl
+# sends no Origin at all, which is exactly why every earlier check passed while
+# real users got 403. So test the two Origins a browser can actually send.
+# An empty body is enough: past CORS it fails on a missing parameter, which is
+# the point -- it reached the controller.
+$decide = "$BaseUrl/t/$Tenant/oauth2/authorize/decide"
+$selfOrigin = ([Uri]$BaseUrl).GetLeftPart([UriPartial]::Authority)
+
+$r = Invoke-Probe -Method Post -Url $decide -Headers @{ Origin = $selfOrigin } -ContentType 'application/x-www-form-urlencoded' -Body ''
+$body = if ($r.Content) { [string]$r.Content } else { '' }
+Assert-Check "consent POST with the site's own Origin passes CORS" `
+    ($r.Status -ne 403 -or $body -notmatch 'Invalid CORS request') `
+    "HTTP $($r.Status): $($body.Substring(0, [Math]::Min(80, $body.Length)))" `
+    "A browser submitting the consent form sends this Origin. A CORS 403 here means no first-time sign-in can complete."
+
+$r = Invoke-Probe -Method Post -Url $decide -Headers @{ Origin = 'null' } -ContentType 'application/x-www-form-urlencoded' -Body ''
+$body = if ($r.Content) { [string]$r.Content } else { '' }
+Assert-Check "Origin: null is still refused (it must not be trusted)" `
+    ($r.Status -eq 403) `
+    "HTTP $($r.Status)" `
+    "Sandboxed iframes and data:/file: documents send 'null'. Trusting it with credentials would be a hole. The fix is the Referrer-Policy above, not this."
 
 # ---------------------------------------------------------------------------
 Write-Host "`nPer-tenant subdomain" -ForegroundColor Cyan

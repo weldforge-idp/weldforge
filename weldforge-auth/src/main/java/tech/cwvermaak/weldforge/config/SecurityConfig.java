@@ -99,10 +99,28 @@ public class SecurityConfig {
                 // HTTPS, no-store) stay; this adds a nonce-based CSP for the
                 // server-rendered pages and stops protocol URLs -- codes,
                 // state, SAML payloads -- leaking to third parties in Referer.
+                //
+                // SAME_ORIGIN, not NO_REFERRER. Both withhold Referer from
+                // third parties, which is the whole intent above. But under the
+                // Fetch spec, a non-GET request from a no-referrer document
+                // serialises its Origin header as "null" -- even when the
+                // request is same-origin. Spring's CORS processor treats
+                // "Origin: null" as cross-origin and refuses it, so every POST
+                // from a page this service renders was answered 403 "Invalid
+                // CORS request":
+                //   - the OIDC consent form (/t/{slug}/oauth2/authorize/decide),
+                //     so no first-time consent could complete in a browser;
+                //   - the identity-proofing confirm button (verify-contact);
+                //   - the self-hosted LoginController forms.
+                // This went unnoticed from 2026-09-10, when the edge stopped
+                // overwriting the header (infrastructure 0e52fa0), because V54's
+                // standing consent grants let existing users skip the form.
+                // Found by the intelli-accounting session on 2026-09-21. curl
+                // sends no Origin at all, which is why no test here saw it.
                 .headers(headers -> headers
                         .referrerPolicy(referrer -> referrer.policy(
                                 org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
-                                        .ReferrerPolicy.NO_REFERRER))
+                                        .ReferrerPolicy.SAME_ORIGIN))
                         .addHeaderWriter(new ContentSecurityPolicy()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 

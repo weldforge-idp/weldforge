@@ -215,14 +215,25 @@ are load-bearing:
   `Content-Security-Policy` of `default-src 'self'`, with inline scripts and
   styles allowed only with a per-response nonce, and `object-src 'none'`,
   `base-uri 'none'`, `frame-ancestors 'none'`; plus `Referrer-Policy:
-  no-referrer`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
-  HSTS on HTTPS. There is no flag. A server-rendered page that adds an inline
+  same-origin`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
+  HSTS on HTTPS.
+
+  **`same-origin`, never `no-referrer`.** Both keep protocol URLs out of the
+  `Referer` sent to third parties. But under `no-referrer` a browser posts
+  `Origin: null` even on a same-origin form submit, Spring's CORS processor
+  refuses it, and every POST from a page this service renders fails with
+  `403 Invalid CORS request` — the OIDC consent form, the identity-proofing
+  confirm button, the self-hosted login forms. That was live in production
+  from 2026-09-10 to 2026-09-21: no new user or client could complete a first
+  sign-in. Do not "fix" it by allowing `null` as a CORS origin — sandboxed
+  iframes and `data:`/`file:` documents send it too. There is no flag. A server-rendered page that adds an inline
   `<style>` or `<script>` must carry `ContentSecurityPolicy.nonce()`, or the
   browser refuses it. **Do not set `referrerPolicy` in the Traefik
   `weldforge-security-headers` middleware:** Traefik overwrites the header, and
   until 2026-09-10 it replaced the app's `no-referrer` with
   `strict-origin-when-cross-origin` on every API response (removed in
-  infrastructure `0e52fa0`).
+  infrastructure `0e52fa0`). That override was, by accident, what kept the
+  consent form working — removing it exposed the `no-referrer` defect above.
 - **RFC 9457 Problem Details on `/api/**`** (CONF-7.3): errors are
   `application/problem+json`, and keep the legacy `error` / `message` members
   as extensions. The protocol endpoints keep their own error formats.

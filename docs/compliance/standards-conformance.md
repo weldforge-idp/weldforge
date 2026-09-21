@@ -193,7 +193,8 @@ optional feature. Deactivation is `active=false`.
 - **Content-Security-Policy:** every response has `default-src 'self'`, and
   scripts and styles are allowed only with a per-response nonce. It also sets
   `object-src 'none'`, `base-uri 'none'` and `frame-ancestors 'none'`.
-- Also on every response: `Referrer-Policy: no-referrer`,
+- Also on every response: `Referrer-Policy: same-origin` (not `no-referrer`, which
+  makes browsers send `Origin: null` on same-origin POSTs and broke the consent form),
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and HSTS on
   HTTPS.
 - **TLS:** terminated at the edge with a Let's Encrypt certificate covering
