@@ -1,6 +1,26 @@
 # Infrastructure - weldforge
 
-GCP-hosted deployment for the WeldForge platform.
+> **⚠️ LEGACY — this is not how production deploys.**
+>
+> This folder describes the **retired** Google Cloud deployment (GKE Autopilot +
+> Cloud SQL, `africa-south1`), used until **2026-08-31**. It is kept as a record
+> and as a starting point if the estate is ever rebuilt on GCP.
+>
+> **Production today** runs on a single-node **k3s** cluster, `tech01`, hosted by
+> Xneelo in **Cape Town (CPT5)**, with an in-cluster PostgreSQL database. It is
+> deployed by **Flux** from a separate repository,
+> `christiaanwvermaak/cwvermaak_infrastructure`, under `apps/weldforge/` —
+> kustomize base plus `staging` / `production` overlays, secrets SOPS/age
+> encrypted. The Helm chart below is **not** used by it.
+>
+> A retired instance still runs on GKE at `sso-api.weldforge.org`; no
+> application uses it since 2026-09-20. Do not `helm upgrade` it — revision 5 is
+> FAILED and an upgrade wipes its hand-patched mail secret.
+>
+> For current operations see the repository `CLAUDE.md` (*Infrastructure &
+> production access*) and `docs/runbooks/key-rotation.md`.
+
+GCP-hosted deployment for the WeldForge platform — **historical**.
 
 ## Layout
 

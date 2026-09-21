@@ -2,11 +2,20 @@
 
 > **Audience:** the WeldForge operations team (small — see *Roles* below).
 > **Scope:** the hosted WeldForge identity platform and everything that
-> trusts it: `sso.weldforge.org`, `admin.weldforge.org`, the GKE cluster
-> `weldforge-gke`, Cloud SQL `weldforge-db`, the tenant data it stores
-> (credentials, MFA secrets, audit logs, per-tenant signing keys), and the
-> external token consumers that share the platform HMAC (Safe Space, Krusty,
-> Commons).
+> trusts it: `sso.weldforge.org` and every `*.sso.weldforge.org` tenant
+> subdomain, served from **`tech01`** — a single-node k3s cluster on Xneelo
+> TruServ 2334 in **Cape Town (CPT5)** — with its in-cluster Postgres database
+> `weldforge_prod`; the tenant data it stores (credentials, MFA secrets, audit
+> logs, per-tenant signing keys); and the external token consumers that share
+> the platform HMAC (Safe Space, Krusty, Commons).
+>
+> **⚠️ Production moved off GKE on 2026-08-31.** Earlier versions of this plan
+> pointed responders at the GKE cluster `weldforge-gke` and Cloud SQL
+> `weldforge-db`. Snapshotting *those* mid-incident preserves evidence from the
+> wrong system and leaves production's state unrecorded. The old GKE instance
+> at `sso-api.weldforge.org` still runs but has been referenced by no
+> application since the 2026-09-20 cutover. `admin.weldforge.org` does not
+> resolve and never did; the admin portal is `sso.weldforge.org`.
 >
 > **This is a runbook, not a policy essay.** When an incident is live, jump
 > straight to the matching playbook. Read the rest cold, before you need it.
@@ -24,9 +33,10 @@
    post-incident review.
 2. **Assign the Incident Commander** (IC). On a one-person shift, you are it.
 3. **Classify severity** using the matrix in §1. When unsure, round *up*.
-4. **Preserve evidence before you remediate** — see §6. A Cloud SQL snapshot
-   and a dump of pod logs take two commands and cannot be recovered after you
-   start changing things.
+4. **Preserve evidence before you remediate** — see §6. A database dump and
+   the pod logs take two commands and cannot be recovered after you start
+   changing things. On tech01, **pod logs are the only request trail** — the
+   Traefik edge keeps no access log — so capture them before any restart.
 5. **Start the clock for POPIA** (§5). The notification obligation begins the
    moment you have reasonable grounds to believe a compromise occurred — not
    when you finish fixing it.
@@ -310,34 +320,74 @@ of the compromise."
 
 Remediation overwrites the crime scene. Capture first.
 
-1. **Snapshot Cloud SQL** so the DB state at incident time is frozen:
+```bash
+ssh tech01
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+1. **Dump the database** so its state at incident time is frozen:
    ```bash
-   gcloud sql backups create \
-       --instance=weldforge-db --project=weldforge \
-       --description="incident-$(date +%Y%m%dT%H%M%SZ)"
+   kubectl -n postgres create job incident-$TS --from=cronjob/postgres-backup
+   kubectl -n postgres wait --for=condition=complete job/incident-$TS --timeout=300s
+   ls -lh /var/backups/postgres | tail -2
+   sha256sum -c /var/backups/postgres/<dump>.sql.gz.sha256   # verify, don't assume
    ```
-   (Or an on-demand export to a locked-down GCS bucket.)
-2. **Preserve audit logs.** The `audit_events` rows are your forensic spine —
-   they are append-only, but a DB restore/rotation could disturb them. Export
-   the relevant window to secure storage before any data fix:
-   capture by tenant + time range via `AuditService.search(...)` /
-   admin portal export, and keep the raw export hash.
-3. **Capture GKE pod logs** before pods are rolled/restarted (logs are
-   ephemeral on pod recreation):
+   Dumps land on the node at `/var/backups/postgres` (hostPath). **They are on
+   the same machine as the incident.** Copy the dump and its `.sha256` off
+   `tech01` to storage you control before you trust it as evidence — a
+   compromised node can alter both.
+2. **Preserve audit logs.** The `audit_events` table is your forensic spine. It
+   is append-only in the application, but a restore or a rotation can disturb
+   it. Export the window before any data fix, and keep the export's hash:
    ```bash
-   kubectl -n sso logs deploy/sso-api -c sso-api --since=24h \
-       > incident-sso-api-$(date +%Y%m%dT%H%M%SZ).log
+   kubectl -n postgres exec postgres-0 -- psql -U postgres -d weldforge_prod -c \
+     "\copy (select * from audit_events where created_at >= '<start>' order by created_at) to stdout csv header" \
+     > audit-$TS.csv && sha256sum audit-$TS.csv
    ```
-   Repeat for the frontend pod if relevant.
-4. **Pull GCP logs** for the window: Cloud Logging (`sso` namespace), Cloud SQL
-   connection logs, **Secret Manager access logs** (essential for §4.1), GKE
-   audit logs, Artifact Registry + GHA deploy history. Export to a bucket you
-   control.
-5. **Record running image digests** (`kubectl -n sso get pods -o
-   jsonpath=...image...`) so you can prove what code was live.
+3. **Capture pod logs** before anything is rolled or restarted — they are
+   ephemeral, and on tech01 they are the only per-request record:
+   ```bash
+   kubectl -n weldforge-production logs deploy/weldforge-auth -c api --since=24h \
+       > incident-api-$TS.log
+   kubectl -n weldforge-production logs deploy/weldforge-admin-portal --since=24h \
+       > incident-portal-$TS.log
+   ```
+4. **Record what code was live:**
+   ```bash
+   kubectl -n weldforge-production get pods -o \
+     jsonpath='{range .items[*]}{.metadata.name}{"  "}{.status.containerStatuses[*].imageID}{"\n"}{end}'
+   ```
+   Cross-check against `newTag` in the infrastructure repo's production overlay.
+5. **Secret-change history.** There is no Secret Manager access log on tech01 —
+   see the capability note below. What exists is the **git history** of
+   `apps/weldforge/overlays/production/secret.sops.yaml` in the infrastructure
+   repo, which records every *change* to a secret but not every *read*.
 6. **Note all timestamps in UTC** and keep them in the timeline log.
-7. **Chain of custody.** Store exports in a restricted location, record who
-   captured what and when, and don't edit the originals — work on copies.
+7. **Chain of custody.** Store exports in a restricted location off the node,
+   record who captured what and when, and don't edit the originals — work on
+   copies.
+
+### ⚠️ Detection capability lost in the move to tech01
+
+Worth knowing *before* an incident, not during one. Under GKE this plan relied
+on controls that did not migrate:
+
+| Control under GKE | Status on tech01 |
+|---|---|
+| **Secret Manager access log** — who *read* `wf-jwt-secret` | **None.** Secrets are SOPS in git; git records changes, never reads. §4.1's primary detection signal does not exist here |
+| Cloud Logging, retained off-host | **None.** Pod logs are ephemeral and on the node |
+| GKE audit log — who touched the cluster | Not enabled on k3s by default |
+| Edge request log | **None.** Traefik runs with metrics but no `--accesslog` |
+| Cloud SQL connection log | Postgres logging only, on the node |
+
+The practical consequence for **§4.1 (HMAC compromise)**: you can no longer
+answer *"who read the secret?"* from logs. Assume exposure on reasonable
+suspicion, and rotate — the cost of rotating unnecessarily is lower than the
+cost of an undetected compromise you had no way to see.
+
+Closing these is tracked work, not a runbook step: off-host log shipping, k3s
+API-server audit logging, and Traefik access logs are the three that matter.
 
 ---
 
