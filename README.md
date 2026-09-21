@@ -152,6 +152,27 @@ Six supported topologies, [documented in full here](https://www.weldforge.org/de
 | On-prem managed | You, we operate | From $9 999/mo |
 | Air-gapped appliance | You, offline | Custom |
 
+### Where the hosted platform runs
+
+The hosted service at `https://sso.weldforge.org` (and every
+`*.sso.weldforge.org` tenant subdomain) runs on a **k3s** cluster hosted by
+**Xneelo in Cape Town, South Africa** (data centre CPT5), with its database
+in-cluster on the same host. Staging, `https://staging.weldforge.org`, runs on
+the same cluster with a separate database. Deploys are GitOps: images are built
+here on merge, and Flux rolls them out from a separate infrastructure repository.
+
+The database and its on-node backups are in South Africa. Two services outside
+it see limited data: **outbound email is sent through SendGrid** (US), which
+receives each recipient's address and the message body; and breached-password
+screening sends a five-character SHA-1 prefix — never the password — to Have I
+Been Pwned. See `docs/compliance/privacy-and-data-retention.md`.
+
+The platform ran on Google Kubernetes Engine (`africa-south1`) until
+2026-08-31. The Helm chart under `infrastructure/helm/` and
+`.github/workflows/deploy-gcp.yml` are left from that era and are **not** how
+production deploys. A second, retired instance remains on GKE at
+`sso-api.weldforge.org`; no application uses it.
+
 ## Repository layout
 
 ```
@@ -163,7 +184,7 @@ weldforge/
 ├── weldforge-admin-portal/      # Angular 21 admin console
 ├── weldforge-www/               # Marketing site (github.com/weldforge-idp -> weldforge.org)
 ├── infrastructure/
-│   └── helm/weldforge/             # Helm chart deployed to GKE Autopilot (weldforge-gke, africa-south1)
+│   └── helm/weldforge/             # LEGACY Helm chart for the retired GKE deployment — not how production deploys
 ├── SECURITY_AUDIT_2026-04-15.md  # Internal security review — Phase 1 (passive)
 └── VALIDATION_REPORT_2026-04-17.md  # Follow-up validation pass
 ```

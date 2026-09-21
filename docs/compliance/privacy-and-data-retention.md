@@ -11,8 +11,20 @@
 > Items needing a business or legal decision are marked **`TODO`**.
 >
 > Scope: the `weldforge-auth` Spring Boot backend and its PostgreSQL database
-> (Cloud SQL instance `weldforge-db`), hosted on GCP `africa-south1`
-> (Johannesburg). Last reviewed against the schema at migration **V44**.
+> `weldforge_prod`, running in-cluster on a single-node k3s host, **`tech01`**
+> — Xneelo TruServ 2334, **Cape Town (data centre CPT5)**, hostname
+> `cwv001-truserv2334-cpt5-001`. Last reviewed against the schema at migration
+> **V44**; production is now at **V60**.
+>
+> **⚠️ Hosting changed on 2026-08-31 and this document has not caught up.**
+> Until then the database was Google Cloud SQL (`weldforge-db`, GCP
+> `africa-south1`, Johannesburg). Three consequences need the Information
+> Officer's attention: **at-rest encryption was lost** in the move (§3); **the
+> primary hosting sub-processor changed** from Google to Xneelo (§6); and the
+> in-country residency statement had to be restated (§7). Facts verified
+> 2026-09-21 from the host itself.
+>
+> The data inventory in §2 also predates V45–V60 and should be re-derived.
 
 WeldForge markets itself as **"POPIA-native by design"** (`README.md`,
 `LAUNCH.md`). This document is the substantiation of that claim. POPIA (the
@@ -116,16 +128,45 @@ What the code already does (cite when answering due-diligence questionnaires):
   raw values never persisted.
 - **Tenant isolation**: application-layer, enforced per-DAO via the
   `TenantAccessor` guard; every cross-tenant query is scoped by `tenant_id`.
-- **Data residency**: Cloud SQL `weldforge-db` in `africa-south1`.
+- **Data residency**: in-cluster PostgreSQL on `tech01`, Xneelo Cape Town
+  (CPT5), South Africa. Backups are written to the same host,
+  `/var/backups/postgres`.
 - **Transport**: TLS at the ingress (`https://sso.weldforge.org`).
 
 **Gaps / TODO:**
-- No application-level field encryption on `users.email` / `users.name` /
-  `cellPhoneNumber` — relies on Cloud SQL disk encryption only. **TODO:**
-  decide whether direct identifiers need field-level encryption.
-- **TODO:** document the backup/restore retention of Cloud SQL automated
-  backups — deleted data may persist in backups beyond the logical retention
-  windows in §4.
+
+- **🔴 No at-rest encryption for direct identifiers — a regression from the
+  2026-08-31 move.** Verified 2026-09-21: `tech01`'s disks are two 894 GB drives
+  in software RAID1 (`md1`), plain `ext4`, **no LUKS / dm-crypt**, empty
+  `crypttab`. PostgreSQL uses k3s `local-path` storage on that volume. So
+  `users.email`, `users.name`, `cellPhoneNumber`, and the IP addresses and user
+  agents in `audit_events` and `refresh_tokens`, are **stored in plaintext on an
+  unencrypted disk**, and so are the backups.
+
+  This earlier read *"relies on Cloud SQL disk encryption only"*. Under GCP that
+  was a real control, because Cloud SQL encrypts at rest by default. On a
+  self-managed server it is not provided unless configured, and it was not.
+
+  What *is* still protected: passwords (BCrypt), MFA TOTP seeds and Twilio /
+  payment credentials (AES-GCM at the application layer, independent of the
+  disk), and every token (hash-only).
+
+  The realistic exposure is a disk leaving Xneelo's custody — replaced after
+  failure, decommissioned, or recovered from a retired server — with readable
+  personal information on it. RAID1 means **two** such disks.
+
+  **TODO (Information Officer + engineering):** decide between full-disk
+  encryption (LUKS; not possible in place on a live root volume — requires a
+  maintenance window and reinstall), encrypting the PostgreSQL volume only, or
+  field-level encryption of direct identifiers; and confirm Xneelo's
+  disk-destruction policy in the meantime. POPIA §19 (security safeguards) is
+  the relevant section.
+
+- **TODO:** document backup retention. Backups on `tech01` accumulate at
+  `/var/backups/postgres` — deleted data persists in them beyond the logical
+  retention windows in §4. The backups are group-owned by `nasbackup`, which
+  suggests they are copied to a NAS; **where that NAS is located has not been
+  verified**, and it bears directly on the residency statement above.
 
 ---
 
@@ -202,7 +243,8 @@ columns from each vendor's current DPA.
 
 | Sub-processor | Service | Data shared | Location / residency | POPIA §72 transfer concern |
 |---|---|---|---|---|
-| **Google Cloud (GCP)** | Compute (GKE `weldforge-gke`), Cloud SQL (`weldforge-db`), Secret Manager, Artifact Registry | All personal data at rest | `africa-south1` (Johannesburg) — **in-country** | None for primary storage; **TODO** confirm no GCP control-plane/support data leaves ZA |
+| **Xneelo (Pty) Ltd** — *primary since 2026-08-31* | Dedicated server `tech01` (TruServ 2334) running k3s: compute, in-cluster PostgreSQL, backups | **All personal data at rest**, including backups | **Cape Town (CPT5), South Africa — in-country** | None for primary storage. **TODO:** obtain and file Xneelo's Operator agreement / DPA and its disk-destruction policy — the disks are **not** encrypted (§3), so what happens to a failed or retired drive is the control that matters |
+| **Google Cloud (GCP)** — *former primary* | Was: GKE `weldforge-gke`, Cloud SQL `weldforge-db`, Secret Manager | Was: all personal data at rest | `africa-south1` (Johannesburg) — in-country | **TODO:** the retired GKE instance at `sso-api.weldforge.org` and its Cloud SQL database **still exist and still hold personal data**, though no application uses them since 2026-09-20. Decommission and delete, or record why they are retained. Data held with no purpose is itself a POPIA retention problem |
 | **SendGrid** (Twilio) | Transactional email (password reset, email verification, identity-proofing) | Recipient **email address**, name, the email body | **US** | **§72 cross-border transfer** — recipient email leaves ZA. Needs §72 justification (data-subject consent or adequate-protection contract) |
 | **Twilio** | Per-tenant SMS / MFA OTP delivery | Recipient **E.164 phone number**, OTP message | **US** (Twilio global) | **§72 cross-border transfer.** Per-tenant — the tenant Responsible Party authorises it |
 | **Stripe / Paddle / PayFast / Yoco / Peach** (payment gateways) | Checkout, subscription billing | Cardholder/customer data (handled gateway-side; WeldForge stores only `gatewayCustomerId`, BIN, card country) | Stripe/Paddle **US/EU**; **PayFast/Yoco/Peach ZA** | Choosing a **ZA gateway (PayFast/Yoco/Peach)** keeps billing data in-country; Stripe/Paddle = §72 transfer. **TODO:** state which gateway(s) are live for platform billing |
@@ -216,11 +258,18 @@ changes per the DPA's sub-processor-change clause.
 ## 7. Cross-border transfers (POPIA §72)
 
 - **Primary residency is in-country**: all persisted personal data lives in
-  Cloud SQL in `africa-south1`. This is the substance of the "POPIA-native
-  Cape Town residency" marketing claim (note: infra is Johannesburg
-  `africa-south1`, not Cape Town — **TODO:** reconcile the "Cape Town" copy in
-  `README.md`/`LAUNCH.md` with the actual GCP region, or clarify "Cape
-  Town-built" vs "Johannesburg-hosted").
+  PostgreSQL on `tech01`, hosted by Xneelo in **Cape Town (CPT5)**. This is the
+  substance of the "POPIA-native, Cape Town" marketing claim.
+
+  **Resolved 2026-09-21.** An earlier version flagged that the "Cape Town" copy
+  was *untrue*: the infrastructure was then GCP `africa-south1`, which is
+  Johannesburg. The 2026-08-31 move to Xneelo CPT5 made the claim accurate.
+  Verified from the host's own hostname, `cwv001-truserv2334-cpt5-001`, where
+  `cpt5` is Xneelo's Cape Town data-centre code.
+- **Residency caveat — backups.** On-host backups are in Cape Town. Their
+  group owner, `nasbackup`, indicates they are also copied to a NAS whose
+  location is **unverified**. If that NAS is outside South Africa, it is a §72
+  transfer of the entire database. **TODO:** confirm.
 - **Transfers offshore happen via sub-processors**: SendGrid (email) and
   Twilio (SMS) are US-based, and Stripe/Paddle (if used) are US/EU. Sending a
   password-reset email or an SMS OTP **transfers a data subject's email/phone

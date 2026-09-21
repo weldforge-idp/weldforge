@@ -8,45 +8,100 @@ cross-system blast radius.
 > Verify infra facts before acting — names and state drift. The values below
 > were correct when written.
 
-## Environment facts (verified)
+## ⚠️ Production moved — read before running anything below
+
+**Production is not on GKE.** Since **2026-08-31** WeldForge production runs on
+a single-node **k3s** cluster, `tech01` — Xneelo TruServ 2334 in **Cape Town
+(CPT5)**, hostname `cwv001-truserv2334-cpt5-001`. Verified 2026-09-21 from the
+host itself, DNS, the ingress, and by behaviour.
+
+An earlier version of this runbook listed the GKE cluster and Cloud SQL as the
+production targets. **Following it would rotate a secret on the old, abandoned
+instance and leave production untouched, while you believed the rotation had
+happened** — a silent failure on the one procedure where silence is least
+affordable.
+
+The GKE instance at `sso-api.weldforge.org` still exists, but since the
+2026-09-20 cutover it is referenced by no application. Rotate **tech01**.
+
+The *reasoning* in every section below — why the HMAC is a coordinated cutover,
+why a naive `app.crypto.secret` swap destroys data, how envelope re-encryption
+works — is platform-independent and still correct. Only the **mechanics** of
+reaching the secret changed. Use the translation table to follow each procedure.
+
+## Environment facts (verified 2026-09-21)
 
 | Fact | Value |
 |---|---|
-| GCP project | `weldforge` |
-| Region | `africa-south1` |
-| GKE cluster | `weldforge-gke` (Autopilot) |
-| kube context | `gke_weldforge_africa-south1_weldforge-gke` (pass explicitly with `--context=`) |
-| Namespace | `sso` |
-| API deployment | `sso-api` (container `sso-api`) |
-| Cloud SQL | instance `weldforge-db`, db `weldforge`, connection `weldforge:africa-south1:weldforge-db` |
-| Secret store | Google Secret Manager: `wf-db-password`, `wf-jwt-secret`, `wf-app-crypto-secret`, `wf-sendgrid-api-key` |
-| Deploy path | push to `main` → `.github/workflows/deploy-gcp.yml` reads the GSM secrets and `helm upgrade --install`s them via `--set-string` |
+| Host | `tech01` = Xneelo `cwv001-truserv2334-cpt5-001`, Cape Town, `196.40.100.82` |
+| Cluster | single-node **k3s** |
+| kubeconfig | on the node: `export KUBECONFIG=/etc/rancher/k3s/k3s.yaml` |
+| Namespace | `weldforge-production` (staging: `weldforge-staging`) |
+| API deployment | `weldforge-auth`, container **`api`** |
+| Database | in-cluster Postgres, pod `postgres-0` in ns `postgres`, db **`weldforge_prod`** (staging: `weldforge`) |
+| Secret | k8s Secret **`weldforge-secrets`**, SOPS/age-encrypted in the infrastructure repo |
+| Secret source | `christiaanwvermaak/cwvermaak_infrastructure` → `apps/weldforge/overlays/production/secret.sops.yaml` |
+| Deploy path | bump `newTag` in the overlay, push, **Flux** reconciles — there is no push-to-deploy |
 | Access-token TTL | 5 min (`JWT_EXPIRATION_MS=300000`) |
 | Refresh-token TTL | 7 days (`REFRESH_TOKEN_EXPIRATION_MS=604800000`) |
 
 **One-time setup for every procedure below**
 
 ```bash
-gcloud config set project weldforge
-gcloud container clusters get-credentials weldforge-gke \
-    --region africa-south1 --project weldforge
-KCTX=gke_weldforge_africa-south1_weldforge-gke
+ssh tech01
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+NS=weldforge-production
 ```
 
-Secrets are injected at deploy time from GSM into the pods' env (see
-`deploy-gcp.yml` lines ~84-122 and `infrastructure/helm/weldforge/values.yaml`
-`api.secrets.*`). They are **not** stored as long-lived k8s Secrets you can edit
-in place — the source of truth is GSM, and the way to push a rotated secret into
-the running pods is to **add a new GSM version and re-run the deploy** (or run
-`helm upgrade` manually, see `infrastructure/README.md`).
+## How a rotated secret reaches the pods
 
-`SecretHygieneValidator` refuses to boot the app if a secret is too short
-(`JWT_SECRET` < 64 bytes for HS512, `APP_CRYPTO_SECRET` < 16 chars — enforced in
-every profile) or, when `APP_REQUIRE_SECURE_SECRETS=true` (set in prod values),
-is still a known dev/placeholder default — so generate strong values. See
-[../security/configuration-reference.md](../security/configuration-reference.md).
+The source of truth is the SOPS file in the infrastructure repo, **not** Google
+Secret Manager.
 
----
+```bash
+# in the infrastructure repo; the age key is .important/sops-age.key (git-ignored)
+sops apps/weldforge/overlays/production/secret.sops.yaml   # sops 3.7.3: no `edit` subcommand
+# ...change the value, save, close (use notepad; `code --wait` hangs)
+
+git commit -- apps/weldforge/overlays/production/secret.sops.yaml   # pathspec commit: see note
+git push
+flux reconcile source git flux-system -n flux-system
+flux reconcile kustomization weldforge-production -n flux-system
+
+# REQUIRED. A changed Secret restarts nothing -- without this the new value is
+# deployed and silently unused. This exact omission left SendGrid settings
+# looking live on 2026-09-13 while the pods held the old ones.
+kubectl -n $NS rollout restart deploy/weldforge-auth
+kubectl -n $NS rollout status  deploy/weldforge-auth
+```
+
+**Pathspec commit.** Several sessions work in the infrastructure checkout and
+share one git index. A bare `git commit` sweeps in whatever else is staged, and
+has done so twice. `git commit -- <path>` commits only the named file.
+
+**Staging and production hold different values.** Rotate each deliberately; never
+copy one into the other.
+
+### Translating the procedures below
+
+Each section was written for GKE. Map every step as follows:
+
+| Written below (GKE) | Do this on tech01 |
+|---|---|
+| `wf-jwt-secret` | `JWT_SECRET` in `weldforge-secrets` |
+| `wf-app-crypto-secret` | `APP_CRYPTO_SECRET` |
+| `wf-db-password` | `SPRING_DATASOURCE_PASSWORD` |
+| `wf-sendgrid-api-key` | `SPRING_MAIL_PASSWORD` |
+| `gcloud secrets versions add …` | edit the SOPS file, commit, push, reconcile |
+| re-run `deploy-gcp.yml` / `helm upgrade` | Flux reconcile **then `rollout restart`** |
+| `kubectl --context=$KCTX -n sso …` | on tech01: `kubectl -n weldforge-production …` |
+| deployment `sso-api` | deployment `weldforge-auth`, container `api` |
+| Cloud SQL `weldforge-db` / Auth Proxy | `kubectl -n postgres exec -it postgres-0 -- psql -U postgres -d weldforge_prod` |
+| Cloud SQL snapshot before a change | `kubectl -n postgres create job <name> --from=cronjob/postgres-backup` — dumps land in `/var/backups/postgres` on the node; **verify the `.sha256` before relying on one** |
+
+**The HMAC blast radius is wider than §1 says.** `JWT_SECRET` is also held by
+every Tech Metropolis backend (Safe Space, Krusty, Commons) and by the old GKE
+instance. See `CLAUDE.md` → *Tenant consumers* before rotating it.
 
 ## Summary table
 

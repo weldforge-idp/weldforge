@@ -22,7 +22,11 @@ SCIM, MFA. Components:
 - **`weldforge-admin-portal`** — Angular admin SPA (zoneless change detection,
   signals, Angular Material M2 theming).
 - **`weldforge-www`** — marketing site.
-- **`infrastructure/helm/weldforge`** — Helm chart for GKE Autopilot.
+- **`infrastructure/helm/weldforge`** — **legacy** Helm chart for the retired GKE
+  deployment. **Not how production deploys.** Production runs on k3s on
+  `tech01` (Xneelo, Cape Town CPT5), deployed by Flux from
+  `christiaanwvermaak/cwvermaak_infrastructure` → `apps/weldforge/`. See
+  *Infrastructure & production access* below.
 
 See `README.md` and `LAUNCH.md` for the full platform overview.
 

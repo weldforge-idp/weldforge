@@ -1,5 +1,25 @@
 # Runbook — Production bootstrap (first stand-up in a non-dev environment)
 
+> **⚠️ Mixed currency — read which parts apply.**
+>
+> **Still current, and applies to any first stand-up** (hosted, self-hosted,
+> anywhere): the secret requirements, `SecretHygieneValidator`, and the
+> *Common boot failures* table. These are properties of the application, not of
+> where it runs.
+>
+> **Historical:** the GKE deploy section and every reference to Google Secret
+> Manager, `gcloud`, Cloud SQL and `deploy-gcp.yml`. Hosted production moved to
+> k3s on `tech01` (Xneelo, Cape Town) on **2026-08-31**. There, secrets are
+> SOPS/age-encrypted in `christiaanwvermaak/cwvermaak_infrastructure` at
+> `apps/weldforge/overlays/<env>/secret.sops.yaml` and reach the pods through
+> Flux — see `docs/runbooks/key-rotation.md` for the exact mechanics, including
+> the `rollout restart` that a changed Secret needs and does not trigger itself.
+>
+> Secret-name mapping from this runbook's GSM names to the k8s Secret
+> `weldforge-secrets`: `wf-jwt-secret` → `JWT_SECRET`,
+> `wf-app-crypto-secret` → `APP_CRYPTO_SECRET`, `wf-db-password` →
+> `SPRING_DATASOURCE_PASSWORD`, `wf-sendgrid-api-key` → `SPRING_MAIL_PASSWORD`.
+
 **Audience:** an operator bringing WeldForge up in staging / production for the
 **first time**. The README quickstart (`docker compose up`) is **dev-only**: it
 boots on source-committed insecure defaults and does **not** enforce secret
