@@ -364,7 +364,7 @@
       "grantTypes": "array, e.g. [\"authorization_code\",\"refresh_token\"]",
       "scopes": "array, e.g. [\"openid\",\"profile\",\"email\"]",
       "redirectUris": "array of exact URIs",
-      "webOrigins": "array, optional - drives CORS on the tenant OIDC endpoints; browser apps only",
+      "webOrigins": "array - REQUIRED for a public client with a browser redirect URI; registration is refused without it. Scheme and host only, no path. Drives CORS on the tenant OIDC endpoints. Native apps (loopback or private-use redirect) do not need it.",
       "postLogoutRedirectUris": "array, optional",
       "requirePkce": "boolean, optional - defaults TRUE. See clientTypes below.",
       "publicClient": "boolean, optional",
@@ -372,7 +372,7 @@
     },
     "clientTypes": {
       "confidentialWithPkce": "Default when requirePkce is omitted. A client secret IS issued and PKCE is enforced - they are not alternatives. Correct for server-side web apps (Auth.js/NextAuth, Django, Rails).",
-      "public": "tokenEndpointAuthMethod:\"none\" or publicClient:true. PKCE-only, no secret is ever surfaced. Correct for browser SPAs and native apps (RFC 8252).",
+      "public": "tokenEndpointAuthMethod:\"none\" or publicClient:true. PKCE-only, no secret is ever surfaced. Correct for browser SPAs and native apps (RFC 8252). A browser SPA MUST also set webOrigins - see browserClientsNeedWebOrigins.",
       "pkceDisabled": "requirePkce:false. Supported but rarely needed: libraries that send a client secret also send PKCE when discovery advertises S256, which it does. Request only if the client library cannot do PKCE at all."
     },
     "secretSemantics": "clientSecret is returned ONLY in the create response and in POST /api/admin/oidc/clients/{id}/rotate-secret. GET never returns it. If lost it cannot be read back - rotate, which invalidates the old secret.",
@@ -390,6 +390,13 @@
       "working": false,
       "endpoint": "https://sso.weldforge.org/t/{slug}/oauth2/register",
       "status": "Returns 403 on every call as of 2026-09-20. The endpoint routes publicly but delegates to an admin-scoped service, so an anonymous RFC 7591 registration - the only kind - is refused. Known defect. Use the admin endpoint above; do not build a flow on this until this note changes."
+    },
+    "browserClientsNeedWebOrigins": {
+      "rule": "A public client whose redirect URI is http(s) to a non-loopback host must register webOrigins. Registration is refused without it (400).",
+      "why": "A SPA runs discovery, JWKS and the PKCE token exchange with fetch, all cross-origin to the tenant's OIDC endpoints. The allow-list is built from that tenant's clients' webOrigins, so with none every call is refused by CORS.",
+      "symptomIfMissing": "The browser reports a blocked fetch as a generic network error, so the sign-in button silently does nothing and nothing appears in the logs at either end. This happened to a real client on 2026-09-20 and took two days to trace.",
+      "value": "The site's origin, scheme and host only, no path: https://app.example.com",
+      "nativeAppsExempt": "RFC 8252 apps redirect to a loopback address (http://127.0.0.1/callback) or a private-use scheme (com.example.app://callback), make no cross-origin browser calls, and register with no webOrigins."
     }
   }
 }
