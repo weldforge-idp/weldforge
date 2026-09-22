@@ -271,7 +271,7 @@ Content-Type: application/json
   "grantTypes":   ["authorization_code","refresh_token"],
   "scopes":       ["openid","profile","email"],
   "redirectUris": ["https://app.example.com/api/auth/callback/weldforge"],
-  "webOrigins":   ["https://app.example.com"],   # drives CORS; browser apps only
+  "webOrigins":   ["https://app.example.com"],   # REQUIRED for browser apps
   "postLogoutRedirectUris": ["https://app.example.com/"]
 }
 ```
@@ -289,6 +289,21 @@ rotated, which invalidates the old one.
 - `tokenEndpointAuthMethod: "none"` or `publicClient: true` → **public client**.
   PKCE-only, no secret is ever surfaced. Correct for browser SPAs and native
   apps (RFC 8252).
+
+**A browser SPA must register `webOrigins`, and registration now refuses it
+without one.** A SPA runs the whole flow with `fetch` — discovery, JWKS and the
+PKCE token exchange — and all of those are cross-origin to the tenant's OIDC
+endpoints. The allow-list is built from the registered `webOrigins` of that
+tenant's clients, so with none every call is refused by CORS. The browser
+reports a blocked fetch as a generic network error, so the symptom is a
+**sign-in button that silently does nothing**, with nothing in the logs at
+either end. Set it to the site's origin, scheme and host only, no path:
+`https://app.example.com`.
+
+**Native apps do not need it and are not asked for it.** An RFC 8252 app
+redirects to a loopback address (`http://127.0.0.1/callback`) or a private-use
+scheme (`com.example.app://callback`), makes no cross-origin browser calls, and
+registers with no `webOrigins`.
 - `requirePkce: false` → supported, but you almost never want it. Libraries that
   send a client secret send PKCE too when discovery advertises `S256`, and ours
   does. Ask for it only if your client library cannot do PKCE at all.

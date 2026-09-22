@@ -382,7 +382,12 @@ export TOKEN=wf_svc_...</code></pre>
             no secret — it uses Authorization Code + PKCE. Send
             <code>"tokenEndpointAuthMethod": "none"</code> (which forces PKCE on),
             list the app's browser origin under <code>webOrigins</code> so the
-            tenant OIDC endpoints return CORS headers to it, and set
+            tenant OIDC endpoints return CORS headers to it &mdash; this is
+            <strong>required</strong> for a browser client and registration is
+            refused without it, because a SPA that cannot read discovery, JWKS
+            or the token endpoint shows only a sign-in button that silently does
+            nothing (native apps redirecting to loopback or a private-use scheme
+            do not need it), and set
             <code>postLogoutRedirectUris</code> for RP-initiated logout. Plain
             <code>http</code> origins are accepted only for loopback hosts
             (<code>localhost</code> / <code>127.0.0.1</code>); production origins

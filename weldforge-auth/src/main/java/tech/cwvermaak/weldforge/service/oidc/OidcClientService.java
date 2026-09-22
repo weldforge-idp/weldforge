@@ -79,6 +79,10 @@ public class OidcClientService {
         boolean requirePkce = isPublic
                 || dto.getRequirePkce() == null || dto.getRequirePkce();
 
+        // A browser client with no web origin registers fine and then cannot
+        // sign anyone in, with no error the developer can see. Refuse it here.
+        requireWebOriginForBrowserClients(isPublic, dto.getRedirectUris(), dto.getWebOrigins());
+
         OidcClient client = OidcClient.builder()
                 .tenant(tenant)
                 .clientId(clientId)
@@ -185,6 +189,76 @@ public class OidcClientService {
      * hosts (localhost / 127.0.0.1 / ::1) so local development works without
      * opening the door to plaintext origins in production.
      */
+    /**
+     * A public client that signs in from a browser is unusable without a web
+     * origin, so refuse to register one rather than let it fail silently later.
+     *
+     * <p>A browser client runs the whole flow with {@code fetch}: discovery,
+     * JWKS, and the PKCE token exchange. Those are cross-origin to the tenant's
+     * OIDC endpoints, and the allow-list is built from the tenant's clients'
+     * {@code webOrigins}. Register none and every one of those calls is refused
+     * with a CORS 403 — and because the browser reports a blocked fetch as a
+     * generic network failure, the usual symptom is a sign-in button that does
+     * nothing at all, with no error anywhere the developer is looking.
+     *
+     * <p>That happened on 2026-09-20: KeyCrypt's SPA client was registered
+     * without one, and its sign-in button was inert for two days before anyone
+     * traced it to CORS.
+     *
+     * <p><strong>Native clients are deliberately exempt.</strong> RFC 8252 apps
+     * redirect to a loopback address or a private-use URI scheme, make no
+     * cross-origin browser calls, and correctly have no origin — production
+     * holds two such clients today. Only a redirect to a real http(s) host
+     * implies a browser, and only then is the origin required.
+     */
+    static void requireWebOriginForBrowserClients(boolean isPublic,
+                                                  List<String> redirectUris,
+                                                  List<String> webOrigins) {
+        if (!isPublic) return;                       // confidential: server-side, no CORS
+        boolean hasOrigin = webOrigins != null
+                && webOrigins.stream().anyMatch(o -> o != null && !o.isBlank());
+        if (hasOrigin || redirectUris == null) return;
+
+        for (String raw : redirectUris) {
+            if (raw == null || raw.isBlank()) continue;
+            URI uri;
+            try {
+                uri = URI.create(raw.trim());
+            } catch (IllegalArgumentException e) {
+                continue;                            // validateRedirectUris reports this
+            }
+            String scheme = uri.getScheme();
+            if (scheme == null) continue;
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                continue;                            // private-use scheme: native app
+            }
+            String host = uri.getHost();
+            if (host == null || isLoopback(host)) continue;   // loopback: native app
+
+            throw new IllegalArgumentException(
+                    "webOrigins is required for a public client with a browser redirect URI ("
+                    + raw.trim() + "). Without it every cross-origin call from the browser — "
+                    + "discovery, JWKS and the token exchange — is refused by CORS, and the "
+                    + "usual symptom is a sign-in button that silently does nothing. "
+                    + "Set webOrigins to the site's origin, e.g. "
+                    + originOf(uri)
+                    + ". Native apps using a loopback or private-use redirect do not need it.");
+        }
+    }
+
+    private static boolean isLoopback(String host) {
+        String h = host.startsWith("[") && host.endsWith("]")
+                ? host.substring(1, host.length() - 1)
+                : host;
+        return "localhost".equalsIgnoreCase(h) || "127.0.0.1".equals(h) || "::1".equals(h);
+    }
+
+    /** scheme://host[:port] for the message, so the fix can be pasted straight in. */
+    private static String originOf(URI uri) {
+        return uri.getScheme() + "://" + uri.getHost()
+             + (uri.getPort() == -1 ? "" : ":" + uri.getPort());
+    }
+
     private static void validateWebOrigins(List<String> origins) {
         if (origins == null) return;
         for (String raw : origins) {
