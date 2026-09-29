@@ -117,6 +117,132 @@ public class OidcClientService {
         return out;
     }
 
+    /**
+     * Replace a client's configuration in place.
+     *
+     * <p>Until this existed the only way to correct a registration was to
+     * delete and recreate it, which mints a new {@code client_secret} and
+     * therefore breaks every deployed consumer until each is updated. That is
+     * not a theoretical cost: {@code keycrypt-web} was registered with no
+     * {@code webOrigins} and its sign-in was inert for two days, and its
+     * {@code post_logout_redirect_uris} is still empty, because neither could
+     * be fixed without a rotation nobody wanted to schedule.
+     *
+     * <p>What this deliberately does <em>not</em> touch:
+     * <ul>
+     *   <li><b>{@code clientId}</b> — it is the {@code aud} of every token
+     *       already issued and the identifier every consumer has configured.
+     *       Renaming it is indistinguishable from creating a different client,
+     *       so callers must do exactly that.</li>
+     *   <li><b>{@code clientSecret}</b> — {@link #rotateSecret(Long)} owns it.
+     *       Folding rotation into a general update would make every
+     *       configuration edit a potential outage.</li>
+     *   <li><b>{@code publicClient}</b> — flipping confidential to public
+     *       would silently strip secret authentication from a live client,
+     *       and public to confidential would hand out a secret the app has
+     *       no way to use. Either is a new client.</li>
+     * </ul>
+     *
+     * <p>Null fields are left unchanged, so a caller can send only what it
+     * means to alter. An empty list is a real value and clears the list —
+     * that is how a wrongly-registered origin gets removed.
+     */
+    @Transactional
+    public OidcClientDto update(Long id, OidcClientDto dto) {
+        tenantAccessor.requireTenantAdmin();
+        Long tid = tenantAccessor.requireTenantId();
+        OidcClient client = repository.findByIdAndTenantId(id, tid)
+                .orElseThrow(() -> new EntityNotFoundException("OIDC client " + id + " not found"));
+
+        rejectImmutable("clientId", dto.getClientId(), client.getClientId());
+        rejectImmutable("publicClient", dto.getPublicClient(), client.getPublicClient());
+        if (dto.getClientSecret() != null) {
+            throw new IllegalArgumentException(
+                    "clientSecret cannot be set here; use POST /{id}/rotate-secret");
+        }
+
+        List<String> redirectUris = dto.getRedirectUris() != null
+                ? dto.getRedirectUris() : client.getRedirectUriList();
+        List<String> webOrigins = dto.getWebOrigins() != null
+                ? dto.getWebOrigins() : client.getWebOriginList();
+
+        if (dto.getRedirectUris() != null) {
+            require(dto.getRedirectUris(), "redirectUris");
+            validateRedirectUris(dto.getRedirectUris());
+        }
+        if (dto.getWebOrigins() != null) {
+            validateWebOrigins(dto.getWebOrigins());
+        }
+        if (dto.getPostLogoutRedirectUris() != null) {
+            validateRedirectUris(dto.getPostLogoutRedirectUris());
+        }
+        if (dto.getScopes() != null) {
+            require(dto.getScopes(), "scopes");
+        }
+        if (dto.getGrantTypes() != null) {
+            require(dto.getGrantTypes(), "grantTypes");
+        }
+        if (dto.getRefreshTokenTtlSeconds() != null && dto.getRefreshTokenTtlSeconds() <= 0) {
+            throw new IllegalArgumentException(
+                    "refreshTokenTtlSeconds must be positive; omit it to inherit the tenant or application default");
+        }
+
+        // The same guard as create, against the merged result rather than the
+        // payload: clearing the origins of a browser client is exactly as
+        // breaking as registering it without them in the first place.
+        requireWebOriginForBrowserClients(client.isPublicClient(), redirectUris, webOrigins);
+
+        if (dto.getName() != null)                   client.setName(dto.getName());
+        if (dto.getRedirectUris() != null)           client.setRedirectUris(joinCsv(dto.getRedirectUris()));
+        if (dto.getPostLogoutRedirectUris() != null) client.setPostLogoutRedirectUris(joinCsv(dto.getPostLogoutRedirectUris()));
+        if (dto.getWebOrigins() != null)             client.setWebOrigins(joinCsv(dto.getWebOrigins()));
+        if (dto.getScopes() != null)                 client.setScopes(joinCsv(dto.getScopes()));
+        if (dto.getGrantTypes() != null)             client.setGrantTypes(joinCsv(dto.getGrantTypes()));
+        if (dto.getRequireMfa() != null)             client.setRequireMfa(dto.getRequireMfa());
+        if (dto.getMaxAuthenticationAgeSeconds() != null) {
+            client.setMaxAuthenticationAgeSeconds(dto.getMaxAuthenticationAgeSeconds());
+        }
+        if (dto.getRefreshTokenTtlSeconds() != null) {
+            client.setRefreshTokenTtlSeconds(dto.getRefreshTokenTtlSeconds());
+        }
+        // A public client is PKCE-only and stays that way; for a confidential
+        // client the flag is the caller's to set.
+        if (dto.getRequirePkce() != null && !client.isPublicClient()) {
+            client.setRequirePkce(dto.getRequirePkce());
+        }
+
+        auditService.recordAdmin(AuditEventTypes.OIDC_CLIENT_UPDATE, null,
+                AuditEventTypes.TARGET_OIDC_CLIENT, client.getClientId(),
+                AuditService.meta("tenant", client.getTenant().getSlug(),
+                        "fields", changedFieldNames(dto)));
+
+        return toDto(client, true);
+    }
+
+    /** Refuse a field that may be read back but never altered. */
+    private static void rejectImmutable(String field, Object supplied, Object current) {
+        if (supplied != null && !supplied.equals(current)) {
+            throw new IllegalArgumentException(
+                    field + " cannot be changed on an existing client; create a new one instead");
+        }
+    }
+
+    /** Names of the fields this request actually carries, for the audit row. */
+    private static String changedFieldNames(OidcClientDto d) {
+        List<String> names = new java.util.ArrayList<>();
+        if (d.getName() != null)                       names.add("name");
+        if (d.getRedirectUris() != null)               names.add("redirectUris");
+        if (d.getPostLogoutRedirectUris() != null)     names.add("postLogoutRedirectUris");
+        if (d.getWebOrigins() != null)                 names.add("webOrigins");
+        if (d.getScopes() != null)                     names.add("scopes");
+        if (d.getGrantTypes() != null)                 names.add("grantTypes");
+        if (d.getRequireMfa() != null)                 names.add("requireMfa");
+        if (d.getMaxAuthenticationAgeSeconds() != null) names.add("maxAuthenticationAgeSeconds");
+        if (d.getRefreshTokenTtlSeconds() != null)     names.add("refreshTokenTtlSeconds");
+        if (d.getRequirePkce() != null)                names.add("requirePkce");
+        return String.join(",", names);
+    }
+
     @Transactional
     public OidcClientDto rotateSecret(Long id) {
         tenantAccessor.requireTenantAdmin();
@@ -167,6 +293,7 @@ public class OidcClientService {
                 .postLogoutRedirectUris(c.getPostLogoutRedirectUriList())
                 .publicClient(c.getPublicClient())
                 .tokenEndpointAuthMethod(c.getTokenEndpointAuthMethod())
+                .refreshTokenTtlSeconds(c.getRefreshTokenTtlSeconds())
                 // clientSecret intentionally null unless caller overrides.
                 .build();
     }

@@ -63,6 +63,19 @@ public class OidcAuthorizationService {
     private static final java.util.Set<String> STANDARD_OIDC_SCOPES =
             java.util.Set.of("openid", "profile", "email", "address", "phone", "offline_access");
 
+    /**
+     * The same set, ordered, for {@code scopes_supported} in the discovery
+     * document. Discovery must describe what the server does; deriving it from
+     * the set the server enforces is what keeps the two from drifting apart.
+     */
+    private static final java.util.List<String> STANDARD_OIDC_SCOPES_ORDERED =
+            java.util.List.of("openid", "profile", "email", "address", "phone", "offline_access");
+
+    /** @see #STANDARD_OIDC_SCOPES_ORDERED */
+    public static java.util.List<String> standardScopes() {
+        return STANDARD_OIDC_SCOPES_ORDERED;
+    }
+
     private final OidcClientRepository clientRepository;
     private final OAuthAuthorizationCodeRepository codeRepository;
     private final AuditService auditService;

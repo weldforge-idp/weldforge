@@ -44,4 +44,10 @@ public class OidcClientDto {
 
     /** RFC 8414 token_endpoint_auth_method: {@code client_secret_post} or {@code none}. */
     private String tokenEndpointAuthMethod;
+
+    /**
+     * Refresh-token lifetime for this client in seconds; {@code null} inherits
+     * the tenant override and then the application default.
+     */
+    private Integer refreshTokenTtlSeconds;
 }

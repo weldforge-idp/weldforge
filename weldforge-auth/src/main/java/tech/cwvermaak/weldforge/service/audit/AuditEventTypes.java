@@ -88,6 +88,7 @@ public final class AuditEventTypes {
     // OIDC dynamic registration
     /** Admin-API client lifecycle; unaudited until 2026-09-11. */
     public static final String OIDC_CLIENT_CREATE           = "oidc.client.create";
+    public static final String OIDC_CLIENT_UPDATE           = "oidc.client.update";
     public static final String OIDC_CLIENT_ROTATE_SECRET    = "oidc.client.rotate_secret";
     public static final String OIDC_CLIENT_DELETE           = "oidc.client.delete";
     public static final String OIDC_CLIENT_DYNAMIC_REGISTER = "oidc.client.dynamic_register";

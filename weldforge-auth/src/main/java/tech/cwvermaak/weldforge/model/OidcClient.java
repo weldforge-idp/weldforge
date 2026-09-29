@@ -85,6 +85,22 @@ public class OidcClient {
     private Integer maxAuthenticationAgeSeconds = 0;
 
     /**
+     * Refresh-token lifetime for this client, in seconds. {@code null} means
+     * inherit — the tenant's {@code refreshTtlMs}, then the application
+     * default.
+     *
+     * <p>Nullable on purpose. A native app that works offline may need a
+     * fortnight while browser clients on the same tenant should not, and the
+     * only alternative was raising the deployment-wide default for everyone.
+     * Zero is not the sentinel: zero would be a legitimate (if useless)
+     * lifetime, and reusing it to mean "unset" is how {@code
+     * maxAuthenticationAgeSeconds} ended up unable to express "no step-up,
+     * explicitly".
+     */
+    @Column(name = "refresh_token_ttl_s")
+    private Integer refreshTokenTtlSeconds;
+
+    /**
      * Browser origins ({@code scheme://host[:port]}) permitted to call this
      * tenant's OIDC endpoints cross-origin. CSV — see {@link #getWebOriginList()}.
      * Feeds the per-tenant CORS allow-list; empty for non-browser clients.

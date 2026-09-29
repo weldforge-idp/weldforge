@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
+import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService;
 import tech.cwvermaak.weldforge.service.oidc.TenantSigningKeyService;
 
 import java.util.LinkedHashMap;
@@ -61,7 +62,17 @@ public class OidcDiscoveryController {
         doc.put("id_token_signing_alg_values_supported", List.of("RS256"));
         doc.put("token_endpoint_auth_methods_supported",
                 List.of("client_secret_basic", "client_secret_post", "none"));
-        doc.put("scopes_supported", List.of("openid", "profile", "email"));
+        // Must match what the server actually accepts. OidcAuthorizationService
+        // permits every standard OIDC scope regardless of client registration,
+        // so advertising a subset is a lie in the direction that breaks
+        // integrations quietly: a conformant client library validates the
+        // scope it wants against this list and refuses to ask for one that is
+        // missing, even though the request would have succeeded.
+        //
+        // offline_access is the one that bites. It is how an RP asks for a
+        // refresh token in OIDC, and omitting it here sent at least one
+        // integrator looking for a server-side switch that does not exist.
+        doc.put("scopes_supported", OidcAuthorizationService.standardScopes());
         doc.put("code_challenge_methods_supported", List.of("S256"));
         // Claims the issuer actually mints, rather than a subset of them.
         // auth_time has been minted since CONF-2.2 (Sprint 4) and was never

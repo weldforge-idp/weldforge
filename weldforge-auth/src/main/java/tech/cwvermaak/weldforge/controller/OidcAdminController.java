@@ -30,6 +30,18 @@ public class OidcAdminController {
         return ResponseEntity.ok(oidcClientService.create(dto));
     }
 
+    /**
+     * Update a client's configuration in place. Fields left null are
+     * unchanged; an empty list clears that list. {@code clientId},
+     * {@code clientSecret} and {@code publicClient} are refused — see
+     * {@link OidcClientService#update}.
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<OidcClientDto> update(@PathVariable Long id,
+                                                @RequestBody OidcClientDto dto) {
+        return ResponseEntity.ok(oidcClientService.update(id, dto));
+    }
+
     @PostMapping("/{id}/rotate-secret")
     public ResponseEntity<OidcClientDto> rotateSecret(@PathVariable Long id) {
         return ResponseEntity.ok(oidcClientService.rotateSecret(id));
