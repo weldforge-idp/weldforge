@@ -48,6 +48,12 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     newOidcClientId: string;
     newOidcRedirects: string;
     newOidcPublic: boolean;
+    newOidcWebOrigins: string;
+    newOidcPostLogout: string;
+    startEditOidc(c: object): void;
+    saveEditOidc(t: Row, c: { id?: number; clientId: string; publicClient?: boolean }): void;
+    editOidc: { redirects: string; webOrigins: string; postLogout: string; scopes: string; grants: string; refreshTtl: number | null };
+    editOidcId: number | null;
     samlIdpDraft: { entityId: string; acsUrl: string };
     issuedCredentials(): { tenantId: number; clientId: string; secret: string | null; note: string } | null;
     issuedFor(t: Row): { clientId: string; secret: string | null; note: string } | null;
@@ -271,5 +277,124 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     expect(req.request.headers.get('X-WF-Tenant')).toBe('cwvermaak-tech');
     req.flush({ id: 4, entityId: 'urn:keycrypt', acsUrl: 'https://keycrypt.example/acs' }, acting('cwvermaak-tech'));
     expect(c.samlSpsFor(b).map(x => x.entityId)).toEqual(['urn:keycrypt']);
+  });
+
+  // ---- webOrigins: present on every create, in every tenant -------------
+  //
+  // PR #126 made webOrigins mandatory server-side for a public client with a
+  // browser redirect URI, and the form had no field for it -- so the portal
+  // could not register a browser client in ANY tenant. These pin both halves:
+  // the field is always sent, and the behaviour is not specific to whichever
+  // tenant happened to be reported.
+
+  it('sends webOrigins on every create, present but empty when nothing applies', () => {
+    const c = create();
+    const a = row(c, 'default');
+    expand(c, a);
+    c.newOidcRedirects = 'https://app.example/cb';   // confidential: no origin needed
+
+    c.createOidcClient(a);
+
+    const req = ctl.expectOne(r => r.url === OIDC && r.method === 'POST');
+    // Present, not absent. An omitted key and an empty list are different
+    // things to the server, and only one of them is a deliberate "none".
+    expect(Object.prototype.hasOwnProperty.call(req.request.body, 'webOrigins')).toBe(true);
+    expect(req.request.body.webOrigins).toEqual([]);
+    expect(Object.prototype.hasOwnProperty.call(req.request.body, 'postLogoutRedirectUris')).toBe(true);
+    expect(req.request.body.postLogoutRedirectUris).toEqual([]);
+    req.flush({ id: 20, clientId: 'wf_client_a', clientSecret: 's' }, acting('default'));
+  });
+
+  it.each(['default', 'cwvermaak-tech'])(
+      'derives the web origin for a public browser client in tenant %s', slug => {
+    const c = create();
+    const t = row(c, slug);
+    expand(c, t);
+    c.newOidcPublic = true;
+    c.newOidcRedirects = 'https://clepsydra.cwvermaak.tech/callback';
+    c.newOidcWebOrigins = '';                        // left blank on purpose
+
+    c.createOidcClient(t);
+
+    const req = ctl.expectOne(r => r.url === OIDC && r.method === 'POST');
+    expect(req.request.headers.get('X-WF-Tenant')).toBe(slug);
+    expect(req.request.body.webOrigins).toEqual(['https://clepsydra.cwvermaak.tech']);
+    req.flush({ id: 21, clientId: 'clepsydra-web', publicClient: true }, acting(slug));
+  });
+
+  it('an explicit web origin is never overwritten by the derived one', () => {
+    const c = create();
+    const a = row(c, 'default');
+    expand(c, a);
+    c.newOidcPublic = true;
+    c.newOidcRedirects = 'https://app.example/cb';
+    c.newOidcWebOrigins = 'https://cdn.example';     // app served elsewhere
+
+    c.createOidcClient(a);
+
+    const req = ctl.expectOne(r => r.url === OIDC && r.method === 'POST');
+    expect(req.request.body.webOrigins).toEqual(['https://cdn.example']);
+    req.flush({ id: 22, clientId: 'wf_client_b', publicClient: true }, acting('default'));
+  });
+
+  it('a native public client sends webOrigins empty, not derived', () => {
+    const c = create();
+    const a = row(c, 'default');
+    expand(c, a);
+    c.newOidcPublic = true;
+    c.newOidcRedirects = 'http://127.0.0.1/callback tech.cwvermaak.clepsydra:/oauth2redirect';
+
+    c.createOidcClient(a);
+
+    const req = ctl.expectOne(r => r.url === OIDC && r.method === 'POST');
+    expect(req.request.body.webOrigins).toEqual([]);
+    req.flush({ id: 23, clientId: 'clepsydra-app', publicClient: true }, acting('default'));
+  });
+
+  // ---- editing in place -------------------------------------------------
+
+  it.each(['default', 'cwvermaak-tech'])(
+      'updates a client in place in tenant %s, sending webOrigins', slug => {
+    const c = create();
+    const t = row(c, slug);
+    expand(c, t, [{ id: 31, clientId: 'some-web', publicClient: true,
+                    redirectUris: ['https://some.example/callback'],
+                    webOrigins: ['https://some.example'] }]);
+
+    c.startEditOidc(c.oidcClientsFor(t)[0]);
+    c.editOidc.postLogout = 'https://some.example/callback';
+    c.saveEditOidc(t, c.oidcClientsFor(t)[0] as { id: number; clientId: string; publicClient: boolean });
+
+    const req = ctl.expectOne(r => r.url === `${OIDC}/31` && r.method === 'PUT');
+    expect(req.request.headers.get('X-WF-Tenant')).toBe(slug);
+    expect(Object.prototype.hasOwnProperty.call(req.request.body, 'webOrigins')).toBe(true);
+    expect(req.request.body.webOrigins).toEqual(['https://some.example']);
+    expect(req.request.body.postLogoutRedirectUris).toEqual(['https://some.example/callback']);
+    // Never sent: each would invalidate tokens already issued.
+    expect(req.request.body.clientId).toBeUndefined();
+    expect(req.request.body.clientSecret).toBeUndefined();
+    expect(req.request.body.publicClient).toBeUndefined();
+    req.flush({ id: 31, clientId: 'some-web', publicClient: true,
+                redirectUris: ['https://some.example/callback'],
+                webOrigins: ['https://some.example'],
+                postLogoutRedirectUris: ['https://some.example/callback'] }, acting(slug));
+
+    expect(c.editOidcId).toBeNull();
+  });
+
+  it('refuses to clear a browser client\'s origins, without a round trip', () => {
+    const c = create();
+    const a = row(c, 'default');
+    expand(c, a, [{ id: 32, clientId: 'spa', publicClient: true,
+                    redirectUris: ['https://spa.example/cb'],
+                    webOrigins: ['https://spa.example'] }]);
+
+    c.startEditOidc(c.oidcClientsFor(a)[0]);
+    c.editOidc.webOrigins = '';                      // the change that breaks sign-in
+    c.saveEditOidc(a, c.oidcClientsFor(a)[0] as { id: number; clientId: string; publicClient: boolean });
+
+    ctl.expectNone(r => r.method === 'PUT');
+    expect(snack.open).toHaveBeenCalledWith(
+        expect.stringContaining('https://spa.example'), expect.anything(), expect.anything());
   });
 });
