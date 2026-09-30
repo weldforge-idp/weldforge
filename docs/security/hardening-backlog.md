@@ -303,6 +303,48 @@ layer). Spec: `docs/cross-tenant-admin-spec.md` §5.
 `service/audit/AuditService.java`. For SOC2/ISO, add a per-row HMAC chained on the previous
 row's digest, or stream to append-only external storage.
 
+**B-PROV-3 · Medium · Auto-provisioned `bootstrap-admin` tokens never expire.**
+`TenantProvisioningService.mintServiceAccount` builds the entity directly, with
+`TENANT_ADMIN` and no `expiresAt`, described as "Rotate after first login" — which in
+practice nobody does. Every tenant provisioned from a paid order therefore carries a
+permanent tenant-admin credential, and the operator has no signal that it was never
+rotated (`last_used_at` stays null, which reads the same as "not used yet").
+
+Deliberately left unchanged when per-token lifetimes were added: applying a default expiry
+here is the correct security posture, but doing it silently risks locking a customer out of
+a tenant they have not signed into yet. *Remediation:* give the bootstrap token a lifetime
+(90 days is the portal's default) AND make first-login rotation an explicit step in
+onboarding, so the expiry lands after the credential has served its purpose rather than
+before. Needs an operator decision, not a quiet default.
+
+**B-TEN-8 · Medium · No multi-valued `groups` claim; relying parties are limited to one
+role each.** A token carries `roles`, built by `OidcTokenService.rolesFor(user)` from the
+user's single `users.role_id` plus `SUPERADMIN`. WeldForge has SCIM groups (`V13`) and
+group-to-role mappings (`V15`), but those map an *upstream IdP* group onto a WeldForge role
+during provisioning and are never emitted as a claim, so a group membership is invisible to
+an RP.
+
+*Why it matters:* an RP with any role model beyond "one role" cannot express it. The
+workaround is to name a WeldForge role after what the RP needs (`clepsydra:admin`) and read
+`roles`, which works — Clepsydra ships on it — but has two limits that bite later. A user
+holds **one** role, so a scheme like `app:<role>[:<project>]` cannot carry two strings, and
+it fails by silently keeping whichever was assigned last. And the role is **tenant-global**,
+so every other RP in that tenant sees `clepsydra:admin` in its own tokens.
+
+*Remediation:* emit a multi-valued `groups` claim from `scim_groups` membership, in both the
+access token and the ID token. Three decisions to take first, none of them obvious:
+(1) whether the claim is gated behind the standard `groups` scope — gating is the
+conformant choice and means existing RPs see no change until they ask; (2) whether group
+names are namespaced per RP or stay tenant-global, which is the actual fix for the leakage
+above; (3) token size, since group lists grow without bound and this claim rides in every
+access token, on a 5-minute lifetime, on every request. Add `groups` to `scopes_supported`
+and to `docs/compliance/standards-conformance.md` at the same time, or discovery drifts out
+of truth again (see the `offline_access` omission fixed in PR #127).
+
+*Not a security defect on its own* — nothing is over-granted today — but it pushes adopters
+toward encoding structure in a single role string, which is how tenant-global identifiers
+end up load-bearing for authorisation in apps that are not WeldForge.
+
 **B-TEN-6 · Low · Doc/behaviour mismatch on auth-metadata endpoints.** CLAUDE.md claims
 `/api/auth/tenants/*/{branding,social-providers,saml-providers}` require
 `x-app-authorization`, but `AppAuthorizationFilter` exempts all of `/api/auth/**` (these

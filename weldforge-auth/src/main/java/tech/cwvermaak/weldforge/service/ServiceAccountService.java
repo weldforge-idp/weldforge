@@ -14,6 +14,7 @@ import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 import tech.cwvermaak.weldforge.service.security.ApiKeyHasher;
 
+import java.time.LocalDateTime;
 import java.security.SecureRandom;
 import java.util.HexFormat;
 import java.util.List;
@@ -57,6 +58,12 @@ public class ServiceAccountService {
         Tenant tenant = tenantAccessor.requireTenant();
         String raw = generateToken();
 
+        // Duration wins when supplied; a caller written before these fields
+        // existed still passes an absolute expiresAt and is unaffected.
+        var expiry = ServiceAccountExpiry.resolve(
+                dto.getExpiresInDays(), dto.getExpiresInHours(), LocalDateTime.now());
+        LocalDateTime expiresAt = expiry.applyTo(dto.getExpiresAt());
+
         ServiceAccount sa = ServiceAccount.builder()
                 .tenant(tenant)
                 .name(dto.getName().trim())
@@ -65,7 +72,7 @@ public class ServiceAccountService {
                 .tokenHash(ApiKeyHasher.hash(raw))
                 .adminRole(role)
                 .enabled(dto.getEnabled() == null || dto.getEnabled())
-                .expiresAt(dto.getExpiresAt())
+                .expiresAt(expiresAt)
                 .build();
         ServiceAccount saved = repository.save(sa);
 
@@ -74,7 +81,11 @@ public class ServiceAccountService {
                 AuditService.meta(
                         "name", saved.getName(),
                         "admin_role", role.name(),
-                        "prefix", saved.getTokenPrefix()));
+                        "prefix", saved.getTokenPrefix(),
+                        // A permanent credential is a standing risk, so the
+                        // audit trail should say plainly that one was issued.
+                        "expires_at", saved.getExpiresAt() == null
+                                ? "indefinite" : saved.getExpiresAt().toString()));
 
         ServiceAccountDto out = toMaskedDto(saved);
         out.setToken(raw); // single-reveal
@@ -83,15 +94,49 @@ public class ServiceAccountService {
 
     @Transactional
     public ServiceAccountDto rotate(Long id) {
+        return rotate(id, null);
+    }
+
+    /**
+     * Issue a new secret for an existing service account, optionally setting
+     * a new lifetime.
+     *
+     * @param request may carry {@code expiresInDays} / {@code expiresInHours};
+     *                null or absent leaves the existing expiry alone
+     */
+    @Transactional
+    public ServiceAccountDto rotate(Long id, ServiceAccountDto request) {
         tenantAccessor.requireTenantAdmin();
         ServiceAccount sa = loadOwn(id);
+        LocalDateTime now = LocalDateTime.now();
+
+        var expiry = request == null
+                ? new ServiceAccountExpiry.Resolved(ServiceAccountExpiry.Intent.UNCHANGED, null)
+                : ServiceAccountExpiry.resolve(
+                        request.getExpiresInDays(), request.getExpiresInHours(), now);
+
+        // Rotating an already-expired account without giving it a new lifetime
+        // hands back a credential that cannot authenticate. The old behaviour
+        // did exactly that, silently, and the caller had no way to tell a dead
+        // token from a live one until the first 401.
+        boolean alreadyExpired = sa.getExpiresAt() != null && sa.getExpiresAt().isBefore(now);
+        if (alreadyExpired && expiry.intent() == ServiceAccountExpiry.Intent.UNCHANGED) {
+            throw new IllegalArgumentException(
+                    "This token expired on " + sa.getExpiresAt() + ". Rotating it would issue "
+                    + "another expired token — set a new lifetime (expiresInDays, or 0 to never "
+                    + "expire) when rotating.");
+        }
+
         String raw = generateToken();
         sa.setTokenPrefix(ApiKeyHasher.displayPrefix(raw));
         sa.setTokenHash(ApiKeyHasher.hash(raw));
+        sa.setExpiresAt(expiry.applyTo(sa.getExpiresAt()));
 
         auditService.recordAdmin(AuditEventTypes.SERVICE_ACCOUNT_ROTATE, null,
                 AuditEventTypes.TARGET_SERVICE_ACCOUNT, String.valueOf(sa.getId()),
-                AuditService.meta("prefix", sa.getTokenPrefix()));
+                AuditService.meta("prefix", sa.getTokenPrefix(),
+                        "expires_at", sa.getExpiresAt() == null
+                                ? "indefinite" : sa.getExpiresAt().toString()));
 
         ServiceAccountDto out = toMaskedDto(sa);
         out.setToken(raw);
@@ -104,7 +149,16 @@ public class ServiceAccountService {
         ServiceAccount sa = loadOwn(id);
         if (dto.getDescription() != null) sa.setDescription(dto.getDescription());
         if (dto.getEnabled() != null) sa.setEnabled(dto.getEnabled());
-        if (dto.getExpiresAt() != null) sa.setExpiresAt(dto.getExpiresAt());
+        // Duration first, so `expiresInDays: 0` can make a token permanent
+        // again. Before this there was no way back: a bare null read as
+        // "leave alone", so an expiry once set could only ever be moved.
+        var expiry = ServiceAccountExpiry.resolve(
+                dto.getExpiresInDays(), dto.getExpiresInHours(), LocalDateTime.now());
+        if (expiry.intent() != ServiceAccountExpiry.Intent.UNCHANGED) {
+            sa.setExpiresAt(expiry.applyTo(sa.getExpiresAt()));
+        } else if (dto.getExpiresAt() != null) {
+            sa.setExpiresAt(dto.getExpiresAt());
+        }
         if (dto.getAdminRole() != null) {
             if (dto.getAdminRole() == AdminRole.SUPER_ADMIN && !tenantAccessor.isSuperAdmin()) {
                 throw new org.springframework.security.access.AccessDeniedException(

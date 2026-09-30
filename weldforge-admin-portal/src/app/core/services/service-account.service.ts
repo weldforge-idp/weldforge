@@ -23,7 +23,16 @@ export interface ServiceAccount {
   lastUsedAt?: string;
 }
 
-export interface CreateServiceAccountDto {
+/**
+ * Requested token lifetime. 0 means the token never expires; omitting both
+ * fields leaves an existing expiry alone.
+ */
+export interface TokenLifetime {
+  expiresInDays?: number;
+  expiresInHours?: number;
+}
+
+export interface CreateServiceAccountDto extends TokenLifetime {
   name: string;
   description?: string;
   adminRole: AdminRole;
@@ -31,7 +40,7 @@ export interface CreateServiceAccountDto {
   expiresAt?: string;
 }
 
-export interface UpdateServiceAccountDto {
+export interface UpdateServiceAccountDto extends TokenLifetime {
   description?: string;
   enabled?: boolean;
   adminRole?: AdminRole;
@@ -55,8 +64,15 @@ export class ServiceAccountApi {
     return this.http.put<ServiceAccount>(`${this.url}/${id}`, dto);
   }
 
-  rotate(id: number): Observable<ServiceAccount> {
-    return this.http.post<ServiceAccount>(`${this.url}/${id}/rotate`, {});
+  /**
+   * Mint a fresh token. Pass a lifetime to reset the expiry at the same time;
+   * omit it to keep whatever the account already has.
+   *
+   * Rotating an already-expired account without a lifetime is refused by the
+   * server, because it would hand back another token that cannot authenticate.
+   */
+  rotate(id: number, lifetime?: TokenLifetime): Observable<ServiceAccount> {
+    return this.http.post<ServiceAccount>(`${this.url}/${id}/rotate`, lifetime ?? {});
   }
 
   delete(id: number): Observable<void> {

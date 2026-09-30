@@ -29,7 +29,32 @@ import { TenantPickerService } from '../../core/services/tenant-picker.service';
     MatIconModule,
     TenantPickerComponent,
   ],
-  templateUrl: './roles.component.html'
+  templateUrl: './roles.component.html',
+  // `.form-row` was referenced by the template but defined nowhere in the
+  // codebase, so the two inputs and the button rendered flush against each
+  // other with no gap at all. Matches the grid used on the Tenants and
+  // Service Accounts screens so the three forms look like one product.
+  styles: [`
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) auto;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    /* The button sits beside inputs whose outline field reserves space for a
+       hint line underneath, so without this it floats above their baseline. */
+    .form-row button {
+      height: 56px;
+      padding: 0 24px;
+      white-space: nowrap;
+    }
+    @media (max-width: 720px) {
+      .form-row { grid-template-columns: 1fr; }
+      .form-row button { width: 100%; }
+    }
+    table { width: 100%; margin-top: 8px; }
+  `]
 })
 export class RolesComponent {
   private adminService = inject(AdminService);

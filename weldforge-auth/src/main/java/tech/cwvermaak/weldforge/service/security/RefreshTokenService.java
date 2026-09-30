@@ -304,10 +304,20 @@ public class RefreshTokenService {
                            String ipAddress, String userAgent, String amr,
                            String grantedScopes, java.time.Instant authTime) {
         String raw = randomToken();
-        // PRD SSO-03: per-tenant refresh TTL overrides the application default.
+        // Lifetime resolves most-specific-first: this client, then the tenant
+        // (PRD SSO-03), then the application default.
+        //
+        // The client level exists because a native app that works offline may
+        // need a fortnight while the browser clients beside it on the same
+        // tenant should not. Without it the only lever was the deployment-wide
+        // default, so one consumer's requirement moved every session on the
+        // instance.
         LocalDateTime expiresAt;
+        Integer clientTtlSeconds = client != null ? client.getRefreshTokenTtlSeconds() : null;
         Long tenantRefreshMs = user.getTenant() != null ? user.getTenant().getRefreshTtlMs() : null;
-        if (tenantRefreshMs != null && tenantRefreshMs > 0) {
+        if (clientTtlSeconds != null && clientTtlSeconds > 0) {
+            expiresAt = LocalDateTime.now().plusSeconds(clientTtlSeconds);
+        } else if (tenantRefreshMs != null && tenantRefreshMs > 0) {
             expiresAt = LocalDateTime.now().plusSeconds(tenantRefreshMs / 1000);
         } else {
             expiresAt = LocalDateTime.now().plusDays(properties.getLifetimeDays());

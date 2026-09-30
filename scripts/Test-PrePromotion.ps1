@@ -139,6 +139,20 @@ if ($r.Status -eq 200 -and $r.Type -match 'json') {
         ($disco.issuer -like "$BaseUrl*") `
         "issuer is '$($disco.issuer)', expected it to start with '$BaseUrl'" `
         "A mismatched iss fails validation at the relying party, not here."
+
+    # Discovery advertised openid/profile/email while the server accepted the
+    # full standard set. A client library that validates a scope against this
+    # list before requesting it concludes the feature is missing -- which is
+    # what an adopter concluded about refresh tokens.
+    Assert-Check "scopes_supported advertises offline_access" `
+        ($disco.scopes_supported -contains 'offline_access') `
+        "scopes_supported is '$($disco.scopes_supported -join ' ')'" `
+        "offline_access is how an RP asks for a refresh token; the server accepts it either way."
+
+    Assert-Check "grant_types_supported advertises refresh_token" `
+        ($disco.grant_types_supported -contains 'refresh_token') `
+        "grant_types_supported is '$($disco.grant_types_supported -join ' ')'" `
+        "Issued per client, but an RP checks discovery before it checks its registration."
 }
 
 # ---------------------------------------------------------------------------

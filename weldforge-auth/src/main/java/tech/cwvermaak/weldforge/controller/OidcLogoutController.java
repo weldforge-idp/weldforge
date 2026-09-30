@@ -24,6 +24,7 @@ import tech.cwvermaak.weldforge.service.oidc.RedirectUriMatcher;
 import tech.cwvermaak.weldforge.service.oidc.TenantSigningKeyService;
 
 import java.net.URI;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -66,7 +67,7 @@ public class OidcLogoutController {
     private final tech.cwvermaak.weldforge.service.JwtService jwtService;
 
     @GetMapping("/t/{slug}/oauth2/logout")
-    public ResponseEntity<Void> logoutGet(@PathVariable String slug,
+    public ResponseEntity<?> logoutGet(@PathVariable String slug,
                                            @RequestParam(value = "id_token_hint", required = false) String idTokenHint,
                                            @RequestParam(value = "post_logout_redirect_uri", required = false) String postLogoutRedirectUri,
                                            @RequestParam(value = "client_id", required = false) String clientId,
@@ -77,7 +78,7 @@ public class OidcLogoutController {
     }
 
     @PostMapping("/t/{slug}/oauth2/logout")
-    public ResponseEntity<Void> logoutPost(@PathVariable String slug,
+    public ResponseEntity<?> logoutPost(@PathVariable String slug,
                                             @RequestParam(value = "id_token_hint", required = false) String idTokenHint,
                                             @RequestParam(value = "post_logout_redirect_uri", required = false) String postLogoutRedirectUri,
                                             @RequestParam(value = "client_id", required = false) String clientId,
@@ -87,7 +88,7 @@ public class OidcLogoutController {
         return handleLogout(slug, idTokenHint, postLogoutRedirectUri, clientId, state, request, response);
     }
 
-    private ResponseEntity<Void> handleLogout(String slug, String idTokenHint, String postLogoutRedirectUri,
+    private ResponseEntity<?> handleLogout(String slug, String idTokenHint, String postLogoutRedirectUri,
                                                String clientIdHint, String state,
                                                HttpServletRequest request, HttpServletResponse response) {
         Tenant tenant = tenantRepository.findBySlug(slug)
@@ -116,7 +117,10 @@ public class OidcLogoutController {
         if (postLogoutRedirectUri != null && !postLogoutRedirectUri.isBlank()) {
             if (client == null) {
                 log.warn("OIDC logout: post_logout_redirect_uri supplied without a resolvable client");
-                return ResponseEntity.badRequest().build();
+                return oauthError("invalid_request",
+                        "post_logout_redirect_uri was supplied but no client could be resolved. "
+                        + "Send a valid id_token_hint, or client_id, so the URI can be checked "
+                        + "against that client's allow-list.");
             }
             // Validate against the dedicated post_logout_redirect_uris
             // allow-list. Legacy clients registered before V33 have none —
@@ -126,7 +130,10 @@ public class OidcLogoutController {
             if (!RedirectUriMatcher.matches(allowed, postLogoutRedirectUri)) {
                 log.warn("OIDC logout: post_logout_redirect_uri '{}' not in client's allow-list",
                         postLogoutRedirectUri);
-                return ResponseEntity.badRequest().build();
+                return oauthError("invalid_request",
+                        "post_logout_redirect_uri '" + postLogoutRedirectUri + "' is not registered "
+                        + "for client '" + client.getClientId() + "'. Register it in the client's "
+                        + "post_logout_redirect_uris, or send one that is already registered.");
             }
             validatedRedirect = postLogoutRedirectUri;
         }
@@ -267,6 +274,26 @@ public class OidcLogoutController {
                 .build()
                 .parseSignedClaims(jwt)
                 .getPayload();
+    }
+
+    /**
+     * An OAuth-shaped error body, per RFC 6749 §5.2.
+     *
+     * <p>A bare {@code ResponseEntity.badRequest().build()} is a 400 with no
+     * body, which a browser renders as its own "This page isn't working"
+     * error page. The integrator sees nothing: not which parameter was wrong,
+     * not which client it was checked against, not what to do about it. That
+     * is what happened to KeyCrypt's sign-out on 2026-09-24, and diagnosing a
+     * one-line registration gap took instrumenting {@code fetch} in the page.
+     *
+     * <p>{@code error_description} names the offending value and the fix. It
+     * leaks nothing an unauthenticated caller could not already determine by
+     * probing, since the allow-list check is exactly a test of whether a URI
+     * is registered.
+     */
+    private static ResponseEntity<Map<String, String>> oauthError(String error, String description) {
+        return ResponseEntity.badRequest()
+                .body(Map.of("error", error, "error_description", description));
     }
 
     // `secure` must match how the cookie was written: a Secure deletion

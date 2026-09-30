@@ -88,4 +88,14 @@ export class AdminService {
   resetUserMfa(id: number): Observable<{ removed: number }> {
     return this.http.post<{ removed: number }>(`${this.apiUrl}/users/${id}/reset-mfa`, {});
   }
+
+  /**
+   * Assign the application role that flows into the JWT `roles` claim, which
+   * is what a relying party drives its own RBAC from. Pass null to clear it.
+   *
+   * A user holds exactly one role, so this replaces rather than adds.
+   */
+  setUserRole(id: number, roleId: number | null): Observable<User> {
+    return this.http.post<User>(`${this.apiUrl}/users/${id}/role`, { roleId });
+  }
 }

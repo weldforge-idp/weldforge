@@ -33,6 +33,7 @@ import {
 import { TenantTwilioService, TwilioProvider } from '../../core/services/tenant-twilio.service';
 import { TenantMfaPolicyService, MfaPolicy, MfaEnforcement } from '../../core/services/tenant-mfa-policy.service';
 import { environment } from '../../../environments/environment';
+import { originsFor, needsWebOrigin } from '../../core/oidc-origins';
 import { apiErrorMessage } from '../../core/api-error';
 
 interface BrandingDraft {
@@ -433,7 +434,8 @@ interface TenantRow extends Tenant {
                   <tr><th>client_id</th><th>Name</th><th>Type</th><th>Redirect URIs</th><th>Scopes</th><th>Grants</th><th>PKCE</th><th></th></tr>
                 </thead>
                 <tbody>
-                  <tr *ngFor="let c of oidcClientsFor(t)">
+                  <ng-container *ngFor="let c of oidcClientsFor(t)">
+                  <tr>
                     <td class="mono trunc">{{ c.clientId }}</td>
                     <td>{{ c.name || '—' }}</td>
                     <td>{{ c.publicClient ? 'public' : 'confidential' }}</td>
@@ -442,6 +444,9 @@ interface TenantRow extends Tenant {
                     <td class="mono">{{ (c.grantTypes || []).join(' ') }}</td>
                     <td>{{ c.requirePkce ? 'yes' : 'no' }}</td>
                     <td>
+                      <button mat-icon-button (click)="startEditOidc(c)" title="Edit configuration">
+                        <mat-icon>edit</mat-icon>
+                      </button>
                       <button mat-icon-button *ngIf="!c.publicClient" (click)="rotateOidcSecret(t, c)" title="Rotate secret">
                         <mat-icon>refresh</mat-icon>
                       </button>
@@ -450,6 +455,52 @@ interface TenantRow extends Tenant {
                       </button>
                     </td>
                   </tr>
+                  <!-- Editing what a client already has, rather than deleting and
+                       recreating it. Recreating mints a new secret and drops the
+                       refresh-token families bound to the old row, so every
+                       signed-in user is logged out. -->
+                  <tr *ngIf="editOidcId === c.id">
+                    <td colspan="8">
+                      <div class="wf-grid">
+                        <mat-form-field appearance="outline">
+                          <mat-label>Redirect URIs (space-separated)</mat-label>
+                          <input matInput [(ngModel)]="editOidc.redirects">
+                        </mat-form-field>
+                        <mat-form-field appearance="outline">
+                          <mat-label>Web origins (space-separated)</mat-label>
+                          <input matInput [(ngModel)]="editOidc.webOrigins">
+                          <mat-hint *ngIf="c.publicClient">Required for a browser client; clearing it blocks every call with CORS.</mat-hint>
+                        </mat-form-field>
+                        <mat-form-field appearance="outline">
+                          <mat-label>Post-logout redirect URIs (space-separated)</mat-label>
+                          <input matInput [(ngModel)]="editOidc.postLogout">
+                        </mat-form-field>
+                        <mat-form-field appearance="outline">
+                          <mat-label>Scopes</mat-label>
+                          <input matInput [(ngModel)]="editOidc.scopes">
+                        </mat-form-field>
+                        <mat-form-field appearance="outline">
+                          <mat-label>Grant types</mat-label>
+                          <input matInput [(ngModel)]="editOidc.grants">
+                        </mat-form-field>
+                        <mat-form-field appearance="outline">
+                          <mat-label>Refresh token lifetime (seconds)</mat-label>
+                          <input matInput type="number" min="1" [(ngModel)]="editOidc.refreshTtl"
+                                 placeholder="blank = inherit tenant, then instance">
+                        </mat-form-field>
+                      </div>
+                      <p class="sub">
+                        client_id, the secret and public/confidential cannot be changed here —
+                        each would break tokens already issued. Create a new client instead.
+                      </p>
+                      <div class="wf-actions">
+                        <button mat-button (click)="cancelEditOidc()">Cancel</button>
+                        <span class="spacer"></span>
+                        <button mat-raised-button color="primary" (click)="saveEditOidc(t, c)">Save</button>
+                      </div>
+                    </td>
+                  </tr>
+                  </ng-container>
                 </tbody>
               </table>
 
@@ -471,6 +522,18 @@ interface TenantRow extends Tenant {
                   <mat-form-field appearance="outline">
                     <mat-label>Redirect URIs (space-separated)</mat-label>
                     <input matInput [(ngModel)]="newOidcRedirects" placeholder="https://app.acme.test/callback">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Web origins (space-separated)</mat-label>
+                    <input matInput [(ngModel)]="newOidcWebOrigins"
+                           placeholder="https://app.acme.test">
+                    <mat-hint>{{ webOriginHint() }}</mat-hint>
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Post-logout redirect URIs (space-separated)</mat-label>
+                    <input matInput [(ngModel)]="newOidcPostLogout"
+                           placeholder="https://app.acme.test/callback">
+                    <mat-hint>Where RP-initiated logout may return. Empty = the client cannot pass one.</mat-hint>
                   </mat-form-field>
                   <mat-form-field appearance="outline">
                     <mat-label>Scopes</mat-label>
@@ -1077,6 +1140,12 @@ export class TenantsComponent implements OnInit {
 
   /** Blank lets the server generate `wf_client_…`; apps usually want a readable id. */
   newOidcClientId = '';
+  newOidcWebOrigins = '';
+  newOidcPostLogout = '';
+
+  /** id of the client whose edit row is open; null when none is. */
+  editOidcId: number | null = null;
+  editOidc = { redirects: '', webOrigins: '', postLogout: '', scopes: '', grants: '', refreshTtl: null as number | null };
   /** SPA / native app: PKCE only, no secret. */
   newOidcPublic = false;
 
@@ -1640,11 +1709,45 @@ export class TenantsComponent implements OnInit {
   // Every call names the row's tenant (t.slug). The page-level picker is not
   // consulted: a client drawn under a tenant's row is created in that tenant.
 
+  /**
+   * A hint that changes with the form, because the requirement does.
+   *
+   * This is a method, not a `computed()`: the fields it reads are plain
+   * strings bound with `[(ngModel)]`, and `computed()` only re-evaluates when
+   * a tracked *signal* changes. Memoising this to its first value is the
+   * zoneless trap that killed the Service Accounts Create button in PR #24.
+   */
+  webOriginHint(): string {
+    const redirects = this.splitWords(this.newOidcRedirects);
+    if (!this.newOidcPublic) {
+      return 'Not needed: a confidential client calls the token endpoint server-side.';
+    }
+    const derived = originsFor(redirects);
+    if (!derived.length) {
+      return 'Not needed: a loopback or private-use redirect makes no cross-origin browser calls.';
+    }
+    return this.newOidcWebOrigins.trim()
+        ? 'Required for a browser client, or every call is blocked by CORS.'
+        : `Required. Leave blank and ${derived.join(' ')} will be used.`;
+  }
+
   createOidcClient(t: TenantRow) {
+    const redirectUris = this.splitWords(this.newOidcRedirects);
+    let webOrigins = this.splitWords(this.newOidcWebOrigins);
+
+    // Derive the origin rather than refusing and asking. The server requires
+    // one for a public browser client (PR #126), and it is all but always the
+    // redirect URI's own origin -- so demanding it be retyped turns a guard
+    // against silent breakage into a different kind of dead end. An explicit
+    // value always wins; this only fills a blank.
+    if (!webOrigins.length && needsWebOrigin(this.newOidcPublic, redirectUris, webOrigins)) {
+      webOrigins = originsFor(redirectUris);
+    }
+
     const dto: OidcClient = {
       clientId:     this.newOidcClientId.trim(), // blank = server generates
       name:         this.newOidcClient.name,
-      redirectUris: this.splitWords(this.newOidcRedirects),
+      redirectUris,
       scopes:       this.splitWords(this.newOidcScopes),
       grantTypes:   this.splitWords(this.newOidcGrants),
       // A public client has no secret; PKCE is its only proof of possession.
@@ -1652,6 +1755,8 @@ export class TenantsComponent implements OnInit {
       requireMfa:   this.newOidcRequireMfa,
       maxAuthenticationAgeSeconds: this.newOidcMaxAge,
       publicClient: this.newOidcPublic,
+      webOrigins,
+      postLogoutRedirectUris: this.splitWords(this.newOidcPostLogout),
     };
     if (!dto.redirectUris.length) { this.err('At least one redirect URI is required', null); return; }
     this.oidcApi.create(dto, t.slug).subscribe({
@@ -1661,6 +1766,8 @@ export class TenantsComponent implements OnInit {
         this.newOidcClientId = '';
         this.newOidcPublic = false;
         this.newOidcRedirects = '';
+        this.newOidcWebOrigins = '';
+        this.newOidcPostLogout = '';
         this.newOidcRequireMfa = false;
         this.newOidcMaxAge = 0;
         // Shown in the page, not an alert: a secret that appears once must be
@@ -1671,6 +1778,63 @@ export class TenantsComponent implements OnInit {
                 : `Created in ${t.slug}. No secret is issued to a public client; it authenticates with PKCE.`);
       },
       error: err => this.err('Create failed', err),
+    });
+  }
+
+  startEditOidc(c: OidcClient) {
+    this.editOidcId = c.id ?? null;
+    this.editOidc = {
+      redirects:  (c.redirectUris || []).join(' '),
+      webOrigins: (c.webOrigins || []).join(' '),
+      postLogout: (c.postLogoutRedirectUris || []).join(' '),
+      scopes:     (c.scopes || []).join(' '),
+      grants:     (c.grantTypes || []).join(' '),
+      refreshTtl: c.refreshTokenTtlSeconds ?? null,
+    };
+  }
+
+  cancelEditOidc() {
+    this.editOidcId = null;
+  }
+
+  saveEditOidc(t: TenantRow, c: OidcClient) {
+    if (!c.id) return;
+    const redirectUris = this.splitWords(this.editOidc.redirects);
+    const webOrigins   = this.splitWords(this.editOidc.webOrigins);
+
+    if (!redirectUris.length) { this.err('At least one redirect URI is required', null); return; }
+
+    // Catch this here as well as at the server. The server's refusal is
+    // correct but arrives after the round trip, and this is the exact change
+    // -- clearing a browser client's origins -- that leaves a client that
+    // registers fine and then signs nobody in.
+    if (needsWebOrigin(!!c.publicClient, redirectUris, webOrigins)) {
+      this.err(`A public client redirecting to a browser URL needs a web origin. `
+          + `Use ${originsFor(redirectUris).join(' ')} unless the app is served elsewhere.`, null);
+      return;
+    }
+
+    // Every field is sent, because the form showed every field: anything the
+    // administrator cleared was cleared deliberately. Partial updates are for
+    // callers that did not display what they are not changing.
+    const patch: Partial<OidcClient> = {
+      redirectUris,
+      webOrigins,
+      postLogoutRedirectUris: this.splitWords(this.editOidc.postLogout),
+      scopes:     this.splitWords(this.editOidc.scopes),
+      grantTypes: this.splitWords(this.editOidc.grants),
+    };
+    if (this.editOidc.refreshTtl != null && `${this.editOidc.refreshTtl}`.trim() !== '') {
+      patch.refreshTokenTtlSeconds = Number(this.editOidc.refreshTtl);
+    }
+
+    this.oidcApi.update(c.id, patch, t.slug).subscribe({
+      next: updated => {
+        this.setOidc(t, this.oidcClientsFor(t).map(x => (x.id === updated.id ? updated : x)));
+        this.editOidcId = null;
+        this.ok(`${updated.clientId} updated in ${t.slug}.`);
+      },
+      error: err => this.err('Update failed', err),
     });
   }
 
