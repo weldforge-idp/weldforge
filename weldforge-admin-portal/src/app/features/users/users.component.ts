@@ -5,10 +5,13 @@ import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSelectModule } from '@angular/material/select';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { FormsModule } from '@angular/forms';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { injectQuery, injectQueryClient } from '@tanstack/angular-query-experimental';
 
-import { AdminService, User } from '../../core/services/admin.service';
+import { AdminService, User, Role } from '../../core/services/admin.service';
 import { TenantPickerComponent } from '../../shared/tenant-picker/tenant-picker.component';
 import { TenantPickerService } from '../../core/services/tenant-picker.service';
 import { apiErrorMessage } from '../../core/api-error';
@@ -20,6 +23,7 @@ import { apiErrorMessage } from '../../core/api-error';
     CommonModule,
     MatTableModule, MatCardModule, MatButtonModule, MatIconModule,
     MatProgressSpinnerModule, MatSnackBarModule,
+    MatSelectModule, MatFormFieldModule, FormsModule,
     TenantPickerComponent,
   ],
   template: `
@@ -28,7 +32,7 @@ import { apiErrorMessage } from '../../core/api-error';
         <div>
           <div class="eyebrow mono">// users</div>
           <h1>Users</h1>
-          <p class="sub">Everyone in this tenant. Reset a user's MFA here if they've lost access to their second factor.</p>
+          <p class="sub">Everyone in this tenant. Assign the role a relying party reads from the token, or reset a user's MFA if they've lost their second factor.</p>
         </div>
       </header>
 
@@ -54,9 +58,23 @@ import { apiErrorMessage } from '../../core/api-error';
               <td mat-cell *matCellDef="let user" class="mono">{{ user.provider }}</td>
             </ng-container>
 
+            <!-- The role a relying party reads out of the token's roles
+                 claim. Assignable here because the endpoint has always
+                 existed while this page could only display the value. -->
             <ng-container matColumnDef="role">
               <th mat-header-cell *matHeaderCellDef>Role</th>
-              <td mat-cell *matCellDef="let user">{{ user.role?.name || '—' }}</td>
+              <td mat-cell *matCellDef="let user">
+                <mat-form-field appearance="outline" subscriptSizing="dynamic" class="role-select">
+                  <mat-select [value]="user.role?.id ?? null"
+                              (selectionChange)="setRole(user, $event.value)"
+                              [disabled]="savingRoleFor === user.id">
+                    <mat-option [value]="null">— none —</mat-option>
+                    @for (r of rolesQuery.data() ?? []; track r.id) {
+                      <mat-option [value]="r.id">{{ r.name }}</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+              </td>
             </ng-container>
 
             <ng-container matColumnDef="actions">
@@ -99,6 +117,9 @@ import { apiErrorMessage } from '../../core/api-error';
     .actions { text-align: right; }
     .mono { font-family: 'Space Mono', monospace; }
     .empty { color: var(--wf-text-3); padding: 24px; text-align: center; }
+    /* dynamic subscript: no reserved hint line, so the select sits on the
+       row's baseline instead of pushing every row taller. */
+    .role-select { width: 190px; }
   `]
 })
 export class UsersComponent {
@@ -116,6 +137,43 @@ export class UsersComponent {
     queryKey: ['users', this.tenantPicker.activeTenantSlug()],
     queryFn: () => this.adminService.getUsers().toPromise(),
   }));
+
+  // Same tenant-scoped key shape: the roles offered must be the roles that
+  // exist in the tenant being edited, not whichever were loaded first.
+  rolesQuery = injectQuery(() => ({
+    queryKey: ['roles', this.tenantPicker.activeTenantSlug()],
+    queryFn: () => this.adminService.getRoles().toPromise(),
+  }));
+
+  /** id of the user whose role is being saved, so its select disables. */
+  savingRoleFor: number | null = null;
+
+  setRole(user: User, roleId: number | null) {
+    if ((user.role?.id ?? null) === roleId) return;
+    this.savingRoleFor = user.id;
+    this.adminService.setUserRole(user.id, roleId).subscribe({
+      next: () => {
+        this.savingRoleFor = null;
+        const name = (this.rolesQuery.data() ?? []).find((r: Role) => r.id === roleId)?.name;
+        this.snack.open(
+          roleId === null
+            ? `Cleared the role for ${user.email}`
+            : `${user.email} is now ${name}`,
+          'OK', { duration: 4000 });
+        // A user holds ONE role, so the list the server returns is the truth;
+        // refetch rather than patching the row and hoping they agree.
+        this.queryClient.invalidateQueries({ queryKey: ['users'] });
+      },
+      error: err => {
+        this.savingRoleFor = null;
+        // Refetch so the select snaps back to the stored value rather than
+        // showing a change that did not happen.
+        this.queryClient.invalidateQueries({ queryKey: ['users'] });
+        this.snack.open(apiErrorMessage(err, 'Failed to assign the role'),
+            'Dismiss', { duration: 5000 });
+      },
+    });
+  }
 
   resetMfa(user: User) {
     const confirmMsg =

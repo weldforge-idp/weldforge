@@ -303,6 +303,20 @@ layer). Spec: `docs/cross-tenant-admin-spec.md` §5.
 `service/audit/AuditService.java`. For SOC2/ISO, add a per-row HMAC chained on the previous
 row's digest, or stream to append-only external storage.
 
+**B-PROV-3 · Medium · Auto-provisioned `bootstrap-admin` tokens never expire.**
+`TenantProvisioningService.mintServiceAccount` builds the entity directly, with
+`TENANT_ADMIN` and no `expiresAt`, described as "Rotate after first login" — which in
+practice nobody does. Every tenant provisioned from a paid order therefore carries a
+permanent tenant-admin credential, and the operator has no signal that it was never
+rotated (`last_used_at` stays null, which reads the same as "not used yet").
+
+Deliberately left unchanged when per-token lifetimes were added: applying a default expiry
+here is the correct security posture, but doing it silently risks locking a customer out of
+a tenant they have not signed into yet. *Remediation:* give the bootstrap token a lifetime
+(90 days is the portal's default) AND make first-login rotation an explicit step in
+onboarding, so the expiry lands after the credential has served its purpose rather than
+before. Needs an operator decision, not a quiet default.
+
 **B-TEN-8 · Medium · No multi-valued `groups` claim; relying parties are limited to one
 role each.** A token carries `roles`, built by `OidcTokenService.rolesFor(user)` from the
 user's single `users.role_id` plus `SUPERADMIN`. WeldForge has SCIM groups (`V13`) and

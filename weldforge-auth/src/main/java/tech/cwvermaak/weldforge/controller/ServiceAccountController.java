@@ -35,9 +35,18 @@ public class ServiceAccountController {
         return ResponseEntity.ok(service.update(id, dto));
     }
 
+    /**
+     * Issue a new secret. The body is optional and may carry
+     * {@code expiresInDays} / {@code expiresInHours} to set a new lifetime;
+     * omit it to keep the existing one. Rotating an already-expired token
+     * without a new lifetime is refused rather than returning a token that
+     * cannot authenticate.
+     */
     @PostMapping("/{id}/rotate")
-    public ResponseEntity<ServiceAccountDto> rotate(@PathVariable Long id) {
-        return ResponseEntity.ok(service.rotate(id));
+    public ResponseEntity<ServiceAccountDto> rotate(
+            @PathVariable Long id,
+            @RequestBody(required = false) ServiceAccountDto request) {
+        return ResponseEntity.ok(service.rotate(id, request));
     }
 
     @DeleteMapping("/{id}")

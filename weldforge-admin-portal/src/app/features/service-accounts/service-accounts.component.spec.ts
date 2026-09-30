@@ -71,3 +71,139 @@ describe('ServiceAccountsComponent — API error reporting', () => {
     expect(snack.open).toHaveBeenCalledWith('Service account is disabled', 'OK', { duration: 4000 });
   });
 });
+
+/**
+ * Token lifetime on the create form and in the list.
+ *
+ * Every service account created through this screen before the expiry field
+ * existed is permanent, because permanent was the only thing the form could
+ * express. These pin the two halves of the fix: a duration is always sent
+ * (including an explicit 0), and an administrator can see at a glance which
+ * tokens are about to stop working.
+ */
+describe('ServiceAccountsComponent — token lifetime', () => {
+  let api: {
+    list: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    rotate: ReturnType<typeof vi.fn>;
+  };
+
+  type Exposed = {
+    draft: { name: string; description?: string; adminRole: string; expiresInDays?: number };
+    create(): void;
+    rotate(s: unknown): void;
+    canCreate(): boolean;
+    expiryHint(): string;
+    expiryLabel(s: { expiresAt?: string }): string;
+    expiryState(s: { expiresAt?: string }): string;
+  };
+
+  function create(): Exposed {
+    TestBed.resetTestingModule();
+    api = {
+      list: vi.fn().mockReturnValue(of([])),
+      create: vi.fn().mockReturnValue(of({ id: 1, name: 'ci', token: 'wf_svc_x' })),
+      rotate: vi.fn().mockReturnValue(of({ id: 1, name: 'ci', token: 'wf_svc_y' })),
+    };
+    TestBed.configureTestingModule({
+      imports: [ServiceAccountsComponent],
+      providers: [
+        provideAngularQuery(new QueryClient()),
+        { provide: ServiceAccountApi, useValue: api },
+        { provide: AuthService, useValue: { isSuperAdmin: () => true } },
+        { provide: MatSnackBar, useValue: { open: vi.fn() } },
+        { provide: TenantPickerService, useValue: { activeTenantSlug: signal('acme') } },
+      ],
+    });
+    TestBed.overrideProvider(MatSnackBar, { useValue: { open: vi.fn() } });
+    return TestBed.createComponent(ServiceAccountsComponent).componentInstance as unknown as Exposed;
+  }
+
+  // Without this, vi.spyOn(window, 'confirm') accumulates calls across every
+  // test in the block and calls[0] is the first one of the whole describe --
+  // which made an assertion about THIS test's dialog read another test's.
+  afterEach(() => vi.restoreAllMocks());
+
+  const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
+
+  /** createMutation.mutate() dispatches asynchronously; let it run. */
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+  it('defaults a new token to 90 days rather than permanent', () => {
+    expect(create().draft.expiresInDays).toBe(90);
+  });
+
+  it('always sends a lifetime on create, including an explicit 0', async () => {
+    const c = create();
+    c.draft.name = 'ci';
+    c.draft.expiresInDays = 0;          // deliberately permanent
+    c.create();
+    await settle();
+
+    const payload = api.create.mock.calls[0][0];
+    // Present, not absent. Omitted would read as "unchanged", which on create
+    // silently means indefinite -- the default this screen exists to expose.
+    expect(Object.prototype.hasOwnProperty.call(payload, 'expiresInDays')).toBe(true);
+    expect(payload.expiresInDays).toBe(0);
+  });
+
+  it('sends the chosen duration as a number, not the input string', async () => {
+    const c = create();
+    c.draft.name = 'ci';
+    (c.draft as Record<string, unknown>)['expiresInDays'] = '30';   // ngModel on a number input
+    c.create();
+    await settle();
+
+    expect(api.create.mock.calls[0][0].expiresInDays).toBe(30);
+  });
+
+  it('refuses to create with a negative lifetime', () => {
+    const c = create();
+    c.draft.name = 'ci';
+    c.draft.expiresInDays = -1;
+    expect(c.canCreate()).toBe(false);
+  });
+
+  it('says plainly when the token will never expire', () => {
+    const c = create();
+    c.draft.expiresInDays = 0;
+    expect(c.expiryHint()).toContain('never expire');
+  });
+
+  it.each([
+    [undefined, 'never', ''],
+    [inDays(40), 'in 40 days', 'ok'],
+    [inDays(3), 'in 3 days', 'soon'],
+    [inDays(-1), 'expired', 'expired'],
+  ])('labels %s as %s', (expiresAt, label, state) => {
+    const c = create();
+    expect(c.expiryLabel({ expiresAt: expiresAt as string | undefined })).toBe(label);
+    expect(c.expiryState({ expiresAt: expiresAt as string | undefined })).toBe(state);
+  });
+
+  it('rotating a LIVE token sends no lifetime, so its expiry is not silently extended', () => {
+    const c = create();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    c.rotate({ id: 1, name: 'ci', tokenPrefix: 'wf_svc_a', expiresAt: inDays(30) });
+
+    expect(api.rotate).toHaveBeenCalledWith(1, undefined);
+  });
+
+  it('rotating an EXPIRED token sends a fresh lifetime, or it would arrive dead', () => {
+    const c = create();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    c.rotate({ id: 1, name: 'ci', tokenPrefix: 'wf_svc_a', expiresAt: inDays(-1) });
+
+    expect(api.rotate).toHaveBeenCalledWith(1, { expiresInDays: 90 });
+  });
+
+  it('warns in the confirm dialog that an expired token is being revived', () => {
+    const c = create();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    c.rotate({ id: 1, name: 'ci', tokenPrefix: 'wf_svc_a', expiresAt: inDays(-1) });
+
+    expect(confirmSpy.mock.calls[0][0]).toContain('already expired');
+    expect(api.rotate).not.toHaveBeenCalled();
+  });
+});
+

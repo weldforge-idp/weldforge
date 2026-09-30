@@ -95,6 +95,13 @@ import { apiErrorMessage } from '../../core/api-error';
                    placeholder="What this token is for. Shown only to admins.">
           </mat-form-field>
           <mat-form-field appearance="outline">
+            <mat-label>Expires in</mat-label>
+            <input matInput type="number" min="0" [(ngModel)]="draft.expiresInDays"
+                   placeholder="90">
+            <span matTextSuffix>days</span>
+            <mat-hint>{{ expiryHint() }}</mat-hint>
+          </mat-form-field>
+          <mat-form-field appearance="outline">
             <mat-label>Admin role</mat-label>
             <mat-select [(ngModel)]="draft.adminRole">
               @for (r of availableRoles(); track r) {
@@ -165,6 +172,16 @@ import { apiErrorMessage } from '../../core/api-error';
                   <mat-slide-toggle [checked]="s.enabled"
                                     (change)="toggleEnabled(s, $event.checked)">
                   </mat-slide-toggle>
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="expires">
+                <th mat-header-cell *matHeaderCellDef>Expires</th>
+                <td mat-cell *matCellDef="let s" class="mono"
+                    [class.dim]="!s.expiresAt"
+                    [class.expiry-soon]="expiryState(s) === 'soon'"
+                    [class.expiry-dead]="expiryState(s) === 'expired'">
+                  {{ expiryLabel(s) }}
                 </td>
               </ng-container>
 
@@ -256,6 +273,10 @@ import { apiErrorMessage } from '../../core/api-error';
     .wf-table .sub { font-size: 12px; }
     .wf-table .prefix { color: var(--wf-amber); font-size: 12px; }
     .wf-table .dim { color: var(--wf-text-3); font-size: 12px; }
+    /* A token about to die and one already dead are different problems:
+       the first needs scheduling, the second is an outage in progress. */
+    .wf-table .expiry-soon { color: var(--wf-warn, #d08700); }
+    .wf-table .expiry-dead { color: var(--wf-error, #c62828); font-weight: 600; }
     .wf-table .actions-col { text-align: right; white-space: nowrap; }
 
     .role-super { background: rgba(232, 146, 31, 0.18) !important; color: var(--wf-amber) !important; }
@@ -320,15 +341,27 @@ export class ServiceAccountsComponent {
   private queryClient = injectQueryClient();
   private tenantPicker = inject(TenantPickerService);
 
-  protected columns = ['name', 'tenant', 'prefix', 'role', 'enabled', 'lastUsed', 'actions'];
+  protected columns = ['name', 'tenant', 'prefix', 'role', 'enabled', 'expires', 'lastUsed', 'actions'];
 
   /** Token surfaced after a successful create or rotate. Cleared on Dismiss. */
   protected revealed = signal<ServiceAccount | null>(null);
+
+  /**
+   * 90 days by default, deliberately.
+   *
+   * The API default stays indefinite so existing machine callers are
+   * unaffected, but a token a person creates through this screen should
+   * expire unless they say otherwise. Every service account created here
+   * before this field existed is permanent, because permanent was the only
+   * thing the form could express.
+   */
+  protected static readonly DEFAULT_EXPIRY_DAYS = 90;
 
   protected draft: CreateServiceAccountDto = {
     name: '',
     description: '',
     adminRole: 'TENANT_ADMIN',
+    expiresInDays: ServiceAccountsComponent.DEFAULT_EXPIRY_DAYS,
   };
 
   /** SUPER_ADMIN is gated server-side; mirror that in the UI so a non-super
@@ -347,7 +380,44 @@ export class ServiceAccountsComponent {
   // and ngModel triggers a CD pass on every input event, which is what
   // we want here.
   protected canCreate(): boolean {
-    return !!this.draft.name?.trim() && !!this.draft.adminRole;
+    return !!this.draft.name?.trim() && !!this.draft.adminRole
+        && Number(this.draft.expiresInDays ?? 0) >= 0;
+  }
+
+  /**
+   * Methods, not computed(). `draft` is a plain object mutated by
+   * [(ngModel)], and a row is a plain object from the query cache — neither
+   * is a tracked signal, so computed() would memoise the first value and
+   * never update. Same reason as canCreate() above.
+   */
+  protected expiryHint(): string {
+    const days = Number(this.draft.expiresInDays ?? 0);
+    if (!days) return 'This token will never expire.';
+    return `Expires ${days === 1 ? 'tomorrow' : `in ${days} days`}. Enter 0 to never expire.`;
+  }
+
+  /** '' | 'ok' | 'soon' | 'expired' — drives the colour on the Expires cell. */
+  protected expiryState(s: ServiceAccount): string {
+    if (!s.expiresAt) return '';
+    const ms = new Date(s.expiresAt).getTime() - Date.now();
+    if (ms <= 0) return 'expired';
+    return ms < 14 * 24 * 3600 * 1000 ? 'soon' : 'ok';
+  }
+
+  protected expiryLabel(s: ServiceAccount): string {
+    if (!s.expiresAt) return 'never';
+    const ms = new Date(s.expiresAt).getTime() - Date.now();
+    if (ms <= 0) return 'expired';
+    const days = ms / (24 * 3600 * 1000);
+    if (days >= 1) {
+      // Round, don't floor. A token issued for 90 days is 89.9999 days old
+      // by the time this renders, and reading "in 89 days" the instant you
+      // create it looks like the server took a day off the lifetime.
+      const d = Math.round(days);
+      return `in ${d} day${d === 1 ? '' : 's'}`;
+    }
+    const hours = Math.max(1, Math.round(ms / (3600 * 1000)));
+    return `in ${hours} hour${hours === 1 ? '' : 's'}`;
   }
 
   // Tenant slug in the key — switching tenant in the picker refetches
@@ -363,7 +433,8 @@ export class ServiceAccountsComponent {
     mutationFn: (dto: CreateServiceAccountDto) => firstValueFrom(this.api.create(dto)),
     onSuccess: (sa) => {
       this.revealed.set(sa);
-      this.draft = { name: '', description: '', adminRole: 'TENANT_ADMIN' };
+      this.draft = { name: '', description: '', adminRole: 'TENANT_ADMIN',
+                     expiresInDays: ServiceAccountsComponent.DEFAULT_EXPIRY_DAYS };
       this.queryClient.invalidateQueries({ queryKey: ['service-accounts'] });
     },
     onError: (err: any) => this.toast(apiErrorMessage(err, 'Failed to create service account')),
@@ -375,18 +446,34 @@ export class ServiceAccountsComponent {
       name: this.draft.name.trim(),
       description: this.draft.description?.trim() || undefined,
       adminRole: this.draft.adminRole,
+      // Always sent, including 0. Omitting it would mean "unchanged", which
+      // on create silently means indefinite -- the very default this screen
+      // exists to stop being invisible.
+      expiresInDays: Number(this.draft.expiresInDays ?? 0),
     };
     this.createMutation.mutate(payload);
   }
 
   protected rotate(s: ServiceAccount) {
+    const expired = this.expiryState(s) === 'expired';
     const ok = confirm(
       `Rotate token for "${s.name}"?\n\n`
       + `The current token (${s.tokenPrefix}…) stops working immediately. `
       + `Anything still using the old token will get 401 until you swap in the new one.`
+      + (expired
+          ? `\n\nThis token has already expired, so it will be given a fresh `
+            + `${ServiceAccountsComponent.DEFAULT_EXPIRY_DAYS}-day lifetime. `
+            + `Without one the new token would be expired on arrival.`
+          : '')
     );
     if (!ok) return;
-    this.api.rotate(s.id).subscribe({
+    // Only send a lifetime when one is needed. A live token keeps the expiry
+    // it already has; silently extending it on every rotation would make the
+    // expiry meaningless for anything rotated regularly.
+    const lifetime = expired
+        ? { expiresInDays: ServiceAccountsComponent.DEFAULT_EXPIRY_DAYS }
+        : undefined;
+    this.api.rotate(s.id, lifetime).subscribe({
       next: rotated => {
         this.revealed.set(rotated);
         this.queryClient.invalidateQueries({ queryKey: ['service-accounts'] });
