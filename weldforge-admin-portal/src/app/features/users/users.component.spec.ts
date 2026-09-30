@@ -25,12 +25,12 @@ describe('UsersComponent — role assignment', () => {
   let admin: {
     getUsers: ReturnType<typeof vi.fn>;
     getRoles: ReturnType<typeof vi.fn>;
-    setUserRole: ReturnType<typeof vi.fn>;
+    setUserRoles: ReturnType<typeof vi.fn>;
   };
   let snack: { open: ReturnType<typeof vi.fn> };
 
   type Exposed = {
-    setRole(user: User, roleId: number | null): void;
+    setRoles(user: User, roleIds: number[]): void;
     rolesQuery: { data(): unknown };
     savingRoleFor: number | null;
   };
@@ -45,7 +45,8 @@ describe('UsersComponent — role assignment', () => {
     admin = {
       getUsers: vi.fn().mockReturnValue(of(users)),
       getRoles: vi.fn().mockReturnValue(of(ROLES)),
-      setUserRole: vi.fn().mockReturnValue(of({ id: 3, roleId: 8, role: 'clepsydra:admin' })),
+      setUserRoles: vi.fn().mockReturnValue(
+          of({ id: 3, roleId: 8, role: 'clepsydra:admin', roleIds: [8], roles: ['clepsydra:admin'] })),
     };
     snack = { open: vi.fn() };
     TestBed.configureTestingModule({
@@ -63,38 +64,45 @@ describe('UsersComponent — role assignment', () => {
 
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
-  it('posts the chosen role id for the user', () => {
+  it('posts the chosen role ids for the user', () => {
     const c = create();
-    c.setRole({ id: 3, roleId: undefined } as User, 8);
+    c.setRoles({ id: 3, roleIds: [] } as unknown as User, [8]);
 
-    expect(admin.setUserRole).toHaveBeenCalledWith(3, 8);
+    expect(admin.setUserRoles).toHaveBeenCalledWith(3, [8]);
   });
 
-  it('posts null to clear the assignment', () => {
+  it('posts several ids -- a user may hold more than one role', () => {
     const c = create();
-    c.setRole({ id: 3, roleId: 8 } as User, null);
+    c.setRoles({ id: 3, roleIds: [8] } as unknown as User, [8, 9]);
 
-    expect(admin.setUserRole).toHaveBeenCalledWith(3, null);
+    expect(admin.setUserRoles).toHaveBeenCalledWith(3, [8, 9]);
   });
 
-  it('does nothing when the selection has not actually changed', () => {
+  it('posts an empty array to clear every role', () => {
     const c = create();
-    c.setRole({ id: 3, roleId: 8 } as User, 8);
+    c.setRoles({ id: 3, roleIds: [8] } as unknown as User, []);
 
-    expect(admin.setUserRole).not.toHaveBeenCalled();
+    expect(admin.setUserRoles).toHaveBeenCalledWith(3, []);
   });
 
-  it('reads the current assignment from roleId, not from a nested object', () => {
+  it('does nothing when the set has not changed, whatever the order', () => {
     const c = create();
-    // The shape the API really sends: role is the NAME, roleId is the id.
-    // If the component went back to reading user.role.id, this call would be
-    // treated as a change and fire a pointless write.
-    c.setRole({ id: 3, role: 'clepsydra:admin', roleId: 8 } as User, 8);
+    // mat-select fires on open and close too. Writing here would bump
+    // tokenVersion and sign the user out of their other sessions every time
+    // an admin glanced at the dropdown.
+    c.setRoles({ id: 3, roleIds: [8, 9] } as unknown as User, [9, 8]);
 
-    expect(admin.setUserRole).not.toHaveBeenCalled();
+    expect(admin.setUserRoles).not.toHaveBeenCalled();
   });
 
-  it('loads the tenant\'s roles so the dropdown has something to offer', async () => {
+  it('reads the current set from roleIds, not from a nested object', () => {
+    const c = create();
+    c.setRoles({ id: 3, role: 'clepsydra:admin', roleIds: [8] } as unknown as User, [8]);
+
+    expect(admin.setUserRoles).not.toHaveBeenCalled();
+  });
+
+  it("loads the tenant's roles so the dropdown has something to offer", async () => {
     const c = create();
     await settle();
 
@@ -102,20 +110,21 @@ describe('UsersComponent — role assignment', () => {
     expect(c.rolesQuery.data()).toEqual(ROLES);
   });
 
-  it('names the role in the confirmation, so the admin sees what was applied', async () => {
+  it('names every applied role in the confirmation', async () => {
     const c = create();
     await settle();
-    c.setRole({ id: 3, roleId: undefined } as User, 8);
+    c.setRoles({ id: 3, roleIds: [] } as unknown as User, [8, 9]);
 
-    expect(snack.open).toHaveBeenCalledWith(
-        expect.stringContaining('clepsydra:admin'), 'OK', expect.anything());
+    const msg = snack.open.mock.calls[0][0] as string;
+    expect(msg).toContain('clepsydra:admin');
+    expect(msg).toContain('auditor');
   });
 
   it('releases the row and reports the failure when the write is rejected', () => {
     const c = create();
-    admin.setUserRole.mockReturnValue(throwError(() => new Error('nope')));
+    admin.setUserRoles.mockReturnValue(throwError(() => new Error('nope')));
 
-    c.setRole({ id: 3, roleId: undefined } as User, 8);
+    c.setRoles({ id: 3, roleIds: [] } as unknown as User, [8]);
 
     // Left disabled, the row would be stuck for the rest of the session.
     expect(c.savingRoleFor).toBeNull();

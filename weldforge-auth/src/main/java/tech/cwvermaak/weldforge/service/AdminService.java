@@ -82,6 +82,17 @@ public class AdminService {
         Long tid = tenantAccessor.requireTenantId();
         Role role = roleRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("Role " + id + " not found"));
+
+        // users.role_id has no ON DELETE, so deleting a role somebody holds
+        // raises a raw constraint violation the caller cannot act on. Refuse
+        // with the count instead -- and say what to do about it, because the
+        // fix (unassign it first) is not obvious from "constraint violated".
+        long holders = roleRepository.countUsersHolding(id);
+        if (holders > 0) {
+            throw new IllegalArgumentException(
+                    "'" + role.getName() + "' is held by " + holders + " user"
+                    + (holders == 1 ? "" : "s") + ". Remove it from them before deleting it.");
+        }
         roleRepository.delete(role);
     }
 
@@ -255,6 +266,26 @@ public class AdminService {
      */
     @Transactional
     public UserResponseDto setUserRole(Long targetUserId, Long roleId) {
+        // One role is the degenerate case of a set. Routing it through the
+        // same method is what stops users.role_id and user_roles drifting:
+        // there is exactly one writer.
+        return setUserRoles(targetUserId,
+                roleId == null ? java.util.List.of() : java.util.List.of(roleId));
+    }
+
+    /**
+     * Replace the set of tenant roles a user holds.
+     *
+     * <p>Replaces rather than adds, so the caller always states the whole
+     * intended set and there is no separate "remove" call to forget.
+     *
+     * <p>{@code users.role_id} is kept in step as the primary role — the
+     * first of the set by name — because {@code UserResponseDto.role} and
+     * {@code roleId} still report it for callers written before V62. This
+     * method is the only writer of either, by design.
+     */
+    @Transactional
+    public UserResponseDto setUserRoles(Long targetUserId, java.util.List<Long> roleIds) {
         tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
 
@@ -262,14 +293,29 @@ public class AdminService {
                 .orElseThrow(() -> new EntityNotFoundException(
                         "User " + targetUserId + " not found in this tenant"));
 
-        Role role = null;
-        if (roleId != null) {
-            role = roleRepository.findByIdAndTenantId(roleId, tid)
+        // Resolve every id against THIS tenant. A role from another tenant is
+        // "not found" rather than a permission error: the caller should not
+        // learn whether that id exists elsewhere.
+        java.util.LinkedHashSet<Role> resolved = new java.util.LinkedHashSet<>();
+        for (Long id : (roleIds == null ? java.util.List.<Long>of() : roleIds)) {
+            if (id == null) continue;
+            resolved.add(roleRepository.findByIdAndTenantId(id, tid)
                     .orElseThrow(() -> new EntityNotFoundException(
-                            "Role " + roleId + " not found in this tenant"));
+                            "Role " + id + " not found in this tenant")));
         }
 
-        target.setRole(role);
+        // Ordered by name so the token's roles claim is stable between
+        // issues, and so "primary" means something repeatable rather than
+        // whichever id the caller happened to list first.
+        java.util.List<Role> ordered = resolved.stream()
+                .sorted(java.util.Comparator.comparing(Role::getName,
+                        String.CASE_INSENSITIVE_ORDER))
+                .toList();
+
+        target.setRoles(new java.util.LinkedHashSet<>(ordered));
+        target.setRole(ordered.isEmpty() ? null : ordered.get(0));
+        // Every outstanding access token still carries the old roles, so the
+        // change only takes effect on the next mint unless they are killed.
         target.setTokenVersion(target.getTokenVersion() + 1);
         userRepository.save(target);
 
@@ -278,8 +324,11 @@ public class AdminService {
                 AuditEventTypes.TARGET_USER, String.valueOf(target.getId()),
                 AuditService.meta(
                         "target_email", target.getEmail(),
-                        "role_id", roleId,
-                        "role_name", role != null ? role.getName() : null,
+                        "role_id", target.getRole() != null ? target.getRole().getId() : null,
+                        "role_name", target.getRole() != null ? target.getRole().getName() : null,
+                        "role_names", ordered.stream().map(Role::getName)
+                                .collect(java.util.stream.Collectors.joining(" ")),
+                        "role_count", ordered.size(),
                         "tenant", target.getTenant() != null ? target.getTenant().getSlug() : null));
         return toDto(target);
     }
@@ -531,6 +580,10 @@ public class AdminService {
                 .provider(u.getProvider())
                 .role(u.getRole() != null ? u.getRole().getName() : null)
                 .roleId(u.getRole() != null ? u.getRole().getId() : null)
+                .roles(u.getRoles() == null ? List.of()
+                        : u.getRoles().stream().map(Role::getName).sorted().toList())
+                .roleIds(u.getRoles() == null ? List.of()
+                        : u.getRoles().stream().map(Role::getId).sorted().toList())
                 .adminRole(u.getAdminRole() != null ? u.getAdminRole() : tech.cwvermaak.weldforge.model.AdminRole.NONE)
                 .build();
     }

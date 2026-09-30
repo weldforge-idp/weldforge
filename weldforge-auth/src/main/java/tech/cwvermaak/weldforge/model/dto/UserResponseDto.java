@@ -26,6 +26,16 @@ public class UserResponseDto {
      * string.
      */
     private Long roleId;
+    /**
+     * Every tenant role this user holds, by name, sorted.
+     *
+     * <p>Source of truth since V62. {@link #role} and {@link #roleId} report
+     * the first of these and exist for callers written before a user could
+     * hold more than one.
+     */
+    private java.util.List<String> roles;
+    /** The same set, by id, for editing the assignment. */
+    private java.util.List<Long> roleIds;
 
     /** PRD ADM-02: admin console role (NONE / READ_ONLY / TENANT_ADMIN / SUPER_ADMIN). */
     private AdminRole adminRole;

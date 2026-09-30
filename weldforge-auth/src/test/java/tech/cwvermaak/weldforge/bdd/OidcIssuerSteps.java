@@ -234,7 +234,11 @@ public class OidcIssuerSteps {
         authorizationService = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), familyRevoker,
                 mfaFactorRepo, mfaPolicyService);
-        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
+        // V62: the roles claim is read from the repository, not from a lazy
+        // collection. These suites assert other claims, so an empty set is fine.
+        var roleRepositoryForTest = org.mockito.Mockito.mock(
+                tech.cwvermaak.weldforge.repository.RoleRepository.class);
+        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
         // Set @Value-injected lifetimes since we constructed the bean by hand.
         ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);

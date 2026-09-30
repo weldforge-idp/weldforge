@@ -35,6 +35,7 @@ import static org.mockito.Mockito.when;
 class OidcTokenServiceRolesClaimTest {
 
     private OidcTokenService service;
+    private tech.cwvermaak.weldforge.repository.RoleRepository roleRepositoryForTest;
     private TenantSigningKeyService signingKeyService;
     private RSAPrivateKey privateKey;
     private PublicKey publicKey;
@@ -54,7 +55,15 @@ class OidcTokenServiceRolesClaimTest {
         when(signingKeyService.getOrCreateActive(any())).thenReturn(signingKey);
         when(signingKeyService.loadPrivateKey(any())).thenReturn(privateKey);
 
-        service = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
+        // V62: the claim is read from the repository rather than from
+        // user.getRoles(), because tokens are minted outside a transaction.
+        //
+        // Mockito answers an unstubbed List-returning method with an EMPTY
+        // list, which this service reads -- correctly -- as "holds no roles".
+        // Any suite asserting on the roles claim must stub this, or every
+        // assertion silently becomes a test of the empty case.
+        roleRepositoryForTest = mock(tech.cwvermaak.weldforge.repository.RoleRepository.class);
+        service = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
         ReflectionTestUtils.setField(service, "accessTokenSeconds", 3600L);
         ReflectionTestUtils.setField(service, "idTokenSeconds", 3600L);
 
@@ -89,6 +98,8 @@ class OidcTokenServiceRolesClaimTest {
                 .role(Role.builder().id(1L).tenant(tenant).name("SUPERADMIN").build())
                 .superAdmin(true)
                 .build();
+            when(roleRepositoryForTest.findRoleNamesByUserId(42L))
+                .thenReturn(List.of("SUPERADMIN"));
 
             OidcTokenService.IssuedTokens out = service.issueForCodeExchange(
                 tenant, client, user, List.of("openid"), "n-1",
@@ -117,6 +128,8 @@ class OidcTokenServiceRolesClaimTest {
                 .role(Role.builder().id(2L).tenant(tenant).name("SITE_ADMIN").build())
                 .superAdmin(false)
                 .build();
+            when(roleRepositoryForTest.findRoleNamesByUserId(7L))
+                .thenReturn(List.of("SITE_ADMIN"));
 
             OidcTokenService.IssuedTokens out = service.issueForCodeExchange(
                 tenant, client, user, List.of("openid"), null,
@@ -182,6 +195,8 @@ class OidcTokenServiceRolesClaimTest {
                 .role(Role.builder().id(1L).tenant(tenant).name("SUPERADMIN").build())
                 .superAdmin(false)
                 .build();
+            when(roleRepositoryForTest.findRoleNamesByUserId(42L))
+                .thenReturn(List.of("SUPERADMIN"));
 
             OidcTokenService.IssuedTokens out = service.issueForCodeExchange(
                 tenant, client, user, List.of("openid"), "n-2",

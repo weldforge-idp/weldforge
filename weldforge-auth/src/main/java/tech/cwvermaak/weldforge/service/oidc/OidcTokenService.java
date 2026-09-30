@@ -42,6 +42,7 @@ public class OidcTokenService {
 
     private final TenantSigningKeyService signingKeyService;
     private final MeterRegistry meterRegistry;
+    private final tech.cwvermaak.weldforge.repository.RoleRepository roleRepository;
 
     /**
      * Issue an access token + ID token pair for a successful authorization
@@ -269,12 +270,16 @@ public class OidcTokenService {
      * relying parties can drive RBAC from. Always returns at least an
      * empty list so consumers don't have to null-check.
      */
-    private static List<String> rolesFor(User user) {
+    private List<String> rolesFor(User user) {
         java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
         if (user.isSuperAdmin()) out.add("SUPERADMIN");
-        if (user.getRole() != null && user.getRole().getName() != null
-                && !user.getRole().getName().isBlank()) {
-            out.add(user.getRole().getName());
+        // Queried, not read off user.getRoles(). Tokens are minted outside an
+        // explicit transaction, so walking a lazy collection here would work
+        // only while spring.jpa.open-in-view stays enabled -- and disabling
+        // that is an ordinary hardening step that would turn every token
+        // request into a 500.
+        for (String name : roleRepository.findRoleNamesByUserId(user.getId())) {
+            if (name != null && !name.isBlank()) out.add(name);
         }
         return new java.util.ArrayList<>(out);
     }
