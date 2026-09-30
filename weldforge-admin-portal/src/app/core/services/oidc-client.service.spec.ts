@@ -52,6 +52,36 @@ describe('OidcClientService', () => {
     });
   });
 
+  describe('update', () => {
+    it('PUTs only the fields supplied, so an untouched field is left alone', () => {
+      const updated: OidcClient = {
+        id: 7, clientId: 'keycrypt-web',
+        redirectUris: ['https://keycrypt.cwvermaak.tech/callback'],
+        scopes: ['openid'], grantTypes: ['authorization_code'],
+        postLogoutRedirectUris: ['https://keycrypt.cwvermaak.tech/callback'],
+      };
+      http.put.mockReturnValue(of(updated));
+
+      let observed: OidcClient | undefined;
+      service.update(7, { postLogoutRedirectUris: ['https://keycrypt.cwvermaak.tech/callback'] })
+          .subscribe(r => (observed = r));
+
+      expect(http.put).toHaveBeenCalledWith(
+          expect.stringContaining('/api/admin/oidc/clients/7'),
+          { postLogoutRedirectUris: ['https://keycrypt.cwvermaak.tech/callback'] },
+          expect.anything());
+      expect(observed).toEqual(updated);
+    });
+
+    it('names the tenant it acts in, like every other call on this service', () => {
+      http.put.mockReturnValue(of({} as OidcClient));
+      service.update(7, { scopes: ['openid'] }, 'cwvermaak-tech').subscribe();
+
+      const opts = http.put.mock.calls[0][2] as { context: { get(t: unknown): unknown } };
+      expect(opts.context.get(TARGET_TENANT)).toBe('cwvermaak-tech');
+    });
+  });
+
   describe('rotateSecret', () => {
     it('posts to the rotate-secret endpoint and returns the updated client', () => {
       const rotated: OidcClient = {

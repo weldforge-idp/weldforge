@@ -21,6 +21,23 @@ export interface OidcClient {
   maxAuthenticationAgeSeconds?: number;
   /** Browser SPA / native app: PKCE only, no secret is issued. */
   publicClient?: boolean;
+  /**
+   * Browser origins ({@code scheme://host[:port]}) allowed to call this
+   * tenant's OIDC endpoints cross-origin.
+   *
+   * REQUIRED for a public client whose redirect URI is a real http(s) host.
+   * Without one every cross-origin call the browser makes is refused by CORS,
+   * and a blocked fetch surfaces as a generic network error -- so the symptom
+   * is a sign-in button that does nothing, with nothing in any log. The server
+   * refuses such a registration outright since PR #126.
+   *
+   * Native clients (loopback or private-use scheme) correctly have none.
+   */
+  webOrigins?: string[];
+  /** RP-initiated logout allow-list. Empty means the client cannot pass one. */
+  postLogoutRedirectUris?: string[];
+  /** Refresh-token lifetime in seconds; omit to inherit tenant, then instance. */
+  refreshTokenTtlSeconds?: number | null;
 }
 
 /**
@@ -40,6 +57,17 @@ export class OidcClientService {
 
   create(client: OidcClient, tenantSlug?: string): Observable<OidcClient> {
     return this.http.post<OidcClient>(this.url, client, forTenant(tenantSlug));
+  }
+
+  /**
+   * Update a client in place. Send only the fields being changed: the server
+   * leaves nulls alone, and an empty array clears that list.
+   *
+   * `clientId`, `clientSecret` and `publicClient` are refused by the server;
+   * changing any of those means a new client.
+   */
+  update(id: number, patch: Partial<OidcClient>, tenantSlug?: string): Observable<OidcClient> {
+    return this.http.put<OidcClient>(`${this.url}/${id}`, patch, forTenant(tenantSlug));
   }
 
   rotateSecret(id: number, tenantSlug?: string): Observable<OidcClient> {
