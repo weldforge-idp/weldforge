@@ -530,6 +530,7 @@ public class AdminService {
                 .imageUrl(u.getImageUrl())
                 .provider(u.getProvider())
                 .role(u.getRole() != null ? u.getRole().getName() : null)
+                .roleId(u.getRole() != null ? u.getRole().getId() : null)
                 .adminRole(u.getAdminRole() != null ? u.getAdminRole() : tech.cwvermaak.weldforge.model.AdminRole.NONE)
                 .build();
     }

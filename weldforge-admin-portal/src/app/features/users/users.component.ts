@@ -65,7 +65,7 @@ import { apiErrorMessage } from '../../core/api-error';
               <th mat-header-cell *matHeaderCellDef>Role</th>
               <td mat-cell *matCellDef="let user">
                 <mat-form-field appearance="outline" subscriptSizing="dynamic" class="role-select">
-                  <mat-select [value]="user.role?.id ?? null"
+                  <mat-select [value]="user.roleId ?? null"
                               (selectionChange)="setRole(user, $event.value)"
                               [disabled]="savingRoleFor === user.id">
                     <mat-option [value]="null">— none —</mat-option>
@@ -149,7 +149,7 @@ export class UsersComponent {
   savingRoleFor: number | null = null;
 
   setRole(user: User, roleId: number | null) {
-    if ((user.role?.id ?? null) === roleId) return;
+    if ((user.roleId ?? null) === roleId) return;
     this.savingRoleFor = user.id;
     this.adminService.setUserRole(user.id, roleId).subscribe({
       next: () => {

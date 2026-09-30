@@ -10,7 +10,17 @@ export interface User {
   imageUrl?: string;
   provider: string;
   providerId: string;
-  role?: Role;
+  /**
+   * The tenant Role's NAME, not an object.
+   *
+   * This was declared as `Role` and never was one: the API has always sent a
+   * string here, so `user.role?.name` evaluated to undefined and the portal's
+   * Role column showed a dash for every user regardless of their actual role.
+   * TypeScript could not catch it because the lie was in this interface.
+   */
+  role?: string;
+  /** The tenant Role's id, for changing the assignment. */
+  roleId?: number;
 }
 
 export interface Role {
