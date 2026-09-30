@@ -104,6 +104,11 @@ public class OidcClientService {
                 // this it advertised Basic and the server could only parse a
                 // form body, which is the mismatch CONF-4.3 was raised for.
                 .tokenEndpointAuthMethod(isPublic ? "none" : "client_secret_basic")
+                // Accepted at registration, not only on a later edit. Until
+                // this it was silently dropped: the field was on the DTO and
+                // in the update path, so a caller sending it at create got a
+                // 200 and a client that inherited the default anyway.
+                .refreshTokenTtlSeconds(requirePositiveTtl(dto.getRefreshTokenTtlSeconds()))
                 .build();
         OidcClient saved = repository.save(client);
         auditService.recordAdmin(AuditEventTypes.OIDC_CLIENT_CREATE, null,
@@ -182,10 +187,7 @@ public class OidcClientService {
         if (dto.getGrantTypes() != null) {
             require(dto.getGrantTypes(), "grantTypes");
         }
-        if (dto.getRefreshTokenTtlSeconds() != null && dto.getRefreshTokenTtlSeconds() <= 0) {
-            throw new IllegalArgumentException(
-                    "refreshTokenTtlSeconds must be positive; omit it to inherit the tenant or application default");
-        }
+        requirePositiveTtl(dto.getRefreshTokenTtlSeconds());
 
         // The same guard as create, against the merged result rather than the
         // payload: clearing the origins of a browser client is exactly as
@@ -217,6 +219,22 @@ public class OidcClientService {
                         "fields", changedFieldNames(dto)));
 
         return toDto(client, true);
+    }
+
+    /**
+     * A refresh TTL must be positive or absent. Shared by create and update
+     * so the two cannot disagree about what is acceptable.
+     *
+     * <p>Zero is not "inherit" here, deliberately: null is. Zero would mean a
+     * token that expires the instant it is minted, and accepting it silently
+     * would be worse than refusing it.
+     */
+    private static Integer requirePositiveTtl(Integer seconds) {
+        if (seconds != null && seconds <= 0) {
+            throw new IllegalArgumentException(
+                    "refreshTokenTtlSeconds must be positive; omit it to inherit the tenant or application default");
+        }
+        return seconds;
     }
 
     /** Refuse a field that may be read back but never altered. */

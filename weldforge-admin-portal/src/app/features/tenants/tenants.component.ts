@@ -557,6 +557,12 @@ interface TenantRow extends Tenant {
                     <mat-label>Max authentication age (seconds)</mat-label>
                     <input matInput type="number" min="0" [(ngModel)]="newOidcMaxAge" placeholder="0 = tenant default">
                   </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Refresh token lifetime (seconds)</mat-label>
+                    <input matInput type="number" min="1" [(ngModel)]="newOidcRefreshTtl"
+                           placeholder="blank = inherit tenant, then instance">
+                    <mat-hint>{{ refreshTtlHint() }}</mat-hint>
+                  </mat-form-field>
                 </div>
                 <div class="wf-actions">
                   <mat-slide-toggle [(ngModel)]="newOidcPublic"
@@ -1212,6 +1218,7 @@ export class TenantsComponent implements OnInit {
   newOidcClientId = '';
   newOidcWebOrigins = '';
   newOidcPostLogout = '';
+  newOidcRefreshTtl: number | null = null;
 
   /** id of the client whose edit row is open; null when none is. */
   editOidcId: number | null = null;
@@ -1880,6 +1887,24 @@ export class TenantsComponent implements OnInit {
    * a tracked *signal* changes. Memoising this to its first value is the
    * zoneless trap that killed the Service Accounts Create button in PR #24.
    */
+  /**
+   * A method, not computed(): newOidcRefreshTtl is a plain field bound with
+   * ngModel, so computed() would memoise its first value.
+   */
+  refreshTtlHint(): string {
+    const raw = `${this.newOidcRefreshTtl ?? ''}`.trim();
+    if (raw === '') return 'Blank inherits the tenant, then the instance default.';
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return 'Must be a positive number of seconds.';
+    // A decimal only when there is one: "14 days", not "14.0 days".
+    const plain = (v: number) => (Number.isInteger(v) ? `${v}` : v.toFixed(1));
+    const days = n / 86400;
+    if (days >= 1) return `= ${plain(days)} day${days === 1 ? '' : 's'}`;
+    const hours = n / 3600;
+    if (hours >= 1) return `= ${plain(hours)} hour${hours === 1 ? '' : 's'}`;
+    return `= ${n} second${n === 1 ? '' : 's'}`;
+  }
+
   webOriginHint(): string {
     const redirects = this.splitWords(this.newOidcRedirects);
     if (!this.newOidcPublic) {
@@ -1921,6 +1946,10 @@ export class TenantsComponent implements OnInit {
       webOrigins,
       postLogoutRedirectUris: this.splitWords(this.newOidcPostLogout),
     };
+    // Omitted rather than sent as null when blank: on create, absent means
+    // inherit, and the server refuses a non-positive value outright.
+    const ttl = `${this.newOidcRefreshTtl ?? ''}`.trim();
+    if (ttl !== '') dto.refreshTokenTtlSeconds = Number(ttl);
     if (!dto.redirectUris.length) { this.err('At least one redirect URI is required', null); return; }
     this.oidcApi.create(dto, t.slug).subscribe({
       next: created => {
@@ -1931,6 +1960,7 @@ export class TenantsComponent implements OnInit {
         this.newOidcRedirects = '';
         this.newOidcWebOrigins = '';
         this.newOidcPostLogout = '';
+        this.newOidcRefreshTtl = null;
         this.newOidcRequireMfa = false;
         this.newOidcMaxAge = 0;
         // Shown in the page, not an alert: a secret that appears once must be

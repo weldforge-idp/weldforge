@@ -50,6 +50,8 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     newOidcRedirects: string;
     newOidcPublic: boolean;
     newOidcWebOrigins: string;
+    newOidcRefreshTtl: number | null;
+    refreshTtlHint(): string;
     sessionDraft?: unknown;
     humanMs(ms: number | null | undefined): string;
     customClaimsError(t: Row): string | null;
@@ -464,5 +466,56 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     expect(c.humanMs(60000)).toContain('60 seconds');
     expect(c.humanMs(300000)).toContain('5 minutes');
     expect(c.humanMs(604800000)).toContain('7.0 days');
+  });
+
+  // ---- refresh TTL at registration --------------------------------------
+  //
+  // The field existed on the DTO and in the update path, but create() never
+  // persisted it: a caller sending it at registration got a 200 and a client
+  // that inherited the default anyway.
+
+  it('sends the refresh TTL when registering, as a number', () => {
+    const c = create();
+    const b = row(c, 'cwvermaak-tech');
+    expand(c, b);
+    c.newOidcRedirects = 'https://app.example/cb';
+    (c as unknown as Record<string, unknown>)['newOidcRefreshTtl'] = '1209600';
+
+    c.createOidcClient(b);
+
+    const req = ctl.expectOne(r => r.url === OIDC && r.method === 'POST');
+    expect(req.request.body.refreshTokenTtlSeconds).toBe(1209600);
+    req.flush({ id: 40, clientId: 'x' }, acting('cwvermaak-tech'));
+  });
+
+  it('omits the TTL entirely when blank, so the server inherits', () => {
+    const c = create();
+    const b = row(c, 'default');
+    expand(c, b);
+    c.newOidcRedirects = 'https://app.example/cb';
+    c.newOidcRefreshTtl = null;
+
+    c.createOidcClient(b);
+
+    const req = ctl.expectOne(r => r.url === OIDC && r.method === 'POST');
+    // Absent, not null: on create the server treats absent as inherit and
+    // refuses a non-positive value, so sending null would be a 400.
+    expect(Object.prototype.hasOwnProperty.call(
+        req.request.body, 'refreshTokenTtlSeconds')).toBe(false);
+    req.flush({ id: 41, clientId: 'y' }, acting('default'));
+  });
+
+  it('states the TTL in units a person uses', () => {
+    const c = create();
+    c.newOidcRefreshTtl = null;
+    expect(c.refreshTtlHint()).toContain('inherits');
+    c.newOidcRefreshTtl = 1209600;
+    expect(c.refreshTtlHint()).toContain('14 days');   // not "14.0 days"
+    c.newOidcRefreshTtl = 3600;
+    expect(c.refreshTtlHint()).toContain('1 hour');
+    c.newOidcRefreshTtl = 129600;                      // 1.5 days
+    expect(c.refreshTtlHint()).toContain('1.5 days');
+    c.newOidcRefreshTtl = 0;
+    expect(c.refreshTtlHint()).toContain('positive');
   });
 });
