@@ -21,6 +21,8 @@ export interface User {
   role?: string;
   /** The tenant Role's id, for changing the assignment. */
   roleId?: number;
+  /** Whether this address was ever confirmed; gates email_verified in tokens. */
+  emailVerified?: boolean;
   /** Every role the user holds, by name. Source of truth since V62. */
   roles?: string[];
   /** The same set, by id. */

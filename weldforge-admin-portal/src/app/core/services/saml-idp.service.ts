@@ -17,6 +17,12 @@ export interface SamlIdpServiceProvider {
   /** Verify this SP's AuthnRequest / LogoutRequest signatures against spCertificate. */
   wantAuthnRequestSigned?: boolean;
   /**
+   * Encrypt the assertion to the SP's certificate. Settable through the API
+   * since it was written and never exposed here, so every SP has whatever it
+   * was created with.
+   */
+  encryptAssertions?: boolean;
+  /**
    * CONF-5.1. A pinned AuthnContextClassRef, sent verbatim instead of one
    * derived from how the user signed in. On update, '' clears the pin.
    */

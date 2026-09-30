@@ -38,6 +38,22 @@ export interface Tenant {
    * docs/password-policy-spec.md.
    */
   passwordPolicy?: PasswordPolicyOverride | null;
+
+  /**
+   * Access-token lifetime in MILLISECONDS; null inherits the deployment
+   * default. Stored in ms, so it is edited in ms -- converting in the form
+   * is how an off-by-1000 gets shipped.
+   */
+  accessTtlMs?: number | null;
+  /** Refresh-token lifetime in MILLISECONDS; null inherits. */
+  refreshTtlMs?: number | null;
+  /** Extra claims merged into every token this tenant issues. */
+  customClaims?: Record<string, unknown> | null;
+  /** Where identity-proofing challenges are sent. */
+  contactEmail?: string | null;
+  /** Set when the tenant passed identity proofing. Read-only here. */
+  verifiedAt?: string | null;
+  verifiedByUserId?: number | null;
 }
 
 /**

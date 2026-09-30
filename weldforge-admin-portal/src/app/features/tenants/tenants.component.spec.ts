@@ -32,6 +32,7 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
   let ctl: HttpTestingController;
   let fixture: import('@angular/core/testing').ComponentFixture<TenantsComponent>;
   let snack: { open: ReturnType<typeof vi.fn> };
+  let tenantApi: { update: ReturnType<typeof vi.fn> } & Record<string, any>;
   let picked: string | null;
 
   type Row = Tenant & Record<string, unknown>;
@@ -49,6 +50,10 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     newOidcRedirects: string;
     newOidcPublic: boolean;
     newOidcWebOrigins: string;
+    sessionDraft?: unknown;
+    humanMs(ms: number | null | undefined): string;
+    customClaimsError(t: Row): string | null;
+    saveSessionSettings(t: Row): void;
     newOidcPostLogout: string;
     startEditOidc(c: object): void;
     saveEditOidc(t: Row, c: { id?: number; clientId: string; publicClient?: boolean }): void;
@@ -71,8 +76,9 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
         provideHttpClientTesting(),
         provideAngularQuery(new QueryClient()),
         {
-          provide: TenantService, useValue: {
+          provide: TenantService, useValue: tenantApi = {
             list: vi.fn().mockReturnValue(of([rowA, rowB])),
+            update: vi.fn().mockImplementation((_id: number, patch: object) => of({ ...rowA, ...patch })),
             listProviders: vi.fn().mockReturnValue(of([])),
             listSamlProviders: vi.fn().mockReturnValue(of([])),
             // Both are called on init / row expand. Stubbed with the shipped
@@ -396,5 +402,67 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     ctl.expectNone(r => r.method === 'PUT');
     expect(snack.open).toHaveBeenCalledWith(
         expect.stringContaining('https://spa.example'), expect.anything(), expect.anything());
+  });
+
+  // ---- session / contact / claims ---------------------------------------
+  //
+  // Every field in this section is settable through /api/admin/tenants and
+  // had no control at all, which is the same class of gap that left
+  // keycrypt-web with no webOrigins: the API accepts it, the screen cannot
+  // express it, so nobody knows it exists.
+
+  it('refuses custom claims that are not a JSON object', () => {
+    const c = create();
+    const t = row(c, 'default') as Row & { sessionDraft: Record<string, unknown> };
+    t.sessionDraft['customClaims'] = 'not json';
+    expect(c.customClaimsError(t)).toContain('valid JSON');
+
+    // An array parses but is not a claims object.
+    t.sessionDraft['customClaims'] = '[1,2]';
+    expect(c.customClaimsError(t)).toContain('JSON object');
+
+    t.sessionDraft['customClaims'] = '{"org":"Acme"}';
+    expect(c.customClaimsError(t)).toBeNull();
+
+    t.sessionDraft['customClaims'] = '';
+    expect(c.customClaimsError(t)).toBeNull();
+  });
+
+  it('sends ttls as numbers, a blank as null, and claims as an object', () => {
+    const c = create();
+    const t = row(c, 'default') as Row & { sessionDraft: Record<string, unknown> };
+    t.sessionDraft['accessTtlMs'] = '300000';   // ngModel on a number input
+    t.sessionDraft['refreshTtlMs'] = '';        // cleared = inherit
+    t.sessionDraft['contactEmail'] = ' owner@example.com ';
+    t.sessionDraft['customClaims'] = '{"org":"Acme"}';
+
+    c.saveSessionSettings(t);
+
+    const patch = tenantApi.update.mock.calls[0][1];
+    // A number, not the input's string: the server stores ms as a number and
+    // "300000" would be rejected or coerced unpredictably.
+    expect(patch.accessTtlMs).toBe(300000);
+    // Blank means inherit, and null is how that is said on the wire.
+    expect(patch.refreshTtlMs).toBeNull();
+    expect(patch.contactEmail).toBe('owner@example.com');
+    expect(patch.customClaims).toEqual({ org: 'Acme' });
+  });
+
+  it('does not send anything when the claims JSON is unusable', () => {
+    const c = create();
+    const t = row(c, 'default') as Row & { sessionDraft: Record<string, unknown> };
+    t.sessionDraft['customClaims'] = '{oops';
+
+    c.saveSessionSettings(t);
+
+    expect(tenantApi.update).not.toHaveBeenCalled();
+  });
+
+  it('states a duration in units a person uses', () => {
+    const c = create();
+    expect(c.humanMs(null)).toContain('inherits');
+    expect(c.humanMs(60000)).toContain('60 seconds');
+    expect(c.humanMs(300000)).toContain('5 minutes');
+    expect(c.humanMs(604800000)).toContain('7.0 days');
   });
 });

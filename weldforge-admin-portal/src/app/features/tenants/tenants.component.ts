@@ -58,6 +58,15 @@ interface PasswordPolicyDraft {
   requireSymbol: boolean;
 }
 
+/** The session / contact / claims fields, as the form edits them. */
+interface SessionDraft {
+  accessTtlMs: number | null;
+  refreshTtlMs: number | null;
+  contactEmail: string;
+  /** JSON TEXT while editing; parsed to an object on save. */
+  customClaims: string;
+}
+
 interface TenantRow extends Tenant {
   providers?: SocialProvider[];
   samlProviders?: SamlProvider[];
@@ -69,6 +78,7 @@ interface TenantRow extends Tenant {
   twilioDraft?: TwilioProvider;
   mfaPolicy?: MfaPolicy;
   brandingDraft?: BrandingDraft;
+  sessionDraft?: SessionDraft;
   passwordDraft?: PasswordPolicyDraft;
   /** Server-resolved rules for this tenant; refreshed after every save. */
   effectivePassword?: ResolvedPasswordPolicy;
@@ -580,6 +590,7 @@ interface TenantRow extends Tenant {
                       <th title="Verify this SP's request signatures">Signed requests</th>
                       <th title="Issuer on assertions and logout messages">Issuer</th>
                       <th title="AuthnContextClassRef on assertions">Auth context</th>
+                      <th title="Encrypt the assertion to the SP's certificate">Encrypted</th>
                       <th>IdP metadata</th><th></th></tr>
                 </thead>
                 <tbody>
@@ -609,6 +620,13 @@ interface TenantRow extends Tenant {
                                         [title]="sp.authnContextOverride ? 'Pinned to ' + sp.authnContextOverride : 'Reports how the user actually signed in'"
                                         (change)="setSpContextFromSession(t, sp, $event)">
                         {{ sp.authnContextOverride ? 'pinned' : 'from session' }}
+                      </mat-slide-toggle>
+                    </td>
+                    <td>
+                      <mat-slide-toggle [checked]="!!sp.encryptAssertions"
+                                        [disabled]="!sp.spCertificate"
+                                        [title]="sp.spCertificate ? 'Encrypt assertions to the certificate on file' : 'Upload the SP certificate first'"
+                                        (change)="setSpEncryptAssertions(t, sp, $event)">
                       </mat-slide-toggle>
                     </td>
                     <td>
@@ -666,6 +684,58 @@ interface TenantRow extends Tenant {
                   <span class="spacer"></span>
                   <button mat-raised-button color="primary" (click)="createSamlIdpSp(t)">Register SP in {{ t.slug }}</button>
                 </div>
+              </div>
+            </section>
+
+            <!-- ============ Sessions, contact & extra claims ============ -->
+            <!-- Every field here is settable through /api/admin/tenants and
+                 had no control at all: session lifetimes, the address that
+                 receives identity-proofing challenges, the tenant's
+                 verification state, and the claims merged into its tokens. -->
+            <section class="wf-section">
+              <h4>Sessions, contact &amp; token claims <span class="mono tenant-tag">{{ t.slug }}</span></h4>
+              <p class="sub">Token lifetimes for <code>{{ t.slug }}</code>, the address identity-proofing challenges are sent to, and any extra claims merged into every token this tenant issues.</p>
+
+              <div class="wf-grid">
+                <mat-form-field appearance="outline">
+                  <mat-label>Access token lifetime (ms)</mat-label>
+                  <input matInput type="number" min="0" [(ngModel)]="t.sessionDraft!.accessTtlMs"
+                         placeholder="blank = deployment default">
+                  <mat-hint>{{ humanMs(t.sessionDraft!.accessTtlMs) }}</mat-hint>
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Refresh token lifetime (ms)</mat-label>
+                  <input matInput type="number" min="0" [(ngModel)]="t.sessionDraft!.refreshTtlMs"
+                         placeholder="blank = deployment default">
+                  <mat-hint>{{ humanMs(t.sessionDraft!.refreshTtlMs) }}</mat-hint>
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Contact email</mat-label>
+                  <input matInput type="email" [(ngModel)]="t.sessionDraft!.contactEmail"
+                         placeholder="owner@example.com">
+                  <mat-hint>Where identity-proofing challenges are sent.</mat-hint>
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="wide">
+                  <mat-label>Custom claims (JSON object)</mat-label>
+                  <textarea matInput rows="3" [(ngModel)]="t.sessionDraft!.customClaims"
+                            placeholder='&#123;"org": "Acme"&#125;'></textarea>
+                  <mat-hint [class.wf-error-hint]="!!customClaimsError(t)">
+                    {{ customClaimsError(t) || 'Merged into every token this tenant issues.' }}
+                  </mat-hint>
+                </mat-form-field>
+              </div>
+
+              <p class="sub">
+                Identity proofing:
+                <strong>{{ t.verifiedAt ? 'verified ' + (t.verifiedAt | date:'yyyy-MM-dd') : 'not verified' }}</strong>.
+                Set by the verification flow, not editable here.
+              </p>
+
+              <div class="wf-actions">
+                <span class="spacer"></span>
+                <button mat-raised-button color="primary"
+                        [disabled]="!!customClaimsError(t)"
+                        (click)="saveSessionSettings(t)">Save for {{ t.slug }}</button>
               </div>
             </section>
 
@@ -1178,6 +1248,7 @@ export class TenantsComponent implements OnInit {
         samlDraft: this.freshSamlDraft(),
         twilioDraft: this.freshTwilioDraft(),
         brandingDraft: this.brandingDraftFrom(t),
+        sessionDraft: this.sessionDraftFrom(t),
         passwordDraft: this.passwordDraftFrom(t),
       }))),
       error: err => this.err('Failed to load tenants', err),
@@ -1246,6 +1317,81 @@ export class TenantsComponent implements OnInit {
       returnToCallerEnabled: t.returnToCallerEnabled !== false,
       brand,
     };
+  }
+
+  /** Editable copy of the session/contact/claims fields for one tenant row. */
+  private sessionDraftFrom(t: Tenant): SessionDraft {
+    return {
+      accessTtlMs: t.accessTtlMs ?? null,
+      refreshTtlMs: t.refreshTtlMs ?? null,
+      contactEmail: t.contactEmail ?? '',
+      // Pretty-printed so an operator can read what is already there; the
+      // server stores an object, the form edits text.
+      customClaims: t.customClaims ? JSON.stringify(t.customClaims, null, 2) : '',
+    };
+  }
+
+  /** A duration in ms, said in units a person uses. Blank means inherit. */
+  protected humanMs(ms: number | null | undefined): string {
+    if (ms === null || ms === undefined || `${ms}`.trim() === '') {
+      return 'Blank inherits the deployment default.';
+    }
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return 'Must be a positive number of milliseconds.';
+    const s = n / 1000;
+    if (s < 120) return `= ${s.toFixed(0)} seconds`;
+    const m = s / 60;
+    if (m < 120) return `= ${m.toFixed(0)} minutes`;
+    const h = m / 60;
+    if (h < 48) return `= ${h.toFixed(1)} hours`;
+    return `= ${(h / 24).toFixed(1)} days`;
+  }
+
+  /**
+   * Null when the JSON is usable, else the reason.
+   *
+   * A method, not computed(): sessionDraft is a plain object mutated by
+   * ngModel, so computed() would freeze at its first value.
+   */
+  protected customClaimsError(t: TenantRow): string | null {
+    const raw = (t.sessionDraft?.customClaims ?? '').trim();
+    if (!raw) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return 'Not valid JSON.';
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return 'Must be a JSON object, not an array or a bare value.';
+    }
+    return null;
+  }
+
+  saveSessionSettings(t: TenantRow) {
+    if (!t.sessionDraft) return;
+    if (this.customClaimsError(t)) { this.err(this.customClaimsError(t)!, null); return; }
+
+    const num = (v: unknown) => {
+      const str = `${v ?? ''}`.trim();
+      // Blank clears the override; the server reads null as "inherit".
+      return str === '' ? null : Number(str);
+    };
+    const patch: Partial<Tenant> = {
+      accessTtlMs: num(t.sessionDraft.accessTtlMs),
+      refreshTtlMs: num(t.sessionDraft.refreshTtlMs),
+      contactEmail: t.sessionDraft.contactEmail?.trim() || null,
+      customClaims: t.sessionDraft.customClaims?.trim()
+          ? JSON.parse(t.sessionDraft.customClaims) : null,
+    };
+    this.api.update(t.id, patch).subscribe({
+      next: updated => {
+        Object.assign(t, updated);
+        t.sessionDraft = this.sessionDraftFrom(updated);
+        this.ok(`Session settings saved for ${t.slug}`);
+      },
+      error: err => this.err('Save failed', err),
+    });
   }
 
   resetBrandingDraft(t: TenantRow) {
@@ -1645,6 +1791,23 @@ export class TenantsComponent implements OnInit {
       return;
     }
     this.updateSamlIdpSp(t, sp, { wantAuthnRequestSigned: event.checked }, event);
+  }
+
+  setSpEncryptAssertions(t: TenantRow, sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
+    // Turning it ON needs the SP to hold the matching private key, and
+    // turning it OFF sends assertions in the clear. Both are worth a pause.
+    const msg = event.checked
+      ? `Encrypt assertions to ${sp.entityId}?
+
+`
+        + 'The SP must be able to decrypt with the key matching the certificate on file, '
+        + 'or every login fails.'
+      : `Stop encrypting assertions to ${sp.entityId}?
+
+`
+        + 'Assertions will be signed but sent in the clear inside the browser POST.';
+    if (!confirm(msg)) { event.source.checked = !event.checked; return; }
+    this.updateSamlIdpSp(t, sp, { encryptAssertions: event.checked }, event);
   }
 
   setSpEntityIdIssuer(t: TenantRow, sp: SamlIdpServiceProvider, event: MatSlideToggleChange) {
