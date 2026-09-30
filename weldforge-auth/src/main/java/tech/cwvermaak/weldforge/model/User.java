@@ -47,9 +47,32 @@ public class User {
     @Column(name = "provider_id", nullable = false)
     private String providerId;
 
+    /**
+     * The user's <em>primary</em> role — the single value reported by
+     * {@code UserResponseDto.role} / {@code roleId} for callers written
+     * before roles became a set (V62).
+     *
+     * <p>A shadow of {@link #roles}, not an independent value.
+     * {@code AdminService.setUserRoles} is the only writer of either, so the
+     * two cannot drift. Read {@link #roles} for authorisation decisions.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "role_id")
     private Role role;
+
+    /**
+     * Every tenant role this user holds. Source of truth since V62.
+     *
+     * <p>Lazy, and deliberately not read directly when minting a token —
+     * {@code OidcTokenService} asks the repository instead, so the claim does
+     * not depend on {@code spring.jpa.open-in-view} being left on.
+     */
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "user_roles",
+            joinColumns = @JoinColumn(name = "user_id"),
+            inverseJoinColumns = @JoinColumn(name = "role_id"))
+    @Builder.Default
+    private java.util.Set<Role> roles = new java.util.LinkedHashSet<>();
 
     @Column(name = "is_super_admin", nullable = false)
     private boolean superAdmin;

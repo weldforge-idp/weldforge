@@ -66,7 +66,11 @@ class OidcUserinfoControllerTest {
                 store.stream().filter(k -> k.getKid().equals(inv.getArgument(0))).findFirst());
 
         TenantSigningKeyService signingKeyService = new TenantSigningKeyService(keyRepo);
-        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
+        // V62: the roles claim is read from the repository, not from a lazy
+        // collection. These suites assert other claims, so an empty set is fine.
+        var roleRepositoryForTest = org.mockito.Mockito.mock(
+                tech.cwvermaak.weldforge.repository.RoleRepository.class);
+        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
         ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
         // CONF-6.1: userinfo now consults the revocation list. Nothing is

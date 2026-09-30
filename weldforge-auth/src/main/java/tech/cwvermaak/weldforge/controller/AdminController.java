@@ -170,6 +170,40 @@ public class AdminController {
         return ResponseEntity.ok(adminService.setUserRole(id, roleId));
     }
 
+    /**
+     * Replace the whole set of tenant roles a user holds.
+     * Body: {@code {"roleIds": [8, 9]}}, or {@code []} to clear.
+     *
+     * <p>Replaces rather than adds, so a caller always states the intended
+     * set and there is no separate remove call to forget. The single-role
+     * {@code POST /users/{id}/role} still works and is the same operation
+     * with a set of zero or one.
+     */
+    @PutMapping("/users/{id}/roles")
+    public ResponseEntity<UserResponseDto> setUserRoles(@PathVariable Long id,
+                                                        @RequestBody java.util.Map<String, Object> body) {
+        Object raw = body == null ? null : body.get("roleIds");
+        if (raw != null && !(raw instanceof java.util.List)) {
+            throw new IllegalArgumentException("roleIds must be an array");
+        }
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        if (raw instanceof java.util.List<?> list) {
+            for (Object o : list) {
+                if (o == null) continue;
+                if (o instanceof Number n) {
+                    ids.add(n.longValue());
+                } else {
+                    try {
+                        ids.add(Long.parseLong(o.toString()));
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException("roleIds must contain numbers");
+                    }
+                }
+            }
+        }
+        return ResponseEntity.ok(adminService.setUserRoles(id, ids));
+    }
+
     // Environments -----------------------------------------------------
     @GetMapping("/environments")
     public ResponseEntity<List<EnvironmentDto>> listEnvironments() {

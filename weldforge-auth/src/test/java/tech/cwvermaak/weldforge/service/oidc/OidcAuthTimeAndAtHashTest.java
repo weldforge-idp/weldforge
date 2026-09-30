@@ -65,7 +65,11 @@ class OidcAuthTimeAndAtHashTest {
         when(signingKeyService.loadPrivateKey(keyRow)).thenReturn((RSAPrivateKey) pair.getPrivate());
         when(signingKeyService.loadPublicKey(keyRow)).thenReturn(publicKey);
 
-        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry());
+        // V62: the roles claim is read from the repository, not from a lazy
+        // collection. These suites assert other claims, so an empty set is fine.
+        var roleRepositoryForTest = org.mockito.Mockito.mock(
+                tech.cwvermaak.weldforge.repository.RoleRepository.class);
+        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
         ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
     }

@@ -13,7 +13,29 @@ public class UserResponseDto {
     private String email;
     private String imageUrl;
     private AuthProvider provider;
+    /** The tenant Role's NAME, or null. Kept a string for existing callers. */
     private String role;
+    /**
+     * The tenant Role's id, or null.
+     *
+     * <p>Additive on purpose. {@link #role} has always carried the name only,
+     * which is enough to display but not to edit: a client that wants to
+     * change the assignment has to post a {@code roleId}, and it had no way
+     * to know the current one. The admin portal's Role column silently showed
+     * a dash for every user because it expected an object here and got a
+     * string.
+     */
+    private Long roleId;
+    /**
+     * Every tenant role this user holds, by name, sorted.
+     *
+     * <p>Source of truth since V62. {@link #role} and {@link #roleId} report
+     * the first of these and exist for callers written before a user could
+     * hold more than one.
+     */
+    private java.util.List<String> roles;
+    /** The same set, by id, for editing the assignment. */
+    private java.util.List<Long> roleIds;
 
     /** PRD ADM-02: admin console role (NONE / READ_ONLY / TENANT_ADMIN / SUPER_ADMIN). */
     private AdminRole adminRole;

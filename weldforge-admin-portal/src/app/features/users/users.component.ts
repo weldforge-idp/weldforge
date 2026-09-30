@@ -32,7 +32,7 @@ import { apiErrorMessage } from '../../core/api-error';
         <div>
           <div class="eyebrow mono">// users</div>
           <h1>Users</h1>
-          <p class="sub">Everyone in this tenant. Assign the role a relying party reads from the token, or reset a user's MFA if they've lost their second factor.</p>
+          <p class="sub">Everyone in this tenant. Assign the roles a relying party reads from the token, or reset a user's MFA if they've lost their second factor.</p>
         </div>
       </header>
 
@@ -65,10 +65,11 @@ import { apiErrorMessage } from '../../core/api-error';
               <th mat-header-cell *matHeaderCellDef>Role</th>
               <td mat-cell *matCellDef="let user">
                 <mat-form-field appearance="outline" subscriptSizing="dynamic" class="role-select">
-                  <mat-select [value]="user.role?.id ?? null"
-                              (selectionChange)="setRole(user, $event.value)"
-                              [disabled]="savingRoleFor === user.id">
-                    <mat-option [value]="null">— none —</mat-option>
+                  <mat-select multiple
+                              [value]="user.roleIds ?? []"
+                              (selectionChange)="setRoles(user, $event.value)"
+                              [disabled]="savingRoleFor === user.id"
+                              placeholder="— none —">
                     @for (r of rolesQuery.data() ?? []; track r.id) {
                       <mat-option [value]="r.id">{{ r.name }}</mat-option>
                     }
@@ -119,7 +120,7 @@ import { apiErrorMessage } from '../../core/api-error';
     .empty { color: var(--wf-text-3); padding: 24px; text-align: center; }
     /* dynamic subscript: no reserved hint line, so the select sits on the
        row's baseline instead of pushing every row taller. */
-    .role-select { width: 190px; }
+    .role-select { width: 230px; }
   `]
 })
 export class UsersComponent {
@@ -148,17 +149,28 @@ export class UsersComponent {
   /** id of the user whose role is being saved, so its select disables. */
   savingRoleFor: number | null = null;
 
-  setRole(user: User, roleId: number | null) {
-    if ((user.role?.id ?? null) === roleId) return;
+  /** A user may hold several roles; the selector states the whole set. */
+  setRoles(user: User, roleIds: number[]) {
+    const before = [...(user.roleIds ?? [])].sort((a, b) => a - b);
+    const after = [...(roleIds ?? [])].sort((a, b) => a - b);
+    // mat-select fires on open/close as well as on change; without this every
+    // glance at the dropdown would write, bump tokenVersion and sign the user
+    // out of their other sessions.
+    if (before.length === after.length && before.every((v, i) => v === after[i])) return;
+
     this.savingRoleFor = user.id;
-    this.adminService.setUserRole(user.id, roleId).subscribe({
+    this.adminService.setUserRoles(user.id, after).subscribe({
       next: () => {
         this.savingRoleFor = null;
-        const name = (this.rolesQuery.data() ?? []).find((r: Role) => r.id === roleId)?.name;
+        const all = this.rolesQuery.data() ?? [];
+        const names = after
+            .map(id => all.find((r: Role) => r.id === id)?.name)
+            .filter(Boolean)
+            .join(', ');
         this.snack.open(
-          roleId === null
-            ? `Cleared the role for ${user.email}`
-            : `${user.email} is now ${name}`,
+          after.length === 0
+            ? `Cleared all roles for ${user.email}`
+            : `${user.email}: ${names}`,
           'OK', { duration: 4000 });
         // A user holds ONE role, so the list the server returns is the truth;
         // refetch rather than patching the row and hoping they agree.
@@ -169,7 +181,7 @@ export class UsersComponent {
         // Refetch so the select snaps back to the stored value rather than
         // showing a change that did not happen.
         this.queryClient.invalidateQueries({ queryKey: ['users'] });
-        this.snack.open(apiErrorMessage(err, 'Failed to assign the role'),
+        this.snack.open(apiErrorMessage(err, 'Failed to assign roles'),
             'Dismiss', { duration: 5000 });
       },
     });

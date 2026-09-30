@@ -10,7 +10,21 @@ export interface User {
   imageUrl?: string;
   provider: string;
   providerId: string;
-  role?: Role;
+  /**
+   * The tenant Role's NAME, not an object.
+   *
+   * This was declared as `Role` and never was one: the API has always sent a
+   * string here, so `user.role?.name` evaluated to undefined and the portal's
+   * Role column showed a dash for every user regardless of their actual role.
+   * TypeScript could not catch it because the lie was in this interface.
+   */
+  role?: string;
+  /** The tenant Role's id, for changing the assignment. */
+  roleId?: number;
+  /** Every role the user holds, by name. Source of truth since V62. */
+  roles?: string[];
+  /** The same set, by id. */
+  roleIds?: number[];
 }
 
 export interface Role {
@@ -97,5 +111,15 @@ export class AdminService {
    */
   setUserRole(id: number, roleId: number | null): Observable<User> {
     return this.http.post<User>(`${this.apiUrl}/users/${id}/role`, { roleId });
+  }
+
+  /**
+   * Replace the whole set of roles a user holds. Pass [] to clear.
+   *
+   * Replaces rather than adds, so the caller always states the intended set
+   * and there is no separate remove call to forget.
+   */
+  setUserRoles(id: number, roleIds: number[]): Observable<User> {
+    return this.http.put<User>(`${this.apiUrl}/users/${id}/roles`, { roleIds });
   }
 }

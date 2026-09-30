@@ -317,7 +317,14 @@ a tenant they have not signed into yet. *Remediation:* give the bootstrap token 
 onboarding, so the expiry lands after the credential has served its purpose rather than
 before. Needs an operator decision, not a quiet default.
 
-**B-TEN-8 · Medium · No multi-valued `groups` claim; relying parties are limited to one
+**B-TEN-8 · Medium · ~~Relying parties are limited to one role each~~ — PARTLY FIXED
+(V62). A user may now hold several tenant roles and the `roles` claim carries all of them;
+the join table `user_roles` is the source of truth and `users.role_id` shadows the primary
+one for callers written earlier. What remains open is per-relying-party scoping: roles are
+still tenant-global, so `clepsydra:admin` appears in every client's tokens for that tenant.
+A `groups` claim sourced from SCIM membership is the other half. Original note follows.**
+
+**B-TEN-8 (original) · No multi-valued `groups` claim; relying parties are limited to one
 role each.** A token carries `roles`, built by `OidcTokenService.rolesFor(user)` from the
 user's single `users.role_id` plus `SUPERADMIN`. WeldForge has SCIM groups (`V13`) and
 group-to-role mappings (`V15`), but those map an *upstream IdP* group onto a WeldForge role

@@ -138,6 +138,44 @@ class AdminServiceTest {
     }
 
     @Test
+    @DisplayName("the user DTO carries the role's id as well as its name")
+    void userDto_carries_roleId_not_only_name() {
+        // `role` has always been the NAME only, which is enough to display and
+        // not enough to edit: a client changing the assignment must post a
+        // roleId and had no way to learn the current one. The admin portal
+        // typed this field as an object, so `role.name` was undefined and the
+        // Role column showed a dash for every user, whatever their role.
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").tokenVersion(1).build();
+        Role role = Role.builder().id(11L).tenant(tenant).name("clepsydra:admin").build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepo.findByIdAndTenantId(11L, 7L)).thenReturn(Optional.of(role));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var dto = admin.setUserRole(42L, 11L);
+
+        assertThat(dto.getRole()).isEqualTo("clepsydra:admin");
+        assertThat(dto.getRoleId()).isEqualTo(11L);
+    }
+
+    @Test
+    @DisplayName("clearing the role clears both the name and the id")
+    void userDto_roleId_is_null_when_cleared() {
+        Role oldRole = Role.builder().id(11L).tenant(tenant).name("clepsydra:admin").build();
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").role(oldRole).tokenVersion(1).build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var dto = admin.setUserRole(42L, null);
+
+        assertThat(dto.getRole()).isNull();
+        assertThat(dto.getRoleId()).isNull();
+    }
+
+    @Test
     @DisplayName("setUserRole(null) clears the assignment so an admin can demote a user")
     void setUserRole_nullClearsAssignment() {
         Role oldRole = Role.builder().id(11L).tenant(tenant).name("SUPERADMIN").build();
@@ -277,5 +315,118 @@ class AdminServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
 
         verify(userRepo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("setUserRoles assigns several roles at once")
+    void setUserRoles_assignsMany() {
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").tokenVersion(1).build();
+        Role admin1 = Role.builder().id(11L).tenant(tenant).name("clepsydra:admin").build();
+        Role audit = Role.builder().id(12L).tenant(tenant).name("auditor").build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepo.findByIdAndTenantId(11L, 7L)).thenReturn(Optional.of(admin1));
+        when(roleRepo.findByIdAndTenantId(12L, 7L)).thenReturn(Optional.of(audit));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var dto = admin.setUserRoles(42L, List.of(11L, 12L));
+
+        assertThat(dto.getRoles()).containsExactlyInAnyOrder("clepsydra:admin", "auditor");
+        assertThat(dto.getRoleIds()).containsExactlyInAnyOrder(11L, 12L);
+        assertThat(target.getRoles()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("the primary role is the first by name, so it is repeatable")
+    void setUserRoles_primaryIsStable() {
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").tokenVersion(1).build();
+        Role zed = Role.builder().id(11L).tenant(tenant).name("zebra").build();
+        Role alpha = Role.builder().id(12L).tenant(tenant).name("alpha").build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepo.findByIdAndTenantId(11L, 7L)).thenReturn(Optional.of(zed));
+        when(roleRepo.findByIdAndTenantId(12L, 7L)).thenReturn(Optional.of(alpha));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Listed zebra first; alpha still wins, because "primary" must not
+        // depend on the order the caller happened to type.
+        var dto = admin.setUserRoles(42L, List.of(11L, 12L));
+
+        assertThat(dto.getRole()).isEqualTo("alpha");
+        assertThat(dto.getRoleId()).isEqualTo(12L);
+    }
+
+    @Test
+    @DisplayName("setUserRoles replaces the set rather than adding to it")
+    void setUserRoles_replaces() {
+        Role old = Role.builder().id(11L).tenant(tenant).name("old").build();
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").role(old).tokenVersion(1)
+                .roles(new java.util.LinkedHashSet<>(java.util.Set.of(old))).build();
+        Role fresh = Role.builder().id(12L).tenant(tenant).name("fresh").build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepo.findByIdAndTenantId(12L, 7L)).thenReturn(Optional.of(fresh));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var dto = admin.setUserRoles(42L, List.of(12L));
+
+        assertThat(dto.getRoles()).containsExactly("fresh");
+        assertThat(target.getRoles()).extracting(Role::getName).containsExactly("fresh");
+    }
+
+    @Test
+    @DisplayName("an empty list clears every role, and the primary with it")
+    void setUserRoles_emptyClears() {
+        Role old = Role.builder().id(11L).tenant(tenant).name("old").build();
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").role(old).tokenVersion(1)
+                .roles(new java.util.LinkedHashSet<>(java.util.Set.of(old))).build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var dto = admin.setUserRoles(42L, List.of());
+
+        assertThat(dto.getRoles()).isEmpty();
+        assertThat(dto.getRole()).isNull();
+        assertThat(target.getRole()).isNull();
+    }
+
+    @Test
+    @DisplayName("a role from another tenant is refused, not silently skipped")
+    void setUserRoles_rejectsForeignRole() {
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").tokenVersion(1).build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepo.findByIdAndTenantId(99L, 7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> admin.setUserRoles(42L, List.of(99L)))
+                .isInstanceOf(EntityNotFoundException.class);
+        // Nothing partially applied.
+        assertThat(target.getRoles()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("setUserRole still works, and keeps the set in step with it")
+    void setUserRole_keepsSetInStep() {
+        User target = User.builder()
+                .id(42L).tenant(tenant).email("alice@acme.test").tokenVersion(1).build();
+        Role role = Role.builder().id(11L).tenant(tenant).name("solo").build();
+        when(tenantAccessor.requireTenantId()).thenReturn(7L);
+        when(userRepo.findByIdAndTenantId(42L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepo.findByIdAndTenantId(11L, 7L)).thenReturn(Optional.of(role));
+        when(userRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var dto = admin.setUserRole(42L, 11L);
+
+        // users.role_id and user_roles must never disagree; one writer.
+        assertThat(dto.getRole()).isEqualTo("solo");
+        assertThat(dto.getRoles()).containsExactly("solo");
+        assertThat(target.getRole()).isSameAs(role);
+        assertThat(target.getRoles()).containsExactly(role);
     }
 }

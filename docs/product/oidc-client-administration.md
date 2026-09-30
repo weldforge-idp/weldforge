@@ -153,22 +153,40 @@ stay signed in.
 
 ## Roles in tokens
 
-A token carries a `roles` claim: the user's single WeldForge role, plus
-`SUPERADMIN` where it applies.
+A token carries a `roles` claim: every tenant role the user holds, plus
+`SUPERADMIN` where it applies. It has always been a JSON array; since V62 it
+can hold more than one entry.
+
+```json
+"roles": ["auditor", "clepsydra:admin"]
+```
+
+Names are sorted, so the claim is stable between issues and a relying party
+can compare two tokens without normalising.
+
+Assign them on the portal's **Users** page — the Role column is a multi-select.
+Or `PUT /api/admin/users/{id}/roles` with `{"roleIds": [8, 9]}`, which
+**replaces** the whole set; send `[]` to clear it. The older
+`POST /users/{id}/role` still works and is the same operation with a set of
+zero or one.
+
+A relying party with its own role model usually names WeldForge roles after
+what it needs — `myapp:admin`, `myapp:auditor` — and reads the array.
+
+**Changing a user's roles bumps their token version.** Tokens already issued
+keep the old set until they expire; the change lands on the next mint.
+
+**Roles are tenant-global, not per-relying-party.** A role named
+`clepsydra:admin` appears in every client's tokens for that tenant, not just
+Clepsydra's. Prefixing by application is a convention that keeps them legible;
+it is not isolation. Per-RP scoping is on the backlog as part of `B-TEN-8`.
 
 **There is no `groups` claim.** SCIM groups and group-to-role mappings exist,
 but they map an upstream IdP group onto a WeldForge role during provisioning
-and are never emitted as a claim. A relying party with its own role model
-usually names a WeldForge role after what it needs (`myapp:admin`) and reads
-`roles`.
+and are never emitted directly.
 
-Two limits to design around: a user holds **one** role, so a scheme needing
-several strings does not fit; and the role is tenant-global, so every relying
-party in that tenant sees it. A multi-valued `groups` claim sourced from SCIM
-membership is on the backlog — see
-`docs/security/hardening-backlog.md`.
-
----
+**Deleting a role that users hold is refused**, naming how many hold it.
+Remove it from them first.
 
 ## Customising the login and password-reset forms
 
