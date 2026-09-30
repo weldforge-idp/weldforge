@@ -16,6 +16,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
@@ -195,6 +196,66 @@ class OidcClientUpdateTest {
                     .name("Renamed")
                     .build())).doesNotThrowAnyException();
             assertThat(existing.getName()).isEqualTo("Renamed");
+        }
+    }
+
+    @Nested
+    @DisplayName("create")
+    class Create {
+
+        @Test
+        @DisplayName("persists a refresh TTL given at registration")
+        void create_persists_ttl() {
+            // It was accepted and dropped: the field was on the DTO and in the
+            // update path, so a caller sending it at create got a 200 and a
+            // client that inherited the default anyway.
+            when(repository.findByTenantIdAndClientId(anyLong(), any())).thenReturn(Optional.empty());
+            when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            OidcClientDto out = service.create(OidcClientDto.builder()
+                    .name("clepsydra")
+                    .redirectUris(List.of("http://127.0.0.1/callback"))
+                    .scopes(List.of("openid"))
+                    .grantTypes(List.of("authorization_code", "refresh_token"))
+                    .publicClient(true)
+                    .refreshTokenTtlSeconds(1_209_600)
+                    .build());
+
+            assertThat(out.getRefreshTokenTtlSeconds()).isEqualTo(1_209_600);
+        }
+
+        @Test
+        @DisplayName("omitting it leaves the client inheriting")
+        void create_without_ttl_inherits() {
+            when(repository.findByTenantIdAndClientId(anyLong(), any())).thenReturn(Optional.empty());
+            when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            OidcClientDto out = service.create(OidcClientDto.builder()
+                    .name("plain")
+                    .redirectUris(List.of("http://127.0.0.1/callback"))
+                    .scopes(List.of("openid"))
+                    .grantTypes(List.of("authorization_code"))
+                    .publicClient(true)
+                    .build());
+
+            assertThat(out.getRefreshTokenTtlSeconds()).isNull();
+        }
+
+        @Test
+        @DisplayName("a non-positive TTL is refused at create, as it is on update")
+        void create_rejects_non_positive_ttl() {
+            when(repository.findByTenantIdAndClientId(anyLong(), any())).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.create(OidcClientDto.builder()
+                    .name("bad")
+                    .redirectUris(List.of("http://127.0.0.1/callback"))
+                    .scopes(List.of("openid"))
+                    .grantTypes(List.of("authorization_code"))
+                    .publicClient(true)
+                    .refreshTokenTtlSeconds(0)
+                    .build()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("must be positive");
         }
     }
 }

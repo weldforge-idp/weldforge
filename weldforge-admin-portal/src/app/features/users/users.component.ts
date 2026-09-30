@@ -53,6 +53,18 @@ import { apiErrorMessage } from '../../core/api-error';
               <td mat-cell *matCellDef="let user">{{ user.name || '—' }}</td>
             </ng-container>
 
+            <!-- Whether the address was ever confirmed. It gates
+                 email_verified in the token, which relying parties use to
+                 decide whether an address proves anything. -->
+            <ng-container matColumnDef="verified">
+              <th mat-header-cell *matHeaderCellDef>Email verified</th>
+              <td mat-cell *matCellDef="let user">
+                <span class="status" [class.on]="user.emailVerified">
+                  {{ user.emailVerified ? 'verified' : 'no' }}
+                </span>
+              </td>
+            </ng-container>
+
             <ng-container matColumnDef="provider">
               <th mat-header-cell *matHeaderCellDef>Provider</th>
               <td mat-cell *matCellDef="let user" class="mono">{{ user.provider }}</td>
@@ -121,6 +133,8 @@ import { apiErrorMessage } from '../../core/api-error';
     /* dynamic subscript: no reserved hint line, so the select sits on the
        row's baseline instead of pushing every row taller. */
     .role-select { width: 230px; }
+    .status { font-size: 12px; color: var(--wf-text-3); }
+    .status.on { color: var(--wf-green, #2e7d32); font-weight: 600; }
   `]
 })
 export class UsersComponent {
@@ -129,7 +143,7 @@ export class UsersComponent {
   private queryClient = injectQueryClient();
   private tenantPicker = inject(TenantPickerService);
 
-  displayedColumns = ['email', 'name', 'provider', 'role', 'actions'];
+  displayedColumns = ['email', 'name', 'provider', 'verified', 'role', 'actions'];
 
   // The tenant slug is part of the query key so the list is cached and
   // refetched per tenant: when a SUPER_ADMIN switches tenant in the
