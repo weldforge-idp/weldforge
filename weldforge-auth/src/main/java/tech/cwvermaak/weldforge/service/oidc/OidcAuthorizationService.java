@@ -197,7 +197,15 @@ public class OidcAuthorizationService {
         // sets max_authentication_age_s then the most recent factor use
         // must be within that window. Otherwise we reject with a dedicated
         // exception the controller turns into a step-up challenge.
-        enforceStepUp(client, user, request.maxAge());
+        // NOT request.maxAge(). The OIDC max_age parameter asks when the USER
+        // last authenticated, and the required answer is to re-authenticate --
+        // which OidcAuthorizationController now does before reaching here.
+        // Feeding it in as MFA-factor freshness is what ended a browser flow
+        // at 400 mfa_required for a session that was perfectly fresh.
+        //
+        // What remains is the deployment's own step-up policy: the client's
+        // max_authentication_age_s and the tenant default (PRD SSO-05).
+        enforceStepUp(client, user);
 
         String rawCode = generateCode();
         OAuthAuthorizationCode row = OAuthAuthorizationCode.builder()
@@ -430,7 +438,7 @@ public class OidcAuthorizationService {
      * complete a fresh factor challenge. The controller catches this and
      * redirects to the MFA challenge page instead of issuing a code.
      */
-    private void enforceStepUp(OidcClient client, User user, Integer requestedMaxAge) {
+    private void enforceStepUp(OidcClient client, User user) {
         // Determine the effective max_age: OIDC max_age (request) overrides
         // client.max_authentication_age_s when smaller; the tenant default
         // applies when the client hasn't set one.
@@ -445,10 +453,6 @@ public class OidcAuthorizationService {
                 clientMax > 0 ? clientMax : Integer.MAX_VALUE,
                 tenantDefault > 0 ? tenantDefault : Integer.MAX_VALUE
         );
-        if (requestedMaxAge != null && requestedMaxAge > 0) {
-            effectiveMax = Math.min(effectiveMax, requestedMaxAge);
-        }
-
         boolean clientRequiresMfa = Boolean.TRUE.equals(client.getRequireMfa());
 
         // Fast path — no MFA required anywhere.

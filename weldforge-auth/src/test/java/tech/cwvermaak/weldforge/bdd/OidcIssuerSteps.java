@@ -608,6 +608,14 @@ public class OidcIssuerSteps {
         assertThat((String) lastDiscovery.get("registration_endpoint")).endsWith("/oauth2/register");
     }
 
+    @Then("the discovery document does not advertise a registration endpoint")
+    public void discoveryHasNoRegistration() {
+        assertThat(lastDiscovery.get("registration_endpoint"))
+                .as("dynamic registration is off by default; advertising it would promise "
+                    + "an endpoint that refuses every caller")
+                .isNull();
+    }
+
     @SuppressWarnings("unchecked")
     @Then("the discovery document lists auth method {string}")
     public void discoveryListsAuthMethod(String method) {
@@ -702,6 +710,18 @@ public class OidcIssuerSteps {
     public void clientRequiresMfa(String clientId) {
         clientRepo.findByTenantIdAndClientId(acme.getId(), clientId)
                 .orElseThrow().setRequireMfa(true);
+    }
+
+    /**
+     * The DEPLOYMENT's step-up window, as distinct from the OIDC request
+     * parameter. This one is WeldForge policy and still means factor
+     * freshness; {@code max_age} on the wire asks a different question and is
+     * answered by re-authentication at the controller.
+     */
+    @Given("{string} requires a factor used within {int} seconds")
+    public void clientStepUpWindow(String clientId, int seconds) {
+        clientRepo.findByTenantIdAndClientId(acme.getId(), clientId)
+                .orElseThrow().setMaxAuthenticationAgeSeconds(seconds);
     }
 
     @Given("alice has a verified factor last used {int} minutes ago")

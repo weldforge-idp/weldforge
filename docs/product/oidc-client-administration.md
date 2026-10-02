@@ -209,3 +209,53 @@ subdomain —
 site. The legacy `?tenant=<slug>` query-parameter form was removed; see
 `docs/auth-url-spec.md`. The path prefix `/t/{slug}/...` is reserved for
 OIDC and SAML deep-link endpoints and stays on the apex host.
+
+---
+
+## Dynamic client registration (RFC 7591 / 7592)
+
+**Off by default.** With it on, anyone who can reach a tenant can create OIDC
+clients in it, so it is a deployment decision rather than a default:
+
+```
+app.security.oidc.dynamic-registration-enabled: true
+# or APP_OIDC_DYNAMIC_REGISTRATION_ENABLED=true
+```
+
+Turn it on for a self-hosted install, or to run the Dynamic OP conformance
+profile. On the hosted service it stays off.
+
+`registration_endpoint` appears in the discovery document **only when the flag
+is on**. It used to be advertised unconditionally while the endpoint answered
+403 to every caller it exists for, which is the kind of untruth a client
+library believes.
+
+### Managing a registration afterwards
+
+The registration response carries a `registration_client_uri` and a
+`registration_access_token`. That token is shown once and only its hash is
+stored; it is the sole credential for the management endpoint, because a
+public client has no secret and admin credentials would make it a different
+surface.
+
+| Method | Effect |
+|---|---|
+| `GET` | Read the current registration |
+| `PUT` | Replace it (§2.2) |
+| `DELETE` | Deregister (§2.3) |
+
+**`PUT` replaces, it does not merge.** Send the client's full intended
+metadata: anything omitted is treated as removed, per §2.2. This is the
+opposite of the admin `PUT`, which leaves omitted fields alone — a client
+sending only the field it wants changed would otherwise keep settings it
+believes it has dropped. `client_id` must be present and must match the URI.
+
+Two things a client may not change about itself: `client_id` (it is the `aud`
+of every token in circulation) and `token_endpoint_auth_method` (switching it
+would either hand a public client a secret it cannot keep or strip
+authentication from a confidential one). Either means registering a new
+client.
+
+RFC 7591 defines no `web_origins`, but a public client with a browser redirect
+URI is refused without one. Send `web_origins` explicitly, or the origins are
+derived from the redirect URIs — the same rule the portal applies.
