@@ -39,7 +39,7 @@ limitation) · **Not implemented** · **Declined** (a recorded decision, see
 | | RFC 9068 JWT access-token profile | Declined ([ADR 0001](../adr/0001-rfc9068-jwt-access-token-profile.md)) |
 | | RFC 8414 authorization server metadata | Not implemented; OIDC Discovery serves the same purpose |
 | | PAR, JAR, JARM, DPoP, mTLS, FAPI 2.0 | Not implemented |
-| OpenID Connect | Core 1.0: authorization code flow | Partial, see D1 and D2 |
+| OpenID Connect | Core 1.0: authorization code flow | Yes — D1 and D2 fixed 2026-10-02 |
 | | Discovery 1.0 | Implemented, per tenant |
 | | Dynamic Client Registration 1.0 | Implemented |
 | | RP-Initiated Logout 1.0 | Implemented |
@@ -113,7 +113,7 @@ Each tenant is its own authorization server. Its issuer is
   `id_token_hint`. The `post_logout_redirect_uri` is validated against the
   client's registered list.
 - **Not implemented:** `claims` and `request` / `request_uri` parameters, `acr`
-  / `acr_values`, pairwise subjects, `prompt=login` (D2), front- and
+  / `acr_values`, pairwise subjects, front- and
   back-channel logout, and session management.
 
 ## 3. SAML 2.0
@@ -206,8 +206,8 @@ optional feature. Deactivation is `active=false`.
 
 | # | Standard | Deviation | Impact | Plan |
 |---|---|---|---|---|
-| D1 | OIDC Core §3.1.2.1 `max_age` | Enforced as MFA-factor freshness, not time since authentication. When exceeded, or when the user has no MFA factor, `/authorize` answers `400 {"error":"mfa_required"}` in the browser instead of re-authenticating the user or redirecting to the RP. `mfa_required` is not a registered error code. | An RP that sends `max_age` breaks the login of any user without MFA. | Re-authenticate on stale `auth_time`; keep MFA step-up as a separate client policy. Not yet scheduled. |
-| D2 | OIDC Core §3.1.2.1 `prompt=login` | Ignored; an existing session is reused. The spec says SHOULD re-authenticate, and MUST error if it cannot. | An RP cannot force a fresh login. | Implement with D1. |
+| D1 | OIDC Core §3.1.2.1 `max_age` | **FIXED 2026-10-02.** `max_age` is now compared against the session's `auth_time` and a stale session is re-authenticated by redirect to sign-in; with `prompt=none` it returns `login_required` to the RP. It no longer feeds the MFA step-up check, so a fresh session is never answered with `400 mfa_required`. The client's `max_authentication_age_s` and the tenant default still mean factor freshness — that is deployment policy, and a different question from the one the parameter asks. | — | Done. |
+| D2 | OIDC Core §3.1.2.1 `prompt=login` | **FIXED 2026-10-02.** `prompt` is now parsed as the space-delimited list it is defined to be, not compared as a single token — `prompt="login consent"` previously matched neither branch. `login` and `select_account` re-authenticate; `none` combined with any other value is `invalid_request`; a request that returns no fresher fails with `login_required` rather than looping. | — | Done. |
 | D3 | RFC 7636 / OAuth 2.1 | Clients registered before the PKCE default can still run a code flow without a challenge. | Those clients lack PKCE's protection against code interception. | Refuse once `sso.oidc.pkce.missing` reads zero. |
 | D4 | RFC 6749 §5.2 | An unknown client at the token endpoint gets `400 invalid_client`. The spec wants `401`, with `WWW-Authenticate` when HTTP Basic was attempted. | Cosmetic for most clients. | Backlog. |
 | D5 | SAML 2.0 Core (Issuer) | The default assertion `Issuer` is `{slug}-idp`, not the metadata entityID. The entityID is available per SP by opt-in. | A strictly validating SP must opt in or be configured with `{slug}-idp`. | Keep the opt-in; changing it globally breaks existing SPs. |
@@ -215,6 +215,7 @@ optional feature. Deactivation is `active=false`.
 | D7 | NIST SP 800-63B §5.1.1.2 (length) | Maximum 72 bytes (the bcrypt limit), which for mostly multi-byte characters can fall below the recommended 64 characters. | Very long non-ASCII passphrases are refused, never silently truncated. | Only if storage moves to pre-hashed bcrypt or Argon2id. |
 | D8 | NIST SP 800-63B §5.1.1.2 (screening) | Breach screening fails open if the corpus is unreachable. | An outage of a third-party service cannot block registration or reset; screening pauses, logged and metered. | Alert on `sso.password.breach_check{outcome="unavailable"}`; mirror the corpus locally if it becomes frequent. |
 | D9 | XML Encryption 1.1 | Assertion encryption uses AES-CBC and RSA-OAEP with SHA-1, not AES-GCM and SHA-256. | Legacy algorithms; changing them changes what the SP must decrypt. | Per-SP opt-in to GCM (B-SAML-2). |
+| D11 | RFC 7591 / 7592 dynamic registration | **FIXED 2026-10-02.** Registration was advertised in discovery and answered **403 to every caller it exists for**: `register()` delegated to the admin `create()`, which requires a tenant admin that an unauthenticated DCR POST can never be. Verified in production against `leap` before the fix. There is now an explicit deployment flag, `app.security.oidc.dynamic-registration-enabled`, **default off** — and `registration_endpoint` is advertised only when it is on, so discovery stops promising an endpoint nobody can use. RFC 7592 gained the missing `PUT`: the management URI could previously read and delete a registration but not change it, so a client needing one more redirect URI had to re-register and break every token it held. | An RP could not self-register, and a self-registered client could not maintain itself. | Done. Enable the flag to run the Dynamic OP profile. |
 | D10 | Key management | The shared HS512 platform secret has no key ring. | Rotation is a synchronised cutover across four services. | CONF-7.4, when the consumers support multiple keys. |
 
 ---

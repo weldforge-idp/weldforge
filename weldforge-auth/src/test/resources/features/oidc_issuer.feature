@@ -123,13 +123,21 @@ Feature: OIDC issuer
 
   Scenario: Discovery advertises every grant the token endpoint implements
     # CONF-4.2. Capability detection is the point of discovery; it previously
-    # omitted the refresh grant and the registration endpoint, both live.
+    # omitted the refresh grant, which is live.
     When I fetch the discovery document for tenant "acme"
     Then the discovery document lists grant type "refresh_token"
     And the discovery document lists grant type "authorization_code"
-    And the discovery document advertises a registration endpoint
     And the discovery document lists auth method "client_secret_basic"
     And the discovery document lists auth method "client_secret_post"
+
+  Scenario: Discovery does not advertise dynamic registration when it is disabled
+    # D11. registration_endpoint was published unconditionally while the
+    # endpoint answered 403 to every caller it exists for, because register()
+    # required a tenant admin no DCR caller can be. Advertising a capability
+    # that refuses everyone is the kind of untruth a client library believes.
+    # Registration is off by default, so discovery must stay quiet about it.
+    When I fetch the discovery document for tenant "acme"
+    Then the discovery document does not advertise a registration endpoint
 
   # --- Sprint 4: OIDC Core request parameters --------------------------
 
@@ -176,18 +184,32 @@ Feature: OIDC issuer
     When alice's consent for "acme-app" covering "openid" is checked
     Then the standing consent applies
 
-  Scenario: max_age forces a fresh factor when the last one is stale
-    # CONF-2.1. The step-up machinery existed but nothing on the wire could
-    # reach it: /authorize never bound max_age and passed a literal null.
+  Scenario: The deployment's own step-up window forces a fresh factor
+    # The client's max_authentication_age_s, NOT the OIDC max_age parameter.
+    # This is WeldForge policy and still means factor freshness.
     Given "acme-app" requires MFA
+    And "acme-app" requires a factor used within 600 seconds
     And alice has a verified factor last used 40 minutes ago
     And alice generates a PKCE verifier and challenge
     When alice authorizes "acme-app" for scope "openid email" with max_age 600
     Then a step-up challenge is required
 
-  Scenario: A recent factor satisfies max_age without re-prompting
+  Scenario: A recent factor satisfies the step-up window without re-prompting
     Given "acme-app" requires MFA
+    And "acme-app" requires a factor used within 600 seconds
     And alice has a verified factor last used 2 minutes ago
+    And alice generates a PKCE verifier and challenge
+    When alice authorizes "acme-app" for scope "openid email" with max_age 600
+    Then an authorization code is issued without a step-up challenge
+
+  Scenario: The OIDC max_age parameter does not fail the flow on a stale factor
+    # D1. max_age asks when the USER last authenticated, and the required
+    # answer is to re-authenticate -- which the controller now does. Feeding
+    # it in as factor freshness ended a browser flow at 400 mfa_required for
+    # a session that was perfectly fresh. The client sets no step-up window
+    # here, so nothing but max_age could cause a challenge.
+    Given "acme-app" requires MFA
+    And alice has a verified factor last used 40 minutes ago
     And alice generates a PKCE verifier and challenge
     When alice authorizes "acme-app" for scope "openid email" with max_age 600
     Then an authorization code is issued without a step-up challenge

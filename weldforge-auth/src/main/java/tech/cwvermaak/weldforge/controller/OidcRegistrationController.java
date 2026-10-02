@@ -44,6 +44,23 @@ import java.util.Map;
 @Slf4j
 public class OidcRegistrationController {
 
+    /**
+     * Whether this deployment accepts RFC 7591 dynamic registration.
+     *
+     * <p>Default OFF. Registration previously answered 403 to every
+     * unauthenticated caller because it required a tenant admin, so off is
+     * the behaviour that already shipped — the difference is that it is now
+     * a stated decision with a legible refusal, and discovery stops
+     * advertising an endpoint nobody can use.
+     *
+     * <p>Turn it on for a self-hosted deployment, or to run the Dynamic OP
+     * conformance profile. On the hosted service it stays off: anyone on the
+     * internet could otherwise create clients in a tenant.
+     */
+    @org.springframework.beans.factory.annotation.Value(
+            "${app.security.oidc.dynamic-registration-enabled:false}")
+    private boolean dynamicRegistrationEnabled;
+
     private final OidcClientService oidcClientService;
     private final OidcClientRepository oidcClientRepository;
     private final TenantRepository tenantRepository;
@@ -62,6 +79,15 @@ public class OidcRegistrationController {
             @PathVariable String slug,
             @RequestBody Map<String, Object> registrationRequest,
             HttpServletRequest request) {
+
+        if (!dynamicRegistrationEnabled) {
+            // A refusal that names itself. The old 403 came from an admin
+            // check deep in the service and read as "you are not an admin",
+            // which is true and useless: no DCR caller ever is one.
+            throw new tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationException(
+                    "invalid_request",
+                    "Dynamic client registration is not enabled on this deployment");
+        }
 
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant not found: " + slug));
@@ -88,11 +114,21 @@ public class OidcRegistrationController {
         // Build the DTO for the service layer. Passing token_endpoint_auth_method
         // through lets the service classify the client: 'none' becomes a public
         // PKCE-only client (no secret), anything else a confidential client.
+        // RFC 7591 has no web_origins, but a public client with a browser
+        // redirect is refused without one (PR #126) -- correctly, since it
+        // could not sign anyone in. Derive it from the redirect URIs rather
+        // than refuse a spec-conformant request that has no way to express it.
+        List<String> webOrigins = stringList(registrationRequest.get("web_origins"));
+        if (webOrigins.isEmpty()) {
+            webOrigins = browserOriginsOf(redirectUris);
+        }
+
         OidcClientDto dto = OidcClientDto.builder()
                 .name(clientName)
                 .redirectUris(redirectUris)
                 .grantTypes(grantTypes)
                 .scopes(scopes)
+                .webOrigins(webOrigins)
                 .tokenEndpointAuthMethod(tokenEndpointAuthMethod)
                 .build();
 
@@ -100,7 +136,9 @@ public class OidcRegistrationController {
         // We need to use the service directly, which requires tenant context.
         // The OidcClientService uses TenantAccessor, so the tenant resolver
         // filter should have already set the slug context from the URL.
-        OidcClientDto created = oidcClientService.create(dto);
+        // Not create(): that requires a tenant admin, which is why this
+        // endpoint answered 403 to every caller it exists for.
+        OidcClientDto created = oidcClientService.createForDynamicRegistration(dto);
 
         // Build RFC 7591 response
         String baseUrl = baseUrl(request);
@@ -183,6 +221,126 @@ public class OidcRegistrationController {
                 .orElseThrow(() -> new EntityNotFoundException("Tenant not found: " + slug));
         OidcClient client = authorise(tenant, clientId, request);
         return ResponseEntity.ok(metadata(client, slug, request));
+    }
+
+    /**
+     * Update this client's own registration (RFC 7592 §2.2).
+     *
+     * <p>The registration response has advertised a
+     * {@code registration_client_uri} since it was written, and GET and DELETE
+     * answered on it — but there was no PUT, so the management URI we handed
+     * every dynamically registered client could read and destroy its
+     * registration and not change it. A client that needed one more redirect
+     * URI had to delete itself and register again, which mints a new
+     * {@code client_id} and breaks every token already issued to it.
+     *
+     * <p>RFC 7592 §2.2 is a REPLACE, not a merge: the request carries the
+     * client's full intended metadata, and omitted fields are to be treated
+     * as removed. That is the opposite of the admin PUT, which leaves nulls
+     * alone — so this does NOT simply delegate to it. A client sending only
+     * the field it wants changed would, under merge semantics, keep settings
+     * it believes it has dropped.
+     *
+     * <p>{@code client_id} must be present and must match the URI, per §2.2.
+     * {@code client_secret} may be echoed back but is never changed here;
+     * rotation is a separate, deliberate act.
+     */
+    @PutMapping(value = "/t/{slug}/oauth2/register/{clientId}",
+                consumes = MediaType.APPLICATION_JSON_VALUE,
+                produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> update(@PathVariable String slug,
+                                                      @PathVariable String clientId,
+                                                      @RequestBody Map<String, Object> body,
+                                                      HttpServletRequest request) {
+        Tenant tenant = tenantRepository.findBySlug(slug)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant not found: " + slug));
+        OidcClient client = authorise(tenant, clientId, request);
+
+        // §2.2: the body MUST include client_id, and it MUST match the one
+        // being managed. Without this a client holding one registration token
+        // could post another client's id and be answered about that client.
+        Object bodyClientId = body == null ? null : body.get("client_id");
+        if (bodyClientId == null || !clientId.equals(bodyClientId.toString())) {
+            throw new IllegalArgumentException(
+                    "client_id is required and must match the registration being updated");
+        }
+
+        // A client may not promote itself. token_endpoint_auth_method decides
+        // public vs confidential, and switching it would either hand a public
+        // client a secret it cannot keep or strip authentication from a
+        // confidential one -- neither is this endpoint's to do.
+        Object method = body.get("token_endpoint_auth_method");
+        if (method != null && !method.toString().equals(client.getTokenEndpointAuthMethod())) {
+            throw new IllegalArgumentException(
+                    "token_endpoint_auth_method cannot be changed; register a new client instead");
+        }
+
+        List<String> redirectUris = stringList(body.get("redirect_uris"));
+        if (redirectUris.isEmpty()) {
+            throw new IllegalArgumentException("redirect_uris must be present and non-empty");
+        }
+
+        // REPLACE semantics: everything the client did not send is cleared,
+        // which is what §2.2 requires and why each list is read unconditionally
+        // rather than only when present.
+        OidcClientDto patch = OidcClientDto.builder()
+                .name(body.get("client_name") instanceof String s ? s : null)
+                .redirectUris(redirectUris)
+                .scopes(body.get("scope") instanceof String s && !s.isBlank()
+                        ? List.of(s.trim().split("\s+")) : List.of("openid"))
+                .grantTypes(stringList(body.get("grant_types")).isEmpty()
+                        ? List.of("authorization_code") : stringList(body.get("grant_types")))
+                .postLogoutRedirectUris(stringList(body.get("post_logout_redirect_uris")))
+                .webOrigins(stringList(body.get("web_origins")))
+                .build();
+
+        // updateById, not update: the registration access token already proved
+        // the caller may manage this client, and there is no admin session here.
+        oidcClientService.updateById(client.getId(), patch);
+
+        auditService.recordAnonymous(AuditEventTypes.OIDC_CLIENT_DYNAMIC_UPDATE,
+                tech.cwvermaak.weldforge.model.AuditEvent.Outcome.SUCCESS,
+                tenant.getId(), null,
+                AuditEventTypes.TARGET_OIDC_CLIENT, clientId,
+                AuditService.meta("tenant_slug", slug));
+
+        OidcClient refreshed = authorise(tenant, clientId, request);
+        return ResponseEntity.ok(metadata(refreshed, slug, request));
+    }
+
+    /**
+     * The origins implied by redirect URIs that run in a browser.
+     *
+     * <p>Mirrors the portal's rule and the server's guard: only a real
+     * http(s) host implies a browser. RFC 8252 loopback and private-use
+     * schemes correctly contribute nothing.
+     */
+    private static List<String> browserOriginsOf(List<String> redirectUris) {
+        java.util.LinkedHashSet<String> origins = new java.util.LinkedHashSet<>();
+        for (String raw : redirectUris) {
+            try {
+                java.net.URI uri = java.net.URI.create(raw.trim());
+                String scheme = uri.getScheme();
+                String host = uri.getHost();
+                if (scheme == null || host == null) continue;
+                if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) continue;
+                if (host.equalsIgnoreCase("localhost") || "127.0.0.1".equals(host)
+                        || "[::1]".equals(host) || "::1".equals(host)) continue;
+                origins.add(uri.getPort() < 0
+                        ? scheme + "://" + host
+                        : scheme + "://" + host + ":" + uri.getPort());
+            } catch (IllegalArgumentException ignored) {
+                // Not a URI we understand; the service validates separately.
+            }
+        }
+        return List.copyOf(origins);
+    }
+
+    /** Read a JSON array of strings; anything else yields an empty list. */
+    private static List<String> stringList(Object raw) {
+        return raw instanceof List<?> list
+                ? list.stream().filter(java.util.Objects::nonNull).map(Object::toString).toList()
+                : List.of();
     }
 
     /**
