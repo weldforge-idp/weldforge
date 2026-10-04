@@ -116,13 +116,58 @@ public class OidcAuthorizationController {
         // does a silent session check, usually in a hidden iframe. Redirecting
         // to a login page there hijacks the user's browser to render a form
         // nobody can see, which is the exact behaviour the parameter forbids.
-        boolean promptNone = "none".equals(prompt);
-        if (promptNone && (email == null || email.isBlank() || "anonymousUser".equals(email))) {
+        OidcPrompt prompts = OidcPrompt.parse(prompt);
+        if (prompts.noneCombinedWithOthers()) {
+            throw new OidcAuthorizationException("invalid_request",
+                    "prompt=none cannot be combined with other prompt values",
+                    redirectUri, state);
+        }
+        boolean promptNone = prompts.has(OidcPrompt.NONE);
+        boolean authenticated = !(email == null || email.isBlank() || "anonymousUser".equals(email));
+
+        if (promptNone && !authenticated) {
             throw new OidcAuthorizationException("login_required",
                     "No active session and prompt=none forbids interaction", redirectUri, state);
         }
 
-        if (email == null || email.isBlank() || "anonymousUser".equals(email)) {
+        // CONF-2.x / OIDC Core §3.1.2.1 + §3.1.2.3.
+        //
+        // Two different things end here, and both mean "this session is not
+        // fresh enough, send the user back through sign-in":
+        //
+        //   prompt=login   -- the RP demands a new authentication regardless
+        //                     of how recent the current one is.
+        //   max_age=N      -- the RP accepts the session only if auth_time is
+        //                     within N seconds.
+        //
+        // max_age previously fell through to enforceStepUp, which treats it
+        // as MFA-FACTOR freshness and throws, ending a browser flow at a
+        // 400 mfa_required. That is a different question: the spec asks when
+        // the USER last authenticated, not when they last touched a second
+        // factor, and the required response is to re-authenticate rather
+        // than to fail. The client/tenant step-up policy still means what it
+        // always did -- see enforceStepUp -- it simply no longer answers for
+        // the request parameter.
+        if (authenticated && needsReauthentication(prompts, maxAge, request)) {
+            if (promptNone) {
+                // Interaction is required and forbidden at the same time.
+                throw new OidcAuthorizationException("login_required",
+                        "Re-authentication required but prompt=none forbids interaction",
+                        redirectUri, state);
+            }
+            if (reauthDeadline(request) != null) {
+                // We already sent them to sign in once for this request and
+                // came back no fresher. Fail visibly rather than bouncing
+                // forever: an infinite redirect is far harder to diagnose
+                // than a protocol error naming the cause.
+                throw new OidcAuthorizationException("login_required",
+                        "Re-authentication was requested but the session did not change",
+                        redirectUri, state);
+            }
+            return redirectToLogin(slug, markReauth(currentUrl(request)));
+        }
+
+        if (!authenticated) {
             String returnTo = currentUrl(request);
             String encoded = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(returnTo.getBytes(StandardCharsets.UTF_8));
@@ -166,7 +211,7 @@ public class OidcAuthorizationController {
                 .map(grant -> grant.covers(requestedScopes))
                 .orElse(false);
 
-        if ("consent".equals(prompt)) {
+        if (prompts.has(OidcPrompt.CONSENT)) {
             alreadyConsented = false;
         }
 
@@ -568,6 +613,75 @@ public class OidcAuthorizationController {
         body.put("id_token",     tokens.idToken());
         body.put("scope",        String.join(" ", scopes));
         return body;
+    }
+
+
+    /**
+     * Marker appended to the return URL when we bounce a user through
+     * sign-in for {@code prompt=login} or {@code max_age}.
+     *
+     * <p>It carries the epoch second at which we demanded the
+     * re-authentication, which is what makes the demand verifiable on the way
+     * back: a session whose {@code auth_time} is older than this did not
+     * re-authenticate, however convincing the redirect looked.
+     */
+    static final String REAUTH_MARKER = "wf_reauth_at";
+
+    /**
+     * True when the request demands an authentication fresher than the one
+     * backing the current session.
+     *
+     * <p>Both inputs are compared against the SESSION's {@code auth_time},
+     * not against MFA-factor use. A user who signed in two minutes ago with a
+     * password satisfies {@code max_age=600} whether or not they have ever
+     * enrolled a second factor.
+     */
+    private static boolean needsReauthentication(OidcPrompt prompts, Integer maxAge,
+                                                 HttpServletRequest request) {
+        if (prompts.requiresReauthentication()) return true;
+        if (maxAge == null || maxAge < 0) return false;
+
+        java.time.Instant authTime = sessionAuthTime(request);
+        // No auth_time on the session means we cannot show the session is
+        // fresh enough, and max_age is a requirement rather than a
+        // preference -- so re-authenticate instead of assuming.
+        if (authTime == null) return true;
+
+        // max_age=0 means "authenticate now", which no existing session can
+        // satisfy; the general comparison already covers it.
+        return authTime.plusSeconds(maxAge).isBefore(java.time.Instant.now());
+    }
+
+    /** The instant a re-authentication was demanded, or null on a first pass. */
+    private static java.time.Instant reauthDeadline(HttpServletRequest request) {
+        String raw = request.getParameter(REAUTH_MARKER);
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return java.time.Instant.ofEpochSecond(Long.parseLong(raw));
+        } catch (NumberFormatException e) {
+            // A junk marker is treated as a first pass rather than an error:
+            // it is our own parameter, and the worst case is one extra bounce
+            // that the deadline check then terminates.
+            return null;
+        }
+    }
+
+    /** Append the re-authentication marker to a URL we are about to return to. */
+    private static String markReauth(String url) {
+        return url + (url.contains("?") ? "&" : "?")
+                + REAUTH_MARKER + "=" + java.time.Instant.now().getEpochSecond();
+    }
+
+    /**
+     * Send the browser to the tenant's sign-in page, to come back to
+     * {@code returnTo} afterwards. Same target as the unauthenticated path:
+     * the portal SPA reads {@code oidcReturnTo} and applies tenant branding.
+     */
+    private ResponseEntity<Void> redirectToLogin(String slug, String returnTo) {
+        String encoded = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(returnTo.getBytes(StandardCharsets.UTF_8));
+        String loginUrl = publicHost.originForTenant(slug) + "/login/?oidcReturnTo=" + encoded;
+        return ResponseEntity.status(302).location(URI.create(loginUrl)).build();
     }
 
     private static String currentUrl(HttpServletRequest request) {

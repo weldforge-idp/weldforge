@@ -93,6 +93,7 @@ public final class AuditEventTypes {
     public static final String OIDC_CLIENT_DELETE           = "oidc.client.delete";
     public static final String OIDC_CLIENT_DYNAMIC_REGISTER = "oidc.client.dynamic_register";
     /** A client deleted its own registration through RFC 7592 (CONF-4.3). */
+    public static final String OIDC_CLIENT_DYNAMIC_UPDATE   = "oidc.client.dynamic_update";
     public static final String OIDC_CLIENT_DYNAMIC_DELETE   = "oidc.client.dynamic_delete";
 
     // SAML SLO

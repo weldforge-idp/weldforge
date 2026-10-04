@@ -78,7 +78,7 @@ class ConsentFormOriginIntegrationTest {
         registry.add("app.crypto.secret", () -> "ci-only-crypto-secret-0123456789abcdef");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         registry.add("app.security.password.breach-check.enabled", () -> "false");
-        registry.add("app.rate-limit.enabled", () -> "false");
+        registry.add("app.security.rate-limit.enabled", () -> "false");  // app.security.*, not app.* -- the wrong key silently does nothing
     }
 
     /** MockMvc's default request origin: scheme http, host localhost, port 80. */

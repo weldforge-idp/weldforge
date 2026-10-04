@@ -30,6 +30,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OidcDiscoveryController {
 
+    /** @see OidcRegistrationController#register */
+    @org.springframework.beans.factory.annotation.Value(
+            "${app.security.oidc.dynamic-registration-enabled:false}")
+    private boolean dynamicRegistrationEnabled;
+
     private final TenantRepository tenantRepository;
     private final TenantSigningKeyService signingKeyService;
 
@@ -53,7 +58,13 @@ public class OidcDiscoveryController {
         // neither the refresh_token grant nor the registration endpoint, both
         // of which are implemented and reachable -- a client that trusted the
         // document concluded neither existed.
-        doc.put("registration_endpoint",  issuer + "/oauth2/register");
+        // Advertised only when the deployment actually accepts it. It was
+        // published unconditionally while the endpoint answered 403 to every
+        // caller it exists for -- the same untruth as scopes_supported, and
+        // the kind a client library believes.
+        if (dynamicRegistrationEnabled) {
+            doc.put("registration_endpoint", issuer + "/oauth2/register");
+        }
         doc.put("response_types_supported",  List.of("code"));
         doc.put("response_modes_supported",  List.of("query"));
         doc.put("grant_types_supported",

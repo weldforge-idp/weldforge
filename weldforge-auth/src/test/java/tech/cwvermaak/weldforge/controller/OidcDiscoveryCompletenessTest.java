@@ -65,10 +65,18 @@ class OidcDiscoveryCompletenessTest {
     }
 
     @Test
-    @DisplayName("The registration endpoint is advertised, because it is live")
-    void registration_endpoint_is_advertised() {
+    @DisplayName("The registration endpoint is NOT advertised while registration is disabled")
+    void registration_endpoint_is_not_advertised_by_default() {
+        // It was advertised unconditionally while the endpoint answered 403 to
+        // every caller it exists for: register() delegated to the admin
+        // create(), which requires a tenant admin that no DCR caller can be.
+        // Verified against production on 2026-10-02 before the fix.
+        //
+        // Dynamic registration is off unless a deployment opts in, so the
+        // honest discovery document omits it.
         assertThat(discovery().get("registration_endpoint"))
-                .isEqualTo("https://sso.weldforge.org/t/leap/oauth2/register");
+                .as("advertising an endpoint that refuses everyone is worse than omitting it")
+                .isNull();
     }
 
     @Test

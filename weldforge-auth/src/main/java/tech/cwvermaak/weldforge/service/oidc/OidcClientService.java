@@ -53,6 +53,28 @@ public class OidcClientService {
     @Transactional
     public OidcClientDto create(OidcClientDto dto) {
         tenantAccessor.requireTenantAdmin();
+        return createInternal(dto);
+    }
+
+    /**
+     * Register a client without an admin session, for RFC 7591 dynamic
+     * registration.
+     *
+     * <p>{@link #create} demands a tenant admin, which an unauthenticated DCR
+     * POST can never be — so the registration endpoint answered 403 to the
+     * only caller it exists for, while discovery advertised it. Whether that
+     * endpoint is open at all is a deployment decision made by the caller of
+     * this method, not here.
+     *
+     * <p>Every validation the admin path runs still runs. A client that
+     * registers itself is no less able to register itself unusably.
+     */
+    @Transactional
+    public OidcClientDto createForDynamicRegistration(OidcClientDto dto) {
+        return createInternal(dto);
+    }
+
+    private OidcClientDto createInternal(OidcClientDto dto) {
         Tenant tenant = tenantAccessor.requireTenant();
         require(dto.getRedirectUris(), "redirectUris");
         require(dto.getScopes(),       "scopes");
@@ -158,7 +180,29 @@ public class OidcClientService {
         Long tid = tenantAccessor.requireTenantId();
         OidcClient client = repository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("OIDC client " + id + " not found"));
+        return apply(client, dto);
+    }
 
+    /**
+     * Update a client by primary key, without an admin session.
+     *
+     * <p>For the RFC 7592 endpoint, where the registration access token has
+     * already proved the caller may manage THIS client — the same reason
+     * {@link #deleteById(Long)} exists. The caller must have authorised the
+     * client itself; this method does not re-check.
+     *
+     * <p>Every validation the admin path runs still runs here. A dynamically
+     * registered client is no less able to break itself by clearing its own
+     * web origins.
+     */
+    @Transactional
+    public OidcClientDto updateById(Long id, OidcClientDto dto) {
+        OidcClient client = repository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("OIDC client " + id + " not found"));
+        return apply(client, dto);
+    }
+
+    private OidcClientDto apply(OidcClient client, OidcClientDto dto) {
         rejectImmutable("clientId", dto.getClientId(), client.getClientId());
         rejectImmutable("publicClient", dto.getPublicClient(), client.getPublicClient());
         if (dto.getClientSecret() != null) {

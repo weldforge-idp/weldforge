@@ -207,6 +207,13 @@ app:
     lockout:
       max-attempts: ${APP_LOCKOUT_MAX_ATTEMPTS:5}
       lock-minutes: ${APP_LOCKOUT_MINUTES:15}
+    oidc:
+      # RFC 7591 dynamic client registration. OFF unless a deployment opts in:
+      # with it on, anyone who can reach the tenant can create OIDC clients in
+      # it. Turn on for a self-hosted install, or to run the Dynamic OP
+      # conformance profile. Discovery advertises registration_endpoint only
+      # when this is true.
+      dynamic-registration-enabled: ${APP_OIDC_DYNAMIC_REGISTRATION_ENABLED:false}
     rate-limit:
       enabled:                 ${APP_RATE_LIMIT_ENABLED:true}
       login-capacity:          ${APP_RATE_LIMIT_LOGIN_CAPACITY:10}
