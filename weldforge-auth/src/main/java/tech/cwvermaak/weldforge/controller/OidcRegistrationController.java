@@ -84,9 +84,13 @@ public class OidcRegistrationController {
             // A refusal that names itself. The old 403 came from an admin
             // check deep in the service and read as "you are not an admin",
             // which is true and useless: no DCR caller ever is one.
-            throw new tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationException(
-                    "invalid_request",
-                    "Dynamic client registration is not enabled on this deployment");
+            // A distinct exception with its own handler. Throwing
+            // OidcAuthorizationException here produced a 500: its
+            // @ExceptionHandler lives on OidcAuthorizationController, so
+            // nothing in THIS controller caught it and the generic handler
+            // turned a deliberate refusal into "an unexpected error occurred".
+            // Caught on staging before promotion.
+            throw new RegistrationDisabledException();
         }
 
         Tenant tenant = tenantRepository.findBySlug(slug)
@@ -420,6 +424,30 @@ public class OidcRegistrationController {
         // reissued here. Both were shown once at registration; re-serving them
         // would make a leaked token enough to recover the secret too.
         return body;
+    }
+
+    /**
+     * Dynamic registration is switched off for this deployment.
+     *
+     * <p>Separate from {@link RegistrationForbiddenException}: that one means
+     * "your token does not manage this client", which is about the caller.
+     * This one is about the server, and says so — a caller retrying with
+     * better credentials would be wasting its time.
+     */
+    private static class RegistrationDisabledException extends RuntimeException {
+        RegistrationDisabledException() {
+            super("Dynamic client registration is not enabled on this deployment");
+        }
+    }
+
+    @ExceptionHandler(RegistrationDisabledException.class)
+    public ResponseEntity<Map<String, String>> handleDisabled(RegistrationDisabledException e) {
+        // RFC 7591 §3.2.2 shapes registration errors as error +
+        // error_description. 403 rather than 400: the request is well-formed,
+        // the server simply does not offer this.
+        return ResponseEntity.status(403).body(Map.of(
+                "error", "access_denied",
+                "error_description", e.getMessage()));
     }
 
     /** Marker for the single, uniform 403 the management endpoints return. */
