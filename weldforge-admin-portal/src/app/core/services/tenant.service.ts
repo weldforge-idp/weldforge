@@ -49,6 +49,11 @@ export interface Tenant {
   refreshTtlMs?: number | null;
   /** Extra claims merged into every token this tenant issues. */
   customClaims?: Record<string, unknown> | null;
+  /**
+   * Space-separated email domains allowed to sign in; blank is unrestricted.
+   * Also checked against the provider's hosted-domain claim where it sends one.
+   */
+  allowedEmailDomains?: string | null;
   /** Where identity-proofing challenges are sent. */
   contactEmail?: string | null;
   /** Set when the tenant passed identity proofing. Read-only here. */

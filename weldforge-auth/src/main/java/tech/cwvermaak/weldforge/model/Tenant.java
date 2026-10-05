@@ -36,6 +36,15 @@ public class Tenant {
     private Boolean enabled = true;
 
     /** Self-service registration on the login page. */
+    /**
+     * Space-separated email domains permitted to sign in; null/empty is
+     * unrestricted. Matched case-insensitively against the address and, where
+     * the provider sends one, its hosted-domain claim. See
+     * {@link tech.cwvermaak.weldforge.service.EmailDomainPolicy}.
+     */
+    @Column(name = "allowed_email_domains", columnDefinition = "TEXT")
+    private String allowedEmailDomains;
+
     @Column(name = "registration_enabled", nullable = false)
     @Builder.Default
     private Boolean registrationEnabled = true;

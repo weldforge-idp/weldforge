@@ -12,6 +12,9 @@ import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
+import tech.cwvermaak.weldforge.service.EmailDomainPolicy;
+
+import java.util.List;
 
 /**
  * Federates the OAuth2 user returned by a per-tenant social provider into a
@@ -30,8 +33,18 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
     @Override
     public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
         OAuth2User oAuth2User = super.loadUser(userRequest);
+        return provision(userRequest.getClientRegistration().getRegistrationId(), oAuth2User);
+    }
 
-        String registrationId = userRequest.getClientRegistration().getRegistrationId();
+    /**
+     * Decide whether this sign-in is allowed, and provision the account.
+     *
+     * <p>Separated from {@link #loadUser} so the decision can be tested
+     * without standing up a provider: loadUser's only other job is an HTTP
+     * call to the userinfo endpoint. Everything that determines WHO gets into
+     * a tenant lives here.
+     */
+    OAuth2User provision(String registrationId, OAuth2User oAuth2User) {
         int sep = registrationId.lastIndexOf('-');
         if (sep <= 0) {
             throw new OAuth2AuthenticationException(new OAuth2Error("invalid_registration"),
@@ -56,14 +69,54 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
         AuthProvider provider = AuthProvider.valueOf(providerName);
 
-        User user = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)
-                .orElseGet(() -> User.builder()
+        // Did the provider actually say the address is theirs?
+        //
+        // Google sends email_verified as a boolean; some providers send the
+        // string "true"; some send nothing. Absent is NOT verified. Reading a
+        // missing claim as true is how an unverified address becomes a
+        // verified identity.
+        boolean providerVerifiedEmail = truthy(oAuth2User.getAttribute("email_verified"))
+                || truthy(oAuth2User.getAttribute("verified_email")); // GitHub/older Google shape
+
+        // WF2: the tenant's domain allow-list. A tenant federated to a
+        // Workspace accepts any account at that provider unless something
+        // says otherwise, and the sign-in URL is not an access control.
+        // Google's hd names the organisation, which is the thing being
+        // admitted -- an address can sit in one domain while the account
+        // belongs to another.
+        String hostedDomain = asString(oAuth2User.getAttribute("hd"));
+        List<String> allowedDomains = EmailDomainPolicy.parse(tenant.getAllowedEmailDomains());
+        if (!EmailDomainPolicy.permits(allowedDomains, email, hostedDomain)) {
+            throw new OAuth2AuthenticationException(new OAuth2Error("domain_not_allowed"),
+                    "This tenant does not accept sign-ins from that email domain");
+        }
+
+        User existing = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)
+                .orElse(null);
+
+        // Linking an external identity to an account that already exists is
+        // an account takeover unless the provider vouches for the address.
+        // This is the same hole, on our side, as the one that let anyone
+        // claim another person's invitation in Project Revelation: trusting
+        // an address nobody verified.
+        //
+        // Refuse rather than silently create a second account: a duplicate
+        // would be indistinguishable to the user from a successful sign-in
+        // and would quietly split their history in two.
+        if (existing != null && !providerVerifiedEmail) {
+            throw new OAuth2AuthenticationException(new OAuth2Error("email_not_verified"),
+                    "The provider did not verify this address, and an account already "
+                    + "exists for it in this tenant");
+        }
+
+        User user = existing != null ? existing
+                : User.builder()
                         .tenant(tenant)
                         .email(email)
                         .username(email)
                         .provider(provider)
                         .providerId(oAuth2User.getName())
-                        .build());
+                        .build();
 
         // Just-in-time provisioning consumes a seat. Only a brand-new user
         // (no id yet) does — an existing user signing in again does not.
@@ -73,9 +126,26 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
         user.setName(name);
         user.setImageUrl(imageUrl);
+        // Carry the provider's assertion. Only ever upwards: a person who
+        // verified with us and then signs in through a provider that does not
+        // verify must not be demoted to unverified, and a provider saying yes
+        // is a real verification of the same address.
+        if (providerVerifiedEmail) {
+            user.setEmailVerified(true);
+        }
         userRepository.save(user);
 
         return oAuth2User;
+    }
+
+    /** A provider flag that may arrive as a boolean or as a string. */
+    private static boolean truthy(Object value) {
+        if (value instanceof Boolean b) return b;
+        return value != null && "true".equalsIgnoreCase(value.toString().trim());
+    }
+
+    private static String asString(Object value) {
+        return value == null ? null : value.toString();
     }
 
     /**

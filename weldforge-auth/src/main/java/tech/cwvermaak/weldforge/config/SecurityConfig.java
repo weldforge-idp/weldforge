@@ -32,6 +32,7 @@ import tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter;
 public class SecurityConfig {
 
     private final CustomOAuth2UserService customOAuth2UserService;
+    private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final AppAuthorizationFilter appAuthorizationFilter;
     private final TenantResolverFilter tenantResolverFilter;
@@ -50,13 +51,10 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        // SEC-06: bcrypt cost factor 12. BCrypt encodes the cost into the
-        // hash itself, so existing hashes at lower costs still verify
-        // correctly — only new passwords are hashed at cost 12.
-        return new BCryptPasswordEncoder(12);
-    }
+    // passwordEncoder moved to PasswordEncoderConfig: defining it here made
+    // every password-hashing bean depend on the whole filter chain, which
+    // closed a dependency cycle the moment the chain needed a bean that
+    // hashes. See that class.
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -211,9 +209,16 @@ public class SecurityConfig {
                 )
 
                 // OAuth2 / social login — dynamic, per-tenant registrations.
+                // The success handler is NOT optional here. Spring's default
+                // saves the authentication into an HTTP session, and this
+                // deployment is STATELESS (above), so without it a social
+                // sign-in completed at the provider and left the person
+                // anonymous to WeldForge -- a sign-in the product advertised
+                // and that could not finish.
                 .oauth2Login(oauth2 -> oauth2
                         .clientRegistrationRepository(clientRegistrationRepository)
                         .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+                        .successHandler(oAuth2LoginSuccessHandler)
                 )
 
                 // SAML 2.0 Service Provider — dynamic, per-tenant upstream IdPs.

@@ -516,6 +516,27 @@ public class AuthService {
      *            user's enrolled factors would report what they could have
      *            used, not what they did.
      */
+    /**
+     * Mint a session for a sign-in that happened at an upstream provider.
+     *
+     * <p>Federated sign-ins previously ended with a provisioned user and no
+     * session at all: {@code oauth2Login} had no success handler, and under a
+     * stateless policy Spring's default leaves nothing behind. The person
+     * came back from Google authenticated to Spring and anonymous to
+     * WeldForge.
+     *
+     * <p>The {@code amr} is deliberately EMPTY. RFC 8176 has no value for
+     * "someone else authenticated them", and we are told nothing about how
+     * they did it — asserting {@code pwd} would be a claim about a password
+     * that was never presented to us. A relying party that requires a
+     * phishing-resistant factor will therefore refuse a federated session,
+     * which is the correct answer rather than an oversight.
+     */
+    public AuthResponseDto issueFederatedSession(User user, HttpServletRequest httpRequest,
+                                                 HttpServletResponse response) {
+        return issueTokens(user, httpRequest, response, java.util.List.of());
+    }
+
     private AuthResponseDto issueTokens(User user, HttpServletRequest httpRequest,
                                         HttpServletResponse response, List<String> amr) {
         Tenant tenant = user.getTenant();

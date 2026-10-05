@@ -63,6 +63,7 @@ interface SessionDraft {
   accessTtlMs: number | null;
   refreshTtlMs: number | null;
   contactEmail: string;
+  allowedEmailDomains: string;
   /** JSON TEXT while editing; parsed to an object on save. */
   customClaims: string;
 }
@@ -715,6 +716,12 @@ interface TenantRow extends Tenant {
                          placeholder="blank = deployment default">
                   <mat-hint>{{ humanMs(t.sessionDraft!.refreshTtlMs) }}</mat-hint>
                 </mat-form-field>
+                <mat-form-field appearance="outline" class="wide">
+                  <mat-label>Allowed email domains (space-separated)</mat-label>
+                  <input matInput [(ngModel)]="t.sessionDraft!.allowedEmailDomains"
+                         placeholder="blank = anyone may sign in">
+                  <mat-hint>Who may sign in to this tenant. A subdomain of an allowed domain counts; a lookalike does not.</mat-hint>
+                </mat-form-field>
                 <mat-form-field appearance="outline">
                   <mat-label>Contact email</mat-label>
                   <input matInput type="email" [(ngModel)]="t.sessionDraft!.contactEmail"
@@ -1332,6 +1339,7 @@ export class TenantsComponent implements OnInit {
       accessTtlMs: t.accessTtlMs ?? null,
       refreshTtlMs: t.refreshTtlMs ?? null,
       contactEmail: t.contactEmail ?? '',
+      allowedEmailDomains: t.allowedEmailDomains ?? '',
       // Pretty-printed so an operator can read what is already there; the
       // server stores an object, the form edits text.
       customClaims: t.customClaims ? JSON.stringify(t.customClaims, null, 2) : '',
@@ -1388,6 +1396,9 @@ export class TenantsComponent implements OnInit {
       accessTtlMs: num(t.sessionDraft.accessTtlMs),
       refreshTtlMs: num(t.sessionDraft.refreshTtlMs),
       contactEmail: t.sessionDraft.contactEmail?.trim() || null,
+      // Always sent, including blank: blank CLEARS the restriction, and
+      // omitting it would read as "unchanged" and make a list unremovable.
+      allowedEmailDomains: t.sessionDraft.allowedEmailDomains?.trim() ?? '',
       customClaims: t.sessionDraft.customClaims?.trim()
           ? JSON.parse(t.sessionDraft.customClaims) : null,
     };
