@@ -158,6 +158,13 @@ public class TenantService {
         // regular tenant admin can't self-promote to verified by PUTting
         // their own tenant record. See docs/auth-url-spec.md.
         if (dto.getContactEmail() != null)               t.setContactEmail(dto.getContactEmail());
+        // Blank is a real value: it clears the restriction. Treating it as
+        // "unchanged" would make an allow-list impossible to remove.
+        if (dto.getAllowedEmailDomains() != null) {
+            String cleaned = String.join(" ",
+                    tech.cwvermaak.weldforge.service.EmailDomainPolicy.parse(dto.getAllowedEmailDomains()));
+            t.setAllowedEmailDomains(cleaned.isBlank() ? null : cleaned);
+        }
         // slug is immutable — changing it would break OAuth2 registration IDs.
         auditService.recordAdmin(AuditEventTypes.TENANT_UPDATE, currentActor(),
                 AuditEventTypes.TARGET_TENANT, String.valueOf(t.getId()),
@@ -414,6 +421,7 @@ public class TenantService {
                 .branding(t.getBranding())
                 .passwordPolicy(t.getPasswordPolicy())
                 .contactEmail(t.getContactEmail())
+                .allowedEmailDomains(t.getAllowedEmailDomains())
                 .verifiedAt(t.getVerifiedAt())
                 .verifiedByUserId(t.getVerifiedByUserId())
                 .build();

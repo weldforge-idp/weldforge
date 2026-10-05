@@ -27,6 +27,13 @@ public class TenantDto {
     private Map<String, Object> customClaims;
 
     /** Self-service registration on the login page. */
+    /**
+     * Space-separated email domains permitted to sign in; null/empty is
+     * unrestricted. Also matched against the provider's hosted-domain claim
+     * where it sends one.
+     */
+    private String allowedEmailDomains;
+
     private Boolean registrationEnabled;
 
     /** "Forgot your password?" link on the login page. */

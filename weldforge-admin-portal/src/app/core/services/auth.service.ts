@@ -94,6 +94,18 @@ export class AuthService {
   }
 
   /**
+   * The tenant's enabled social providers, from the public pre-login endpoint.
+   *
+   * Used to decide whether to render a social button at all. A button that
+   * cannot work is worse than no button, so the page asks rather than
+   * assuming Google is configured.
+   */
+  socialProviders(slug: string): Observable<Array<{ provider: string; displayName?: string }>> {
+    return this.http.get<Array<{ provider: string; displayName?: string }>>(
+        `${environment.apiBaseUrl}/api/auth/tenants/${encodeURIComponent(slug)}/social-providers`);
+  }
+
+  /**
    * Hit POST /api/auth/logout-all to revoke the refresh-token family
    * server-side (so the cookie left in the browser cannot be used to
    * silently rotate a new session), then cancel the proactive refresh

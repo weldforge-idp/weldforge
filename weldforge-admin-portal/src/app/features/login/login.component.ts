@@ -14,6 +14,7 @@ import { TenantBrandingService } from '../../core/services/tenant-branding.servi
 import { catchError, tap } from 'rxjs/operators';
 import { firstValueFrom, of } from 'rxjs';
 import { forwardOidcParams, resolvePostAuthTarget } from '../../core/oidc-continuation';
+import { environment } from '../../../environments/environment';
 import { ExternalNavigator } from '../../core/external-navigator';
 import { apiErrorMessage } from '../../core/api-error';
 import { PasswordToggleComponent } from '../../shared/password-toggle/password-toggle.component';
@@ -59,6 +60,18 @@ type Step = 'credentials' | 'mfa';
           <button mat-raised-button color="primary" type="submit" [disabled]="loading()" class="wf-submit">
             {{ loading() ? 'Authenticating…' : ctaLabel() }}
           </button>
+
+          <!-- Social sign-in. The tenant's enabled providers come from a
+               public endpoint, so the button only appears where it works --
+               a dead "Sign in with Google" is worse than none. -->
+          <div class="wf-social" *ngIf="socialProviders().length">
+            <div class="wf-social-sep"><span>or</span></div>
+            <button *ngFor="let p of socialProviders()"
+                    mat-stroked-button type="button" class="wf-social-btn"
+                    (click)="signInWith(p)">
+              Continue with {{ p.displayName || titleCase(p.provider) }}
+            </button>
+          </div>
 
           <div class="wf-links" *ngIf="passwordRecoveryEnabled() || registrationEnabled()">
             <a *ngIf="passwordRecoveryEnabled()"
@@ -180,6 +193,15 @@ type Step = 'credentials' | 'mfa';
     .wf-sub { font-size: 13px; color: var(--wf-text-2); margin: 0; }
     .wf-form { display: flex; flex-direction: column; gap: 4px; }
     .wf-field { width: 100%; }
+    .wf-social { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+    .wf-social-sep {
+      display: flex; align-items: center; gap: 12px;
+      color: var(--wf-text-3); font-size: 12px; margin: 2px 0 6px;
+    }
+    .wf-social-sep::before, .wf-social-sep::after {
+      content: ""; flex: 1; height: 1px; background: var(--wf-border, rgba(255,255,255,.12));
+    }
+    .wf-social-btn { width: 100%; }
     .wf-error {
       color: #FF6B6B;
       font-size: 12px;
@@ -240,6 +262,7 @@ export class LoginComponent implements OnInit {
   /** Which factor the user is presenting: passkey, authenticator code, or a backup code. */
   mode = signal<'passkey' | 'totp' | 'backup'>('totp');
   webauthnAvailable = signal<boolean>(false);
+  socialProviders = signal<Array<{ provider: string; displayName?: string }>>([]);
 
   private challengeToken: string | null = null;
   private factors: MfaFactorType[] = [];
@@ -295,7 +318,35 @@ export class LoginComponent implements OnInit {
     const slug = this.branding.slugFromHost();
     if (slug) {
       this.branding.load(slug).subscribe();
+      // A failure here must not break password sign-in: the page still works
+      // without the buttons, so an empty list is the right fallback.
+      this.authService.socialProviders(slug).subscribe({
+        next: list => this.socialProviders.set(list ?? []),
+        error: () => this.socialProviders.set([]),
+      });
     }
+  }
+
+  /**
+   * Hand the browser to Spring Security's social entry point.
+   *
+   * A full navigation, not an XHR: the provider answers with a redirect to
+   * its own sign-in page, and the whole point is to leave this origin. The
+   * OIDC continuation is carried through so a social sign-in works as the
+   * first step of an /authorize flow rather than dead-ending on the portal.
+   */
+  signInWith(p: { provider: string }) {
+    const slug = this.branding.slugFromHost();
+    const params = forwardOidcParams(this.route.snapshot.queryParams);
+    const query = params['oidcReturnTo']
+        ? `?oidcReturnTo=${encodeURIComponent(params['oidcReturnTo'])}`
+        : '';
+    this.externalNav.go(
+        `${environment.apiBaseUrl}/oauth2/authorization/${slug}-${p.provider.toLowerCase()}${query}`);
+  }
+
+  titleCase(v: string): string {
+    return v ? v.charAt(0).toUpperCase() + v.slice(1).toLowerCase() : v;
   }
 
   forwardQueryParams(): Record<string, string> {
