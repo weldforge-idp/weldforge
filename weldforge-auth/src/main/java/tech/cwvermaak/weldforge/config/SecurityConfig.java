@@ -217,6 +217,15 @@ public class SecurityConfig {
                 // and that could not finish.
                 .oauth2Login(oauth2 -> oauth2
                         .clientRegistrationRepository(clientRegistrationRepository)
+                        // Asking for a provider a tenant has not configured is
+                        // a 404, not a 500 -- see the resolver. The path is
+                        // public, so anyone can ask for a combination that
+                        // does not exist.
+                        .authorizationEndpoint(ae -> ae.authorizationRequestResolver(
+                                new tech.cwvermaak.weldforge.config.oauth.UnknownRegistrationTolerantResolver(
+                                        clientRegistrationRepository,
+                                        org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter
+                                                .DEFAULT_AUTHORIZATION_REQUEST_BASE_URI)))
                         .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
                         .successHandler(oAuth2LoginSuccessHandler)
                 )
