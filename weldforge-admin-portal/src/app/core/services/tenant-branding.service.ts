@@ -45,13 +45,17 @@ export class TenantBrandingService {
 
   constructor(private http: HttpClient) {}
 
-  load(slug: string | null | undefined): Observable<TenantBranding | null> {
+  load(slug: string | null | undefined, clientId?: string | null): Observable<TenantBranding | null> {
     const trimmed = (slug ?? '').trim();
     if (!trimmed) {
       this.reset();
       return of(null);
     }
-    return this.http.get<TenantBranding>(`${this.url}/${encodeURIComponent(trimmed)}/branding`).pipe(
+    // client_id is optional and only narrows the branding; an unknown one
+    // yields the tenant's, so a stale or wrong value degrades to today's
+    // behaviour rather than failing the page.
+    const q = clientId ? `?client_id=${encodeURIComponent(clientId)}` : '';
+    return this.http.get<TenantBranding>(`${this.url}/${encodeURIComponent(trimmed)}/branding${q}`).pipe(
       tap(b => {
         this.current.set(b);
         this.loaded.set(true);

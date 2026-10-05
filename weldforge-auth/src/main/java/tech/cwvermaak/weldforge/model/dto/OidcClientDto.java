@@ -50,4 +50,10 @@ public class OidcClientDto {
      * the tenant override and then the application default.
      */
     private Integer refreshTokenTtlSeconds;
+
+    /**
+     * Login-screen branding for this client, overlaying the tenant's key by
+     * key. Null leaves it unchanged on update; an empty object clears it.
+     */
+    private java.util.Map<String, Object> branding;
 }

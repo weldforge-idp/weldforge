@@ -13,7 +13,7 @@ import { WebAuthnCeremony } from '../../core/webauthn-ceremony';
 import { TenantBrandingService } from '../../core/services/tenant-branding.service';
 import { catchError, tap } from 'rxjs/operators';
 import { firstValueFrom, of } from 'rxjs';
-import { forwardOidcParams, resolvePostAuthTarget } from '../../core/oidc-continuation';
+import { forwardOidcParams, resolvePostAuthTarget, oidcClientIdFrom } from '../../core/oidc-continuation';
 import { environment } from '../../../environments/environment';
 import { ExternalNavigator } from '../../core/external-navigator';
 import { apiErrorMessage } from '../../core/api-error';
@@ -317,7 +317,10 @@ export class LoginComponent implements OnInit {
     this.webauthnAvailable.set(this.ceremony.available());
     const slug = this.branding.slugFromHost();
     if (slug) {
-      this.branding.load(slug).subscribe();
+      // Brand for the application being signed in to, not just the tenant.
+      // A tenant hosts several; the client id rides in the OIDC continuation.
+      const clientId = oidcClientIdFrom(this.route.snapshot.queryParams['oidcReturnTo'] ?? null);
+      this.branding.load(slug, clientId).subscribe();
       // A failure here must not break password sign-in: the page still works
       // without the buttons, so an empty list is the right fallback.
       this.authService.socialProviders(slug).subscribe({

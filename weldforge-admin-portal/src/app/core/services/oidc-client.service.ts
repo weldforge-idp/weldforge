@@ -38,6 +38,11 @@ export interface OidcClient {
   postLogoutRedirectUris?: string[];
   /** Refresh-token lifetime in seconds; omit to inherit tenant, then instance. */
   refreshTokenTtlSeconds?: number | null;
+  /**
+   * Login-screen branding for this client, overlaying the tenant's key by key.
+   * Null/absent inherits the tenant entirely; {} clears the override.
+   */
+  branding?: Record<string, unknown> | null;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { oidcClientIdFrom } from '../../core/oidc-continuation';
 import { Component, Input, OnInit, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
@@ -177,7 +178,10 @@ export class AuthShellComponent implements OnInit {
   ngOnInit(): void {
     const slug = this.branding.slugFromHost();
     if (slug && (!this.branding.current() || this.branding.current()?.slug !== slug)) {
-      this.branding.load(slug).subscribe();
+      // Brand for the application being signed in to, not just the tenant.
+      // A tenant hosts several; the client id rides in the OIDC continuation.
+      const clientId = oidcClientIdFrom(this.route.snapshot.queryParams['oidcReturnTo'] ?? null);
+      this.branding.load(slug, clientId).subscribe();
     }
   }
 

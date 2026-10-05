@@ -101,6 +101,18 @@ public class OidcClient {
     private Integer refreshTokenTtlSeconds;
 
     /**
+     * Login-screen branding for this client, overlaying the tenant's one key
+     * at a time. Null inherits entirely.
+     *
+     * <p>Same keys and same consumer as {@code tenants.branding} on purpose:
+     * a second vocabulary for the same screen would be a second thing to keep
+     * in step. See {@code docs/tenant-branding.md}.
+     */
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "branding", columnDefinition = "jsonb")
+    private java.util.Map<String, Object> branding;
+
+    /**
      * Browser origins ({@code scheme://host[:port]}) permitted to call this
      * tenant's OIDC endpoints cross-origin. CSV — see {@link #getWebOriginList()}.
      * Feeds the per-tenant CORS allow-list; empty for non-browser clients.
