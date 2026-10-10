@@ -119,3 +119,27 @@ export function resolvePostAuthTarget(
     candidate.startsWith('/') && !candidate.startsWith('//') ? candidate : fallbackRoute;
   return { kind: 'internal', route: safeRoute };
 }
+
+/**
+ * The `client_id` of the OIDC request a login was bounced out of.
+ *
+ * Used to brand the sign-in screen for the application the person is
+ * actually signing in to, rather than generically for the tenant — a tenant
+ * routinely hosts several.
+ *
+ * Deliberately built on {@link safeOidcReturnUrl}, so a continuation naming a
+ * foreign origin yields no client id at all. The id is only ever sent back to
+ * our own API to ask for branding, but reading it from an unvalidated URL
+ * would make this the one place that trusts the parameter everything else
+ * refuses to.
+ */
+export function oidcClientIdFrom(raw: string | null): string | null {
+  const safe = safeOidcReturnUrl(raw);
+  if (!safe) return null;
+  try {
+    const id = new URL(safe).searchParams.get('client_id');
+    return id && id.trim() ? id.trim() : null;
+  } catch {
+    return null;
+  }
+}

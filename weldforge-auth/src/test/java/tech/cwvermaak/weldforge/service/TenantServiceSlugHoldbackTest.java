@@ -140,6 +140,7 @@ class TenantServiceSlugHoldbackTest {
         return new TenantService(accessor, tenantRepository, socialRepo, userRepository,
                 refreshTokenRepository, slugHoldbackRepository, auditService, publicHost,
                 new TenantSlugValidator(publicHost, slugHoldbackRepository),
-                new tech.cwvermaak.weldforge.service.security.PasswordPolicyOverrideValidator(), new tech.cwvermaak.weldforge.service.security.PasswordPolicyService(new tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties(), tech.cwvermaak.weldforge.service.security.BreachedPasswordScreen.DISABLED));
+                new tech.cwvermaak.weldforge.service.security.PasswordPolicyOverrideValidator(), new tech.cwvermaak.weldforge.service.security.PasswordPolicyService(new tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties(), tech.cwvermaak.weldforge.service.security.BreachedPasswordScreen.DISABLED),
+                org.mockito.Mockito.mock(tech.cwvermaak.weldforge.repository.OidcClientRepository.class));
     }
 }

@@ -131,6 +131,7 @@ public class OidcClientService {
                 // in the update path, so a caller sending it at create got a
                 // 200 and a client that inherited the default anyway.
                 .refreshTokenTtlSeconds(requirePositiveTtl(dto.getRefreshTokenTtlSeconds()))
+                .branding(dto.getBranding())
                 .build();
         OidcClient saved = repository.save(client);
         auditService.recordAdmin(AuditEventTypes.OIDC_CLIENT_CREATE, null,
@@ -251,6 +252,11 @@ public class OidcClientService {
         if (dto.getRefreshTokenTtlSeconds() != null) {
             client.setRefreshTokenTtlSeconds(dto.getRefreshTokenTtlSeconds());
         }
+        // An empty object is a real value: it clears the override and returns
+        // the client to the tenant's branding. Null is "leave alone".
+        if (dto.getBranding() != null) {
+            client.setBranding(dto.getBranding().isEmpty() ? null : dto.getBranding());
+        }
         // A public client is PKCE-only and stays that way; for a confidential
         // client the flag is the caller's to set.
         if (dto.getRequirePkce() != null && !client.isPublicClient()) {
@@ -302,6 +308,7 @@ public class OidcClientService {
         if (d.getMaxAuthenticationAgeSeconds() != null) names.add("maxAuthenticationAgeSeconds");
         if (d.getRefreshTokenTtlSeconds() != null)     names.add("refreshTokenTtlSeconds");
         if (d.getRequirePkce() != null)                names.add("requirePkce");
+        if (d.getBranding() != null)                   names.add("branding");
         return String.join(",", names);
     }
 
@@ -356,6 +363,7 @@ public class OidcClientService {
                 .publicClient(c.getPublicClient())
                 .tokenEndpointAuthMethod(c.getTokenEndpointAuthMethod())
                 .refreshTokenTtlSeconds(c.getRefreshTokenTtlSeconds())
+                .branding(c.getBranding())
                 // clientSecret intentionally null unless caller overrides.
                 .build();
     }

@@ -64,6 +64,8 @@ public class TenantService {
     private final TenantSlugValidator slugValidator;
     private final PasswordPolicyOverrideValidator passwordPolicyOverrideValidator;
     private final PasswordPolicyService passwordPolicyService;
+    /** Last on purpose: appended so existing constructor call sites stay positionally valid. */
+    private final tech.cwvermaak.weldforge.repository.OidcClientRepository oidcClientRepository;
 
     // ---- Tenant CRUD --------------------------------------------------
 
@@ -386,6 +388,29 @@ public class TenantService {
                 .verified(t.getVerifiedAt() != null)
                 .branding(t.getBranding())
                 .build();
+    }
+
+    /**
+     * Branding for the login screen, for a specific OIDC client.
+     *
+     * <p>The client's keys overlay the tenant's; see {@link BrandingMerge}.
+     *
+     * <p>An UNKNOWN client id returns the tenant's branding rather than 404,
+     * and that is deliberate. This endpoint is public and pre-authentication,
+     * so a 404 would let anyone enumerate which client ids exist in a tenant
+     * by watching the status code. Returning the tenant default leaks nothing
+     * and degrades to exactly what the screen showed before.
+     */
+    public TenantBrandingDto getBrandingForSlug(String slug, String clientId) {
+        TenantBrandingDto base = getBrandingForSlug(slug);
+        if (clientId == null || clientId.isBlank()) return base;
+
+        Tenant t = tenantRepository.findBySlug(slug).orElseThrow();
+        return oidcClientRepository.findByTenantIdAndClientId(t.getId(), clientId)
+                .map(c -> base.toBuilder()
+                        .branding(BrandingMerge.merge(base.getBranding(), c.getBranding()))
+                        .build())
+                .orElse(base);
     }
 
     public List<SocialProviderDto> listEnabledProvidersForSlug(String slug) {

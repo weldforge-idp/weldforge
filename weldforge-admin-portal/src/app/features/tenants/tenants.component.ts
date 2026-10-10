@@ -477,7 +477,7 @@ interface TenantRow extends Tenant {
                           <mat-label>Redirect URIs (space-separated)</mat-label>
                           <input matInput [(ngModel)]="editOidc.redirects">
                         </mat-form-field>
-                        <mat-form-field appearance="outline">
+                        <mat-form-field appearance="outline" subscriptSizing="dynamic">
                           <mat-label>Web origins (space-separated)</mat-label>
                           <input matInput [(ngModel)]="editOidc.webOrigins">
                           <mat-hint *ngIf="c.publicClient">Required for a browser client; clearing it blocks every call with CORS.</mat-hint>
@@ -493,6 +493,14 @@ interface TenantRow extends Tenant {
                         <mat-form-field appearance="outline">
                           <mat-label>Grant types</mat-label>
                           <input matInput [(ngModel)]="editOidc.grants">
+                        </mat-form-field>
+                        <mat-form-field appearance="outline" class="wide" subscriptSizing="dynamic">
+                          <mat-label>Login-screen branding (JSON object)</mat-label>
+                          <textarea matInput rows="3" [(ngModel)]="editOidc.branding"
+                                    placeholder='blank = use the tenant&apos;s branding'></textarea>
+                          <mat-hint [class.wf-error-hint]="!!editOidcBrandingError()">
+                            {{ editOidcBrandingError() || 'Overlays the tenant key by key, so set only what differs.' }}
+                          </mat-hint>
                         </mat-form-field>
                         <mat-form-field appearance="outline">
                           <mat-label>Refresh token lifetime (seconds)</mat-label>
@@ -534,13 +542,13 @@ interface TenantRow extends Tenant {
                     <mat-label>Redirect URIs (space-separated)</mat-label>
                     <input matInput [(ngModel)]="newOidcRedirects" placeholder="https://app.acme.test/callback">
                   </mat-form-field>
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <mat-label>Web origins (space-separated)</mat-label>
                     <input matInput [(ngModel)]="newOidcWebOrigins"
                            placeholder="https://app.acme.test">
                     <mat-hint>{{ webOriginHint() }}</mat-hint>
                   </mat-form-field>
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <mat-label>Post-logout redirect URIs (space-separated)</mat-label>
                     <input matInput [(ngModel)]="newOidcPostLogout"
                            placeholder="https://app.acme.test/callback">
@@ -558,7 +566,7 @@ interface TenantRow extends Tenant {
                     <mat-label>Max authentication age (seconds)</mat-label>
                     <input matInput type="number" min="0" [(ngModel)]="newOidcMaxAge" placeholder="0 = tenant default">
                   </mat-form-field>
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
                     <mat-label>Refresh token lifetime (seconds)</mat-label>
                     <input matInput type="number" min="1" [(ngModel)]="newOidcRefreshTtl"
                            placeholder="blank = inherit tenant, then instance">
@@ -704,31 +712,31 @@ interface TenantRow extends Tenant {
               <p class="sub">Token lifetimes for <code>{{ t.slug }}</code>, the address identity-proofing challenges are sent to, and any extra claims merged into every token this tenant issues.</p>
 
               <div class="wf-grid">
-                <mat-form-field appearance="outline">
+                <mat-form-field appearance="outline" subscriptSizing="dynamic">
                   <mat-label>Access token lifetime (ms)</mat-label>
                   <input matInput type="number" min="0" [(ngModel)]="t.sessionDraft!.accessTtlMs"
                          placeholder="blank = deployment default">
                   <mat-hint>{{ humanMs(t.sessionDraft!.accessTtlMs) }}</mat-hint>
                 </mat-form-field>
-                <mat-form-field appearance="outline">
+                <mat-form-field appearance="outline" subscriptSizing="dynamic">
                   <mat-label>Refresh token lifetime (ms)</mat-label>
                   <input matInput type="number" min="0" [(ngModel)]="t.sessionDraft!.refreshTtlMs"
                          placeholder="blank = deployment default">
                   <mat-hint>{{ humanMs(t.sessionDraft!.refreshTtlMs) }}</mat-hint>
                 </mat-form-field>
-                <mat-form-field appearance="outline" class="wide">
+                <mat-form-field appearance="outline" class="wide" subscriptSizing="dynamic">
                   <mat-label>Allowed email domains (space-separated)</mat-label>
                   <input matInput [(ngModel)]="t.sessionDraft!.allowedEmailDomains"
                          placeholder="blank = anyone may sign in">
                   <mat-hint>Who may sign in to this tenant. A subdomain of an allowed domain counts; a lookalike does not.</mat-hint>
                 </mat-form-field>
-                <mat-form-field appearance="outline">
+                <mat-form-field appearance="outline" subscriptSizing="dynamic">
                   <mat-label>Contact email</mat-label>
                   <input matInput type="email" [(ngModel)]="t.sessionDraft!.contactEmail"
                          placeholder="owner@example.com">
                   <mat-hint>Where identity-proofing challenges are sent.</mat-hint>
                 </mat-form-field>
-                <mat-form-field appearance="outline" class="wide">
+                <mat-form-field appearance="outline" class="wide" subscriptSizing="dynamic">
                   <mat-label>Custom claims (JSON object)</mat-label>
                   <textarea matInput rows="3" [(ngModel)]="t.sessionDraft!.customClaims"
                             placeholder='&#123;"org": "Acme"&#125;'></textarea>
@@ -879,13 +887,13 @@ interface TenantRow extends Tenant {
               </p>
 
               <div class="wf-grid">
-                <mat-form-field appearance="outline">
+                <mat-form-field appearance="outline" subscriptSizing="dynamic">
                   <mat-label>Minimum length</mat-label>
                   <input matInput type="number" min="1" max="72" placeholder="inherit"
                          [(ngModel)]="t.passwordDraft!.minLength">
                   <mat-hint>{{ lengthHint(t, 'minLength') }}</mat-hint>
                 </mat-form-field>
-                <mat-form-field appearance="outline">
+                <mat-form-field appearance="outline" subscriptSizing="dynamic">
                   <mat-label>Maximum length</mat-label>
                   <input matInput type="number" min="1" max="72" placeholder="inherit"
                          [(ngModel)]="t.passwordDraft!.maxLength">
@@ -982,6 +990,10 @@ interface TenantRow extends Tenant {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 12px;
+      /* Without this a grid row stretches every cell to the tallest one, so
+         a field with a three-line hint drags its neighbours' outlines down
+         with it. Each field keeps its own height instead. */
+      align-items: start;
     }
 
     .wf-actions {
@@ -1229,7 +1241,7 @@ export class TenantsComponent implements OnInit {
 
   /** id of the client whose edit row is open; null when none is. */
   editOidcId: number | null = null;
-  editOidc = { redirects: '', webOrigins: '', postLogout: '', scopes: '', grants: '', refreshTtl: null as number | null };
+  editOidc = { redirects: '', webOrigins: '', postLogout: '', scopes: '', grants: '', refreshTtl: null as number | null, branding: '' };
   /** SPA / native app: PKCE only, no secret. */
   newOidcPublic = false;
 
@@ -1994,6 +2006,7 @@ export class TenantsComponent implements OnInit {
       scopes:     (c.scopes || []).join(' '),
       grants:     (c.grantTypes || []).join(' '),
       refreshTtl: c.refreshTokenTtlSeconds ?? null,
+      branding: c.branding ? JSON.stringify(c.branding, null, 2) : '',
     };
   }
 
@@ -2001,8 +2014,24 @@ export class TenantsComponent implements OnInit {
     this.editOidcId = null;
   }
 
+  /**
+   * Null when the branding JSON is usable, else why not. A method, not
+   * computed(): editOidc is a plain object mutated by ngModel.
+   */
+  protected editOidcBrandingError(): string | null {
+    const raw = (this.editOidc.branding ?? '').trim();
+    if (!raw) return null;
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); } catch { return 'Not valid JSON.'; }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return 'Must be a JSON object, not an array or a bare value.';
+    }
+    return null;
+  }
+
   saveEditOidc(t: TenantRow, c: OidcClient) {
     if (!c.id) return;
+    if (this.editOidcBrandingError()) { this.err(this.editOidcBrandingError()!, null); return; }
     const redirectUris = this.splitWords(this.editOidc.redirects);
     const webOrigins   = this.splitWords(this.editOidc.webOrigins);
 
@@ -2031,6 +2060,10 @@ export class TenantsComponent implements OnInit {
     if (this.editOidc.refreshTtl != null && `${this.editOidc.refreshTtl}`.trim() !== '') {
       patch.refreshTokenTtlSeconds = Number(this.editOidc.refreshTtl);
     }
+    // Always sent: {} is how the override is CLEARED, and omitting it would
+    // read as "unchanged" and make a client's branding unremovable.
+    const rawBranding = (this.editOidc.branding ?? '').trim();
+    patch.branding = rawBranding ? JSON.parse(rawBranding) : {};
 
     this.oidcApi.update(c.id, patch, t.slug).subscribe({
       next: updated => {

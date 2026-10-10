@@ -94,7 +94,7 @@ import { apiErrorMessage } from '../../core/api-error';
             <input matInput [(ngModel)]="draft.description"
                    placeholder="What this token is for. Shown only to admins.">
           </mat-form-field>
-          <mat-form-field appearance="outline">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
             <mat-label>Expires in</mat-label>
             <input matInput type="number" min="0" [(ngModel)]="draft.expiresInDays"
                    placeholder="90">

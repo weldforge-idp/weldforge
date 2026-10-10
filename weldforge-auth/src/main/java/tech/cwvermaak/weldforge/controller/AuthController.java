@@ -186,9 +186,20 @@ public class AuthController {
         return v;
     }
 
+    /**
+     * Branding for the login screen.
+     *
+     * <p>{@code client_id} is optional and names the OIDC client the person
+     * is signing in to, so a tenant hosting several applications can show the
+     * one they are actually using rather than a generic shell. The client's
+     * keys overlay the tenant's; an unknown or absent client id simply yields
+     * the tenant's own, which is what this endpoint always returned.
+     */
     @GetMapping("/tenants/{slug}/branding")
-    public ResponseEntity<TenantBrandingDto> tenantBranding(@PathVariable String slug) {
-        return ResponseEntity.ok(tenantService.getBrandingForSlug(slug));
+    public ResponseEntity<TenantBrandingDto> tenantBranding(
+            @PathVariable String slug,
+            @RequestParam(value = "client_id", required = false) String clientId) {
+        return ResponseEntity.ok(tenantService.getBrandingForSlug(slug, clientId));
     }
 
     /**
