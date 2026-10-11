@@ -173,8 +173,18 @@ public class PublicHostProperties {
     /**
      * Build the public origin (scheme + host) for a tenant. Used to assemble
      * absolute redirect URLs (OIDC unauthenticated bounce) and email links.
+     *
+     * @return null when no base domain is configured. Every caller already
+     *         guards for a blank origin and falls back — a bare-token email
+     *         rather than a link, a dropped return-to — but until this
+     *         returned null those guards were dead code: with no base domain
+     *         the string built was {@code https://acme.null}, which is not
+     *         blank, so the fallback never ran and the link went out broken.
+     *         A deployment that sets {@code APP_PUBLIC_BASE_DOMAIN} empty is
+     *         saying it has no public host; say so to the callers.
      */
     public String originForTenant(String slug) {
+        if (baseDomain == null || baseDomain.isBlank()) return null;
         if (slug == null || slug.isBlank()) {
             return scheme + "://" + baseDomain;
         }

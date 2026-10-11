@@ -27,6 +27,11 @@ import { apiErrorMessage } from '../../core/api-error';
 
       <div *ngIf="status() === 'success'" class="wf-form">
         <p class="wf-info">Your email is verified. You can now sign in.</p>
+        <!-- An application only learns the address is verified from a NEW
+             token: email_verified is a claim, so a session that was minted
+             before this moment still says false. Say so, rather than leaving
+             someone to conclude verifying did not work. -->
+        <p class="wf-info">If you are already signed in to an application, sign out and in again so it picks this up.</p>
         <a mat-raised-button color="primary" [routerLink]="['/login']" [queryParams]="forwardQueryParams" class="wf-submit">
           Continue to sign in
         </a>

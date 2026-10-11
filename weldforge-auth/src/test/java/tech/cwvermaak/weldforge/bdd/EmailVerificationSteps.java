@@ -12,6 +12,7 @@ import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.EmailVerificationService;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.service.mail.MailService;
 
 import java.nio.charset.StandardCharsets;
@@ -91,8 +92,12 @@ public class EmailVerificationSteps {
         }).when(auditService).recordUserAction(any(), any(), any(), any(), any());
 
         MailService mailService = mock(MailService.class);
+        PublicHostProperties publicHost = new PublicHostProperties();
+        publicHost.setBaseDomain("sso.weldforge.org");
+        publicHost.setScheme("https");
         service = new EmailVerificationService(
-                tokenRepository, userRepository, tenantRepository, auditService, mailService);
+                tokenRepository, userRepository, tenantRepository, auditService, mailService,
+                publicHost);
     }
 
     @Given("tenant {string} exists for email verification")
