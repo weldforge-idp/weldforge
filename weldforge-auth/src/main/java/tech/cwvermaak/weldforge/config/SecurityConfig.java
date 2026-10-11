@@ -46,10 +46,21 @@ public class SecurityConfig {
     private final TenantOidcCorsConfigurationSource tenantOidcCorsConfigurationSource;
     private final ApiAuthenticationEntryPoint apiAuthenticationEntryPoint;
 
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
-    }
+    // No AuthenticationManager bean here, deliberately.
+    //
+    // There used to be one returning AuthenticationConfiguration
+    // .getAuthenticationManager(). Nothing injected it, and it was not inert:
+    // the filter chain's ProviderManager takes the context's
+    // AuthenticationManager bean as its PARENT, and that bean resolved back to
+    // itself. Any authentication the chain's own providers did not resolve
+    // therefore recursed until the stack ran out.
+    //
+    // Nothing exercised it while password login was the only path, because
+    // AuthService authenticates directly. Social sign-in was the first caller,
+    // and on 2026-10-11 a Google sign-in produced a 500 whitelabel page with
+    // $Proxy.authenticate 409 frames deep. If an AuthenticationManager is ever
+    // needed, build an explicit ProviderManager over real providers rather
+    // than asking the configuration for one here.
 
     // passwordEncoder moved to PasswordEncoderConfig: defining it here made
     // every password-hashing bean depend on the whole filter chain, which

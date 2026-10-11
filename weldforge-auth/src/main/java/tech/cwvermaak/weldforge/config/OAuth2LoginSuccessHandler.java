@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import tech.cwvermaak.weldforge.config.oauth.SocialRegistrationId;
 import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.UserRepository;
@@ -44,9 +45,6 @@ import java.util.Base64;
 @RequiredArgsConstructor
 public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
 
-    /** Matches the registrationId shape {@code {slug}-{provider}}. */
-    private static final String REGISTRATION_SEPARATOR = "-";
-
     private final UserRepository userRepository;
     private final AuthService authService;
     private final PublicHostProperties publicHost;
@@ -63,13 +61,17 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             return;
         }
 
+        // Through the shared parser, which splits on the LAST hyphen. This
+        // used to split on the first, so a slug containing one -- most of
+        // them -- resolved to the wrong tenant and the lookup below failed
+        // after a perfectly good sign-in. See SocialRegistrationId.
         String registrationId = token.getAuthorizedClientRegistrationId();
-        int sep = registrationId == null ? -1 : registrationId.indexOf(REGISTRATION_SEPARATOR);
-        if (sep <= 0) {
+        var parsed = SocialRegistrationId.parse(registrationId).orElse(null);
+        if (parsed == null) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Unrecognised provider registration");
             return;
         }
-        String slug = registrationId.substring(0, sep);
+        String slug = parsed.tenantSlug();
 
         OAuth2User principal = token.getPrincipal();
         String email = principal.getAttribute("email");
@@ -92,7 +94,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
 
         auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_SUCCESS, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
-                AuditService.meta("tenant", slug, "provider", registrationId.substring(sep + 1),
+                AuditService.meta("tenant", slug, "provider", parsed.providerKey(),
                         "federated", true));
 
         response.sendRedirect(destination(request, slug));
