@@ -79,7 +79,20 @@ public class PasswordResetService {
                 .orElse(null);
 
         if (user == null) {
-            // Silently succeed to avoid user enumeration.
+            // Silently succeed to avoid user enumeration — the caller gets the
+            // same "a link has been sent" as a real account would.
+            //
+            // Logged, because it used to leave no trace at all. The audit event
+            // is recorded further down, only once a user has been found, so a
+            // reset asked for an address that has no account in THIS tenant
+            // produced a reassuring message, no mail, and nothing on the server
+            // to find. On 2026-10-11 that cost an afternoon: a tester asked for
+            // resets at a tenant she had no account in, read "a reset link was
+            // sent", and the missing mail was investigated as slow delivery.
+            // Nothing about the outward response changes here; only that the
+            // server can now answer "was one ever asked for?".
+            log.info("password_reset_requested_for_unknown_account tenant={} email={}",
+                    tenant.getSlug(), email);
             return;
         }
 
@@ -159,6 +172,21 @@ public class PasswordResetService {
         // lockout so the user is not locked out of the password they just set.
         user.setFailedLoginAttempts(0);
         user.setLockedUntil(null);
+
+        // ...and it proves the same thing an email-verification link proves,
+        // more recently: this token was mailed to that address and nothing but
+        // receiving it there can produce it. Not marking the address verified
+        // left a person who had just demonstrated control of the mailbox doing
+        // a second mail round to demonstrate it again, and relying parties
+        // reading `email_verified` saw false for an address WeldForge had in
+        // fact just reached.
+        //
+        // Only this path may do it. The two other places a password is set --
+        // registration (AuthService) and a self-service change that requires
+        // the current password (AuthService.changePassword) -- prove knowledge
+        // of a password, not control of a mailbox, and must leave the flag
+        // alone. Pinned by PasswordResetVerifiesEmailTest.
+        user.setEmailVerified(true);
         userRepository.save(user);
 
         resetToken.setUsed(true);
