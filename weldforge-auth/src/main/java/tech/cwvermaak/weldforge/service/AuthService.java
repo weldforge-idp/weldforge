@@ -525,16 +525,49 @@ public class AuthService {
      * came back from Google authenticated to Spring and anonymous to
      * WeldForge.
      *
+     * <p>It takes a slug and an address rather than a {@link User}, and it
+     * opens its own transaction, because the caller is a Spring Security
+     * success handler: that runs in the filter chain, ahead of the
+     * DispatcherServlet, and therefore <em>outside</em> the open-in-view
+     * interceptor every controller path here silently relies on. A
+     * {@code User} loaded out there is detached the moment the repository
+     * call returns, so the first lazy {@code user.getTenant()} below threw
+     * {@code LazyInitializationException} and the Google callback answered
+     * 500. Production did exactly that on 2026-10-11, as soon as the
+     * registration-id fix let a sign-in get this far to begin with. Doing the
+     * lookup, the token issue and the audit inside one persistence context is
+     * what makes that impossible rather than unlikely: no lazy association
+     * can escape it, including ones added later.
+     *
      * <p>The {@code amr} is deliberately EMPTY. RFC 8176 has no value for
      * "someone else authenticated them", and we are told nothing about how
      * they did it — asserting {@code pwd} would be a claim about a password
      * that was never presented to us. A relying party that requires a
      * phishing-resistant factor will therefore refuse a federated session,
      * which is the correct answer rather than an oversight.
+     *
+     * @return empty when that tenant holds no user with that address, which
+     *         means provisioning did not run or refused. The caller turns it
+     *         into a 401; it must not be read as a session.
      */
-    public AuthResponseDto issueFederatedSession(User user, HttpServletRequest httpRequest,
-                                                 HttpServletResponse response) {
-        return issueTokens(user, httpRequest, response, java.util.List.of());
+    @Transactional
+    public Optional<AuthResponseDto> issueFederatedSession(String tenantSlug, String email,
+                                                           String providerKey,
+                                                           HttpServletRequest httpRequest,
+                                                           HttpServletResponse response) {
+        User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenantSlug, email).orElse(null);
+        if (user == null) {
+            return Optional.empty();
+        }
+
+        AuthResponseDto session = issueTokens(user, httpRequest, response, List.of());
+
+        auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_SUCCESS, user,
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                AuditService.meta("tenant", tenantSlug, "provider", providerKey,
+                        "federated", true));
+
+        return Optional.of(session);
     }
 
     private AuthResponseDto issueTokens(User user, HttpServletRequest httpRequest,
