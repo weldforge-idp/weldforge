@@ -35,6 +35,7 @@ import { TenantMfaPolicyService, MfaPolicy, MfaEnforcement } from '../../core/se
 import { environment } from '../../../environments/environment';
 import { originsFor, needsWebOrigin } from '../../core/oidc-origins';
 import { apiErrorMessage } from '../../core/api-error';
+import { FieldInfoComponent } from '../../shared/field-info/field-info.component';
 
 interface BrandingDraft {
   registrationEnabled: boolean;
@@ -93,6 +94,7 @@ interface TenantRow extends Tenant {
     MatCardModule, MatTableModule, MatButtonModule, MatIconModule,
     MatFormFieldModule, MatInputModule, MatSelectModule, MatSlideToggleModule,
     MatExpansionModule, MatChipsModule, MatSnackBarModule,
+    FieldInfoComponent,
   ],
   template: `
     <div class="wf-page">
@@ -563,18 +565,24 @@ interface TenantRow extends Tenant {
                     <mat-label>Redirect URIs (space-separated)</mat-label>
                     <input matInput [(ngModel)]="newOidcRedirects" placeholder="https://app.acme.test/callback">
                   </mat-form-field>
-                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                    <mat-label>Web origins (space-separated)</mat-label>
-                    <input matInput [(ngModel)]="newOidcWebOrigins"
-                           placeholder="https://app.acme.test">
-                    <mat-hint>{{ webOriginHint() }}</mat-hint>
-                  </mat-form-field>
-                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                    <mat-label>Post-logout redirect URIs (space-separated)</mat-label>
-                    <input matInput [(ngModel)]="newOidcPostLogout"
-                           placeholder="https://app.acme.test/callback">
-                    <mat-hint>Where RP-initiated logout may return. Empty = the client cannot pass one.</mat-hint>
-                  </mat-form-field>
+                  <div class="wf-field">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-label>Web origins (space-separated)</mat-label>
+                      <input matInput [(ngModel)]="newOidcWebOrigins"
+                             placeholder="https://app.acme.test">
+                      <mat-hint *ngIf="webOriginNote()">{{ webOriginNote() }}</mat-hint>
+                    </mat-form-field>
+                    <wf-field-info label="Web origins" [text]="webOriginInfo()" />
+                  </div>
+                  <div class="wf-field">
+                    <mat-form-field appearance="outline">
+                      <mat-label>Post-logout redirect URIs (space-separated)</mat-label>
+                      <input matInput [(ngModel)]="newOidcPostLogout"
+                             placeholder="https://app.acme.test/callback">
+                    </mat-form-field>
+                    <wf-field-info label="Post-logout redirect URIs"
+                                   text="Where RP-initiated logout may return. Empty = the client cannot pass one." />
+                  </div>
                   <mat-form-field appearance="outline">
                     <mat-label>Scopes</mat-label>
                     <input matInput [(ngModel)]="newOidcScopes" placeholder="openid profile email">
@@ -587,12 +595,15 @@ interface TenantRow extends Tenant {
                     <mat-label>Max authentication age (seconds)</mat-label>
                     <input matInput type="number" min="0" [(ngModel)]="newOidcMaxAge" placeholder="0 = tenant default">
                   </mat-form-field>
-                  <mat-form-field appearance="outline" subscriptSizing="dynamic">
-                    <mat-label>Refresh token lifetime (seconds)</mat-label>
-                    <input matInput type="number" min="1" [(ngModel)]="newOidcRefreshTtl"
-                           placeholder="blank = inherit tenant, then instance">
-                    <mat-hint>{{ refreshTtlHint() }}</mat-hint>
-                  </mat-form-field>
+                  <div class="wf-field">
+                    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                      <mat-label>Refresh token lifetime (seconds)</mat-label>
+                      <input matInput type="number" min="1" [(ngModel)]="newOidcRefreshTtl"
+                             placeholder="blank = inherit tenant, then instance">
+                      <mat-hint *ngIf="refreshTtlHint()">{{ refreshTtlHint() }}</mat-hint>
+                    </mat-form-field>
+                    <wf-field-info label="Refresh token lifetime" [text]="refreshTtlInfo" />
+                  </div>
                 </div>
                 <div class="wf-actions">
                   <mat-slide-toggle [(ngModel)]="newOidcPublic"
@@ -1106,11 +1117,16 @@ interface TenantRow extends Tenant {
 
     .wf-add-provider {
       padding: 16px;
-      background: rgba(74, 143, 245, 0.04);
+      // rgba(74, 143, 245, 0.04) over the card's --wf-bg-2, pre-composited to
+      // one solid value so <wf-field-info> can break the field outline with
+      // exactly it. A translucent badge shows the border line through itself.
+      --wf-panel-bg: #0E1529;
+      background: var(--wf-panel-bg);
       border: 1px solid var(--wf-border);
       border-radius: 3px;
       margin-top: 16px;
     }
+
 
     .wf-panel-footer {
       margin-top: 24px;
@@ -1924,20 +1940,27 @@ export class TenantsComponent implements OnInit {
   // consulted: a client drawn under a tenant's row is created in that tenant.
 
   /**
-   * A hint that changes with the form, because the requirement does.
-   *
-   * This is a method, not a `computed()`: the fields it reads are plain
-   * strings bound with `[(ngModel)]`, and `computed()` only re-evaluates when
-   * a tracked *signal* changes. Memoising this to its first value is the
-   * zoneless trap that killed the Service Accounts Create button in PR #24.
+   * What a blank field means. Standing explanation, so it lives in the field's
+   * info popout rather than under the field -- see FieldInfoComponent for why
+   * the OIDC form's explanations moved there.
    */
+  readonly refreshTtlInfo =
+      'Blank inherits the tenant, then the instance default. '
+      + 'A value here overrides both, for this client only.';
+
   /**
+   * The live readout only: how long the number you typed actually is, or why
+   * it cannot be used. A blank field now says nothing inline, because the
+   * explanation of a blank field is in the popout.
+   *
    * A method, not computed(): newOidcRefreshTtl is a plain field bound with
-   * ngModel, so computed() would memoise its first value.
+   * ngModel, and computed() only re-evaluates when a tracked *signal*
+   * changes, so it would memoise its first value forever. That is the
+   * zoneless trap that killed the Service Accounts Create button in PR #24.
    */
   refreshTtlHint(): string {
     const raw = `${this.newOidcRefreshTtl ?? ''}`.trim();
-    if (raw === '') return 'Blank inherits the tenant, then the instance default.';
+    if (raw === '') return '';
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return 'Must be a positive number of seconds.';
     // A decimal only when there is one: "14 days", not "14.0 days".
@@ -1949,18 +1972,35 @@ export class TenantsComponent implements OnInit {
     return `= ${n} second${n === 1 ? '' : 's'}`;
   }
 
-  webOriginHint(): string {
-    const redirects = this.splitWords(this.newOidcRedirects);
+  /**
+   * Whether this client needs a web origin at all, for the info popout.
+   *
+   * Current with the form rather than fixed, because the answer depends on
+   * the client type and on the redirect URIs beside it. A confidential client
+   * told that the field is required would be wrong in the expensive
+   * direction: a registered origin it never uses.
+   *
+   * A method, not computed(), for the reason given on refreshTtlHint().
+   */
+  webOriginInfo(): string {
     if (!this.newOidcPublic) {
       return 'Not needed: a confidential client calls the token endpoint server-side.';
     }
-    const derived = originsFor(redirects);
-    if (!derived.length) {
+    if (!originsFor(this.splitWords(this.newOidcRedirects)).length) {
       return 'Not needed: a loopback or private-use redirect makes no cross-origin browser calls.';
     }
-    return this.newOidcWebOrigins.trim()
-        ? 'Required for a browser client, or every call is blocked by CORS.'
-        : `Required. Leave blank and ${derived.join(' ')} will be used.`;
+    return 'Required for a browser client, or every call is blocked by CORS.';
+  }
+
+  /**
+   * What this form will submit, which is a different thing and so stays
+   * inline: it names an origin the user did not type and would otherwise
+   * meet for the first time on the created client.
+   */
+  webOriginNote(): string {
+    if (!this.newOidcPublic || this.newOidcWebOrigins.trim()) return '';
+    const derived = originsFor(this.splitWords(this.newOidcRedirects));
+    return derived.length ? `Leave blank and ${derived.join(' ')} will be used.` : '';
   }
 
   createOidcClient(t: TenantRow) {

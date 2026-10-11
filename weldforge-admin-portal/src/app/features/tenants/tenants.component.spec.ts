@@ -52,6 +52,9 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     newOidcWebOrigins: string;
     newOidcRefreshTtl: number | null;
     refreshTtlHint(): string;
+    refreshTtlInfo: string;
+    webOriginInfo(): string;
+    webOriginNote(): string;
     sessionDraft?: unknown;
     humanMs(ms: number | null | undefined): string;
     customClaimsError(t: Row): string | null;
@@ -507,8 +510,6 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
 
   it('states the TTL in units a person uses', () => {
     const c = create();
-    c.newOidcRefreshTtl = null;
-    expect(c.refreshTtlHint()).toContain('inherits');
     c.newOidcRefreshTtl = 1209600;
     expect(c.refreshTtlHint()).toContain('14 days');   // not "14.0 days"
     c.newOidcRefreshTtl = 3600;
@@ -517,5 +518,44 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     expect(c.refreshTtlHint()).toContain('1.5 days');
     c.newOidcRefreshTtl = 0;
     expect(c.refreshTtlHint()).toContain('positive');
+  });
+
+  it('says nothing under a blank TTL, because the explanation is in the popout', () => {
+    const c = create();
+    c.newOidcRefreshTtl = null;
+    expect(c.refreshTtlHint()).toBe('');
+    expect(c.refreshTtlInfo).toContain('inherits');
+  });
+
+  it('answers whether a web origin is needed from the client type and the redirects', () => {
+    const c = create();
+
+    c.newOidcPublic = false;
+    c.newOidcRedirects = 'https://app.acme.test/callback';
+    expect(c.webOriginInfo()).toContain('confidential');
+
+    c.newOidcPublic = true;
+    c.newOidcRedirects = 'http://127.0.0.1:1410/callback';
+    expect(c.webOriginInfo()).toContain('loopback');
+
+    c.newOidcRedirects = 'https://app.acme.test/callback';
+    expect(c.webOriginInfo()).toContain('Required');
+  });
+
+  it('keeps the origin it is about to fill in inline, where it will be read', () => {
+    // This one names a value the user did not type. Hiding it behind a hover
+    // would mean meeting it for the first time on the created client.
+    const c = create();
+    c.newOidcPublic = true;
+    c.newOidcRedirects = 'https://app.acme.test/callback';
+    c.newOidcWebOrigins = '';
+    expect(c.webOriginNote()).toContain('https://app.acme.test');
+
+    c.newOidcWebOrigins = 'https://other.acme.test';
+    expect(c.webOriginNote()).toBe('');
+
+    c.newOidcPublic = false;
+    c.newOidcWebOrigins = '';
+    expect(c.webOriginNote()).toBe('');
   });
 });
