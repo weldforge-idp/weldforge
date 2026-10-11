@@ -18,6 +18,7 @@ import { environment } from '../../../environments/environment';
 import { ExternalNavigator } from '../../core/external-navigator';
 import { apiErrorMessage } from '../../core/api-error';
 import { PasswordToggleComponent } from '../../shared/password-toggle/password-toggle.component';
+import { ProviderIconComponent } from '../../shared/provider-icon/provider-icon.component';
 
 type Step = 'credentials' | 'mfa';
 
@@ -25,7 +26,7 @@ type Step = 'credentials' | 'mfa';
   selector: 'app-login',
   standalone: true,
   imports: [
-    PasswordToggleComponent,
+    PasswordToggleComponent, ProviderIconComponent,
     CommonModule, FormsModule, RouterLink,
     MatCardModule, MatFormFieldModule, MatInputModule,
     MatButtonModule, MatProgressSpinnerModule
@@ -69,7 +70,10 @@ type Step = 'credentials' | 'mfa';
             <button *ngFor="let p of socialProviders()"
                     mat-stroked-button type="button" class="wf-social-btn"
                     (click)="signInWith(p)">
-              Continue with {{ p.displayName || titleCase(p.provider) }}
+              <span class="wf-social-btn__content">
+                <wf-provider-icon [provider]="p.provider" />
+                <span>Continue with {{ p.displayName || titleCase(p.provider) }}</span>
+              </span>
             </button>
           </div>
 
@@ -202,6 +206,16 @@ type Step = 'credentials' | 'mfa';
       content: ""; flex: 1; height: 1px; background: var(--wf-border, rgba(255,255,255,.12));
     }
     .wf-social-btn { width: 100%; }
+    /* The icon and the words travel together and stay centred as a pair.
+       Grouping them in one flex span rather than reaching into Material's
+       internal label element with ::ng-deep, which breaks whenever the
+       component's DOM changes under us. */
+    .wf-social-btn__content {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
     .wf-error {
       color: #FF6B6B;
       font-size: 12px;
