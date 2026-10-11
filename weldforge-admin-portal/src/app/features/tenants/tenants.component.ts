@@ -184,6 +184,22 @@ interface TenantRow extends Tenant {
 
               <div class="wf-add-provider">
                 <h5>Add or update provider</h5>
+                <!-- autocomplete and non-credential name attributes on the
+                     id/secret pair below are load-bearing, not decoration.
+                     Without them Chrome sees a text input followed by a
+                     type="password" input on sso.weldforge.org -- a host it
+                     holds the admin's own saved password for -- and treats
+                     this as a sign-in form. It then fills both fields, and
+                     clicking into either pops the account picker and rewrites
+                     them, which is what was reported on 2026-10-11: "why does
+                     this clear when I click in the Client ID field".
+                     Worse than the nuisance: it offers to SAVE whatever is
+                     typed as the admin's weldforge.org password, so pasting a
+                     tenant's OAuth client secret here could overwrite the
+                     admin's own stored credential with it.
+                     Chrome ignores autocomplete="off" on a password input but
+                     honours "new-password", which is why the secret uses that
+                     rather than "off". -->
                 <div class="wf-grid">
                   <mat-form-field appearance="outline">
                     <mat-label>Provider</mat-label>
@@ -193,11 +209,13 @@ interface TenantRow extends Tenant {
                   </mat-form-field>
                   <mat-form-field appearance="outline">
                     <mat-label>Client ID</mat-label>
-                    <input matInput [(ngModel)]="t.draft!.clientId">
+                    <input matInput [(ngModel)]="t.draft!.clientId"
+                           name="wf-oidc-client-id" autocomplete="off">
                   </mat-form-field>
                   <mat-form-field appearance="outline">
                     <mat-label>Client Secret</mat-label>
                     <input matInput type="password" [(ngModel)]="t.draft!.clientSecret"
+                           name="wf-oidc-client-secret" autocomplete="new-password"
                            placeholder="leave blank to keep existing">
                   </mat-form-field>
                   <mat-form-field appearance="outline">
@@ -344,11 +362,14 @@ interface TenantRow extends Tenant {
                 <div class="wf-grid">
                   <mat-form-field appearance="outline">
                     <mat-label>Account SID</mat-label>
-                    <input matInput [(ngModel)]="t.twilioDraft!.accountSid" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                    <input matInput [(ngModel)]="t.twilioDraft!.accountSid"
+                           name="wf-twilio-sid" autocomplete="off"
+                           placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
                   </mat-form-field>
                   <mat-form-field appearance="outline">
                     <mat-label>Auth Token</mat-label>
                     <input matInput type="password" [(ngModel)]="t.twilioDraft!.authToken"
+                           name="wf-twilio-auth-token" autocomplete="new-password"
                            placeholder="leave blank to keep existing">
                   </mat-form-field>
                   <mat-form-field appearance="outline">
