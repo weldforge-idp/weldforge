@@ -173,8 +173,18 @@ public class PublicHostProperties {
     /**
      * Build the public origin (scheme + host) for a tenant. Used to assemble
      * absolute redirect URLs (OIDC unauthenticated bounce) and email links.
+     *
+     * @return null when no base domain is configured. Every caller already
+     *         guards for a blank origin and falls back — a bare-token email
+     *         rather than a link, a dropped return-to — but until this
+     *         returned null those guards were dead code: with no base domain
+     *         the string built was {@code https://acme.null}, which is not
+     *         blank, so the fallback never ran and the link went out broken.
+     *         A deployment that sets {@code APP_PUBLIC_BASE_DOMAIN} empty is
+     *         saying it has no public host; say so to the callers.
      */
     public String originForTenant(String slug) {
+        if (baseDomain == null || baseDomain.isBlank()) return null;
         if (slug == null || slug.isBlank()) {
             return scheme + "://" + baseDomain;
         }
@@ -191,10 +201,25 @@ public class PublicHostProperties {
      * <p>Side-effect: the cookie is also sent to every other tenant
      * subdomain. {@code JwtAuthenticationFilter} re-checks the JWT's
      * {@code tenant_id} against the resolved tenant on each request, so
-     * the cookie is useless on a wrong tenant. The shared parent-domain
-     * scope is the trade-off that keeps the apex OIDC flow working
-     * without breaking password-manager distinctness (which is host-based
-     * and independent of cookie scope).</p>
+     * the cookie is useless on a wrong tenant.</p>
+     *
+     * <p><b>This comment used to claim the parent-domain scope cost nothing
+     * because password-manager distinctness is "host-based and independent of
+     * cookie scope". That is wrong.</b> Chrome and the other managers match a
+     * saved credential against the <i>registrable domain</i> (eTLD+1) via the
+     * Public Suffix List, not against the host. Every tenant subdomain shares
+     * the registrable domain {@code weldforge.org}, so one tenant's saved
+     * password is offered at another and, with the same username, a different
+     * password reads to the manager as a change of the same login. Observed in
+     * Chrome on 2026-10-11: the {@code cwvermaak-tech} password was filled in
+     * at {@code counteract-studios.sso.weldforge.org/login}. A host per tenant
+     * is necessary but not sufficient.
+     *
+     * <p>Separating them for browsers means entering {@code sso.weldforge.org}
+     * in the PSL, which also makes {@code Domain=sso.weldforge.org} an
+     * unsettable cookie — a Domain attribute equal to a public suffix is
+     * refused — so this method's return value and the apex OIDC bounce it
+     * exists for have to be reworked first. See {@code docs/auth-url-spec.md}.</p>
      *
      * <p>Returns {@code null} in dev / single-host setups (when the base
      * domain looks like a single label, e.g. {@code localhost}), so the

@@ -8,10 +8,72 @@ the older `?tenant=<slug>` query-param form, which is removed.
 Each tenant's user-facing auth pages must live on a **distinct origin** so
 password managers — both browser-builtins (Chrome, Firefox, Safari) and
 third-party (Bitwarden, 1Password, Dashlane) — treat each tenant as a
-separate site. Browser autofill matches on `scheme + host + port` and
-**ignores the path entirely**, so a path-prefix (`/t/<slug>/login`) is not
-enough. Query strings are also ignored. Only the host can carry the tenant
-identity for the user-facing forms.
+separate site. Autofill **ignores the path entirely**, so a path-prefix
+(`/t/<slug>/login`) is not enough. Query strings are also ignored. Only the
+host can carry the tenant identity for the user-facing forms.
+
+> **This goal is only partly met, and the gap is in this document's own
+> premise.** An earlier version of this section said autofill "matches on
+> `scheme + host + port`". It does not. The managers above match a saved
+> credential against the **registrable domain** (eTLD+1, via the Public
+> Suffix List), with the host as a ranking signal at most. Every tenant
+> subdomain shares the registrable domain `weldforge.org`, so a host per
+> tenant does **not** make them separate sites to a password manager. See
+> *What per-tenant hosts do and do not promise* below.
+
+## What per-tenant hosts do and do not promise
+
+Observed in Chrome on 2026-10-11, and the reason this section exists: a person
+with accounts in two tenants under one email address signed in at
+`counteract-studios.sso.weldforge.org/login` and the browser filled the
+password field with his **`cwvermaak-tech`** password. After he signed in with
+the right one, Chrome offered to "Update password for
+counteract-studios.sso.weldforge.org?".
+
+**Promised, and true today:**
+
+- Each tenant's auth pages are on their own host, so the URL a person sees and
+  bookmarks names their tenant, and the tenant's branding is applied from the
+  host.
+- A credential saved at one tenant is **labelled** with the host it came from,
+  so a manager that shows the origin lets a person tell them apart.
+- Email links (reset, verification) land on the same host as the sign-in page
+  for that tenant, so nothing in the flow crosses hosts.
+- **The server keeps the tenants apart regardless of any of this.** Login
+  resolves the user as `(tenant, lower(email))` and compares the password
+  against that row's hash, so one tenant's password is never accepted at
+  another. A session cookie that reaches the wrong tenant is refused by
+  `JwtAuthenticationFilter` (`jwt_tenant_mismatch`). Autofill offering the
+  wrong password is a browser convenience, not an authentication path.
+
+**Not promised, and not true today:**
+
+- A password manager will *not* treat the tenants as separate sites. It will
+  offer tenant A's password at tenant B, and with the same username it reads a
+  different password as a change to the same login and offers to update it.
+  There is no form attribute that prevents this: `autocomplete="off"` is
+  ignored by Chrome on password fields, and the platform has no way to scope a
+  credential to a subdomain.
+
+**What would actually separate them**, and why it is not a one-line change:
+entering `sso.weldforge.org` in the [Public Suffix List](https://publicsuffix.org/)
+private section makes each `<tenant>.sso.weldforge.org` its own registrable
+domain to every browser. That is the only mechanism that delivers it. It also
+makes `Domain=sso.weldforge.org` **unsettable** — a Domain attribute equal to a
+public suffix is refused — and that cookie is what carries the session from the
+tenant subdomain to the apex `/t/{slug}/oauth2/authorize` consent step
+(`PublicHostProperties.cookieDomain`). So the order is:
+
+1. Replace the parent-domain session cookie with a single-use handoff token on
+   the redirect to the apex authorize endpoint, which the apex exchanges for a
+   host-only cookie of its own. This also closes the existing gap where signing
+   in to tenant B ends tenant A's apex session.
+2. Then submit the PSL entry, and expect months before it reaches release
+   browsers. Removal is equally slow, so it is close to one-way.
+
+Until step 1 ships, **say this plainly to anyone holding accounts in two
+tenants**: the browser may offer the other tenant's password, and declining the
+"update password" prompt keeps both saved.
 
 ## Host pattern
 

@@ -5,13 +5,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.model.EmailVerificationToken;
+import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.EmailVerificationTokenRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
+import tech.cwvermaak.weldforge.service.mail.ActionEmail;
 import tech.cwvermaak.weldforge.service.mail.MailService;
 
 import java.nio.charset.StandardCharsets;
@@ -37,6 +40,12 @@ public class EmailVerificationService {
     private final MailService mailService;
 
     /**
+     * Declared last on purpose: @RequiredArgsConstructor builds the constructor
+     * in field order, and the BDD steps construct this service positionally.
+     */
+    private final PublicHostProperties publicHost;
+
+    /**
      * Generate a verification token for the given user, hash it with SHA-256,
      * persist the hash, and email the raw token to the user via
      * {@link MailService}. The raw token is also returned for callers that
@@ -58,11 +67,24 @@ public class EmailVerificationService {
 
         // Routed through the mail abstraction — the raw token is not logged
         // at INFO. See LoggingMailService for the log-level rationale.
-        mailService.send(user.getEmail(),
-                "Verify your WeldForge email address",
-                "Confirm your email address with this verification token:\n\n"
-                        + rawToken + "\n\nThis token expires in " + EXPIRY_HOURS + " hours. "
-                        + "If you did not create this account, you can ignore this email.");
+        Tenant tenant = user.getTenant();
+        String subject = "Verify your " + tenantLabel(tenant) + " email address";
+        String origin = publicHost.originForTenant(tenant.getSlug());
+
+        if (origin == null || origin.isBlank()) {
+            // No public-host config (a self-host that has not set one) — the
+            // bare token is all we can offer, and the mail says where it goes.
+            mailService.send(user.getEmail(), subject, buildTokenEmail(tenant, rawToken));
+        } else {
+            // The tenant's own subdomain, matching the host the person signed
+            // up on, so the link does not look like it belongs to someone
+            // else. The token is base64url (no padding), so it needs no
+            // percent-encoding to survive a query string.
+            String verifyUrl = origin + "/verify-email?token=" + rawToken;
+            mailService.send(user.getEmail(), subject,
+                    buildVerifyTextBody(tenant, verifyUrl),
+                    buildVerifyHtmlBody(tenant, verifyUrl));
+        }
 
         auditService.recordUserAction(AuditEventTypes.AUTH_EMAIL_VERIFICATION_SENT, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()), null);
@@ -120,6 +142,46 @@ public class EmailVerificationService {
 
         tokenRepository.deleteByUserIdAndUsedFalse(user.getId());
         sendVerification(user);
+    }
+
+    // ---- mail bodies -------------------------------------------------
+
+    private static String tenantLabel(Tenant tenant) {
+        return tenant.getDisplayName() != null && !tenant.getDisplayName().isBlank()
+                ? tenant.getDisplayName() : tenant.getName();
+    }
+
+    private static String intro(Tenant tenant) {
+        return "Confirm your email address to finish setting up your "
+                + tenantLabel(tenant) + " account.";
+    }
+
+    private static String footer() {
+        return "This link expires in " + EXPIRY_HOURS + " hours. "
+                + "If you did not create this account, you can ignore this email.";
+    }
+
+    private static String buildVerifyTextBody(Tenant tenant, String verifyUrl) {
+        return ActionEmail.text(intro(tenant), "Verify your email address:", verifyUrl, footer());
+    }
+
+    private static String buildVerifyHtmlBody(Tenant tenant, String verifyUrl) {
+        return ActionEmail.html(
+                "Verify your " + tenantLabel(tenant) + " email address",
+                intro(tenant),
+                "Verify email address",
+                verifyUrl,
+                ActionEmail.buttonColor(tenant.getBranding()),
+                footer());
+    }
+
+    /** No public host configured — the token alone, with somewhere to put it. */
+    private static String buildTokenEmail(Tenant tenant, String rawToken) {
+        return intro(tenant) + "\n\n"
+                + "Enter this verification token on the email-verification page:\n\n"
+                + rawToken + "\n\n"
+                + "This token expires in " + EXPIRY_HOURS + " hours. "
+                + "If you did not create this account, you can ignore this email.";
     }
 
     // ---- internals ---------------------------------------------------
