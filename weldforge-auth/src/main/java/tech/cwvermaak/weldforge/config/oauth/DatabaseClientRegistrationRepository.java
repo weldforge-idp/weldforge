@@ -44,18 +44,11 @@ public class DatabaseClientRegistrationRepository implements ClientRegistrationR
     public ClientRegistration findByRegistrationId(String registrationId) {
         if (registrationId == null) return null;
 
-        int sep = registrationId.lastIndexOf('-');
-        if (sep <= 0 || sep >= registrationId.length() - 1) return null;
+        var parsed = SocialRegistrationId.parse(registrationId).orElse(null);
+        if (parsed == null) return null;
 
-        String tenantSlug = registrationId.substring(0, sep);
-        String providerName = registrationId.substring(sep + 1).toUpperCase();
-
-        SocialProviderType provider;
-        try {
-            provider = SocialProviderType.valueOf(providerName);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+        String tenantSlug = parsed.tenantSlug();
+        SocialProviderType provider = parsed.provider();
 
         Optional<TenantSocialProvider> cfg =
                 providerRepository.findByTenant_SlugAndProviderAndEnabledTrue(tenantSlug, provider);

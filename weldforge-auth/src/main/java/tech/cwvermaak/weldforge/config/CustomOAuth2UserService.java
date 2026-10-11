@@ -45,13 +45,11 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
      * a tenant lives here.
      */
     OAuth2User provision(String registrationId, OAuth2User oAuth2User) {
-        int sep = registrationId.lastIndexOf('-');
-        if (sep <= 0) {
-            throw new OAuth2AuthenticationException(new OAuth2Error("invalid_registration"),
-                    "Registration id must be of the form {tenantSlug}-{provider}");
-        }
-        String tenantSlug = registrationId.substring(0, sep);
-        String providerName = registrationId.substring(sep + 1).toUpperCase();
+        var parsed = tech.cwvermaak.weldforge.config.oauth.SocialRegistrationId
+                .parse(registrationId).orElseThrow(() ->
+                        new OAuth2AuthenticationException(new OAuth2Error("invalid_registration"),
+                                "Registration id must be of the form {tenantSlug}-{provider}"));
+        String tenantSlug = parsed.tenantSlug();
 
         Tenant tenant = tenantRepository.findBySlug(tenantSlug)
                 .orElseThrow(() -> new OAuth2AuthenticationException(new OAuth2Error("unknown_tenant"),
@@ -67,7 +65,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         Object pic = oAuth2User.getAttribute("picture");
         String imageUrl = pic != null ? pic.toString() : oAuth2User.getAttribute("avatar_url");
 
-        AuthProvider provider = AuthProvider.valueOf(providerName);
+        AuthProvider provider = AuthProvider.valueOf(parsed.provider().name());
 
         // Did the provider actually say the address is theirs?
         //
