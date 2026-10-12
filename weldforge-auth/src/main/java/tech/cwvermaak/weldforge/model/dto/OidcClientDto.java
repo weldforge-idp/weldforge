@@ -37,6 +37,15 @@ public class OidcClientDto {
     private List<String> postLogoutRedirectUris;
 
     /**
+     * RFC 8707 resource indicators this client may name in a {@code resource}
+     * parameter. Empty, the default, means the parameter is refused with
+     * {@code invalid_target} and the client's tokens stay audienced to its
+     * client id -- which is what every client registered before 2026-10-12
+     * does, and must keep doing.
+     */
+    private List<String> resources;
+
+    /**
      * Public client (PKCE-only, no client secret). May be set directly or
      * inferred from {@code tokenEndpointAuthMethod == "none"} on create.
      */

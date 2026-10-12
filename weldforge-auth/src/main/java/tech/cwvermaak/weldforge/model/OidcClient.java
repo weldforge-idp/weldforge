@@ -132,6 +132,23 @@ public class OidcClient {
     private String postLogoutRedirectUris = "";
 
     /**
+     * RFC 8707 resource indicators this client may ask for. CSV -- see
+     * {@link #getResourceList()}.
+     *
+     * <p>Empty means the client may not use the {@code resource} parameter at
+     * all and naming one is refused with {@code invalid_target}. Empty is the
+     * default and is what every client registered before 2026-10-12 has.
+     *
+     * <p>That default is load-bearing. Without a resource, {@code aud} stays
+     * the client id, which is what it has always been and what at least one
+     * live integration depends on. Resource indicators have to be opt-in per
+     * request or they are a breaking change to every relying party at once.
+     */
+    @Column(name = "resources", nullable = false, columnDefinition = "TEXT")
+    @Builder.Default
+    private String resources = "";
+
+    /**
      * Public client — PKCE-only, no usable client secret at the token
      * endpoint (OAuth 2.1 §2.1, RFC 8252 for native apps). When true,
      * {@link #requirePkce} is forced on and no secret is ever surfaced.
@@ -161,6 +178,7 @@ public class OidcClient {
         if (maxAuthenticationAgeSeconds == null) maxAuthenticationAgeSeconds = 0;
         if (webOrigins == null) webOrigins = "";
         if (postLogoutRedirectUris == null) postLogoutRedirectUris = "";
+        if (resources == null) resources = "";
         if (publicClient == null) publicClient = false;
         if (tokenEndpointAuthMethod == null || tokenEndpointAuthMethod.isBlank()) {
             tokenEndpointAuthMethod = "client_secret_post";
@@ -179,6 +197,7 @@ public class OidcClient {
     public List<String> getGrantTypeList()   { return splitCsv(grantTypes); }
     public List<String> getWebOriginList()             { return splitCsv(webOrigins); }
     public List<String> getPostLogoutRedirectUriList() { return splitCsv(postLogoutRedirectUris); }
+    public List<String> getResourceList()              { return splitCsv(resources); }
 
     /** True when this client authenticates with PKCE alone and has no usable secret. */
     public boolean isPublicClient() { return Boolean.TRUE.equals(publicClient); }

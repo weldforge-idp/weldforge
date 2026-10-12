@@ -162,4 +162,73 @@ class OidcAuthTimeAndAtHashTest {
         assertThat(claims.get("at_hash")).isNotEqualTo("forged");
         assertThat(claims.get("amr")).isEqualTo(List.of("pwd"));
     }
+
+    /**
+     * RFC 8707: where the audience actually lands.
+     *
+     * <p>Everything else about resource indicators is plumbing; this is the
+     * payoff, and it is also the part that is easy to get subtly wrong. The
+     * two {@code claims.put("aud", ...)} lines in the token service look
+     * identical, and the first attempt at this change edited the ID token's.
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("resource indicators decide the access token's audience")
+    class ResourceAudience {
+
+        private static final String MCP = "https://shot.cwvermaak.tech/mcp/counteract-studios";
+
+        private Claims accessClaims(OidcTokenService.IssuedTokens tokens) {
+            return Jwts.parser().verifyWith(publicKey).build()
+                    .parseSignedClaims(tokens.accessToken()).getPayload();
+        }
+
+        private OidcTokenService.IssuedTokens issueFor(String resource) {
+            return tokenService.issueForCodeExchange(leap, client, alice,
+                    List.of("openid", "email"), "nonce-1",
+                    "https://sso.weldforge.org/t/leap", List.of("pwd"), null, resource);
+        }
+
+        @Test
+        @DisplayName("with no resource the audience is the client id, exactly as before")
+        void no_resource_keeps_the_client_as_audience() {
+            Claims access = accessClaims(issueFor(null));
+
+            // The whole opt-in guarantee in one assertion. Live integrations
+            // validate aud against their client id; if this ever changes for a
+            // client that asked for nothing, they all break at once.
+            assertThat(access.getAudience()).containsExactly(client.getClientId());
+        }
+
+        @Test
+        @DisplayName("with a resource the access token is audienced to the resource")
+        void resource_becomes_the_access_token_audience() {
+            Claims access = accessClaims(issueFor(MCP));
+
+            assertThat(access.getAudience()).containsExactly(MCP);
+        }
+
+        @Test
+        @DisplayName("the ID token keeps the client as its audience, resource or not")
+        void id_token_audience_is_always_the_client() {
+            // OIDC Core defines the ID token as a token FOR the client, and a
+            // conformant client validates aud against its own client id. An
+            // ID token audienced to a resource server would fail that check
+            // everywhere, which is why this is asserted separately rather than
+            // assumed from the access-token test above.
+            assertThat(idClaims(issueFor(MCP)).getAudience())
+                    .containsExactly(client.getClientId());
+            assertThat(idClaims(issueFor(null)).getAudience())
+                    .containsExactly(client.getClientId());
+        }
+
+        @Test
+        @DisplayName("client_id stays on the access token so the client is still identifiable")
+        void client_id_claim_survives_a_resource_audience() {
+            // aud now names the resource, so the only thing left saying which
+            // client holds this token is the client_id claim. A resource
+            // server that logs or authorises on the calling client needs it.
+            assertThat(accessClaims(issueFor(MCP)).get("client_id", String.class))
+                    .isEqualTo(client.getClientId());
+        }
+    }
 }

@@ -110,7 +110,22 @@ public class OidcAuthorizationService {
              * the token endpoint — which sees no session — can stamp them onto
              * the tokens it mints.
              */
-            List<String> amr) {
+            List<String> amr,
+            /**
+             * RFC 8707 {@code resource}: the audience the client is asking the
+             * token to be issued for. Null when the client did not ask, which
+             * is the default and leaves {@code aud} as the client id.
+             */
+            String resource) {
+
+        /** Backwards-compatible constructor for callers that don't name a resource. */
+        public AuthorizeRequest(String clientId, String redirectUri, List<String> scopes,
+                                String state, String nonce,
+                                String codeChallenge, String codeChallengeMethod,
+                                Integer maxAge, java.time.Instant authTime, List<String> amr) {
+            this(clientId, redirectUri, scopes, state, nonce,
+                    codeChallenge, codeChallengeMethod, maxAge, authTime, amr, null);
+        }
 
         /** Backwards-compatible constructor for callers that don't record auth_time. */
         public AuthorizeRequest(String clientId, String redirectUri, List<String> scopes,
@@ -118,7 +133,7 @@ public class OidcAuthorizationService {
                                 String codeChallenge, String codeChallengeMethod,
                                 Integer maxAge, List<String> amr) {
             this(clientId, redirectUri, scopes, state, nonce,
-                    codeChallenge, codeChallengeMethod, maxAge, null, amr);
+                    codeChallenge, codeChallengeMethod, maxAge, null, amr, null);
         }
 
         /** Backwards-compatible constructor for callers that don't know about amr. */
@@ -127,7 +142,7 @@ public class OidcAuthorizationService {
                                 String codeChallenge, String codeChallengeMethod,
                                 Integer maxAge) {
             this(clientId, redirectUri, scopes, state, nonce,
-                    codeChallenge, codeChallengeMethod, maxAge, null, null);
+                    codeChallenge, codeChallengeMethod, maxAge, null, null, null);
         }
 
         // Backwards-compatible constructor for callers that don't know about max_age.
@@ -135,7 +150,7 @@ public class OidcAuthorizationService {
                                 String state, String nonce,
                                 String codeChallenge, String codeChallengeMethod) {
             this(clientId, redirectUri, scopes, state, nonce,
-                    codeChallenge, codeChallengeMethod, null, null, null);
+                    codeChallenge, codeChallengeMethod, null, null, null, null);
         }
     }
 
@@ -164,6 +179,17 @@ public class OidcAuthorizationService {
                             "Scope '" + requested + "' is not registered for this client");
                 }
             }
+        }
+
+        // RFC 8707 2: a resource the client may not ask for is invalid_target.
+        // An unregistered client has an empty allow-list, so naming any
+        // resource at all is refused -- which is every client today, and is
+        // what keeps this change inert until a client is deliberately given
+        // one.
+        String resource = normaliseResource(request.resource());
+        if (resource != null && !client.getResourceList().contains(resource)) {
+            throw new OidcAuthorizationException("invalid_target",
+                    "resource is not registered for this client");
         }
 
         boolean challengePresent = request.codeChallenge() != null && !request.codeChallenge().isBlank();
@@ -219,6 +245,7 @@ public class OidcAuthorizationService {
                 .codeChallenge(request.codeChallenge())
                 .codeChallengeMethod(request.codeChallengeMethod())
                 .amr(AuthenticationMethods.toStorage(request.amr()))
+                .resource(resource)
                 .authTime(request.authTime() == null ? null
                         : LocalDateTime.ofInstant(request.authTime(), java.time.ZoneId.systemDefault()))
                 .expiresAt(LocalDateTime.now().plusSeconds(CODE_TTL_SECONDS))
@@ -238,16 +265,33 @@ public class OidcAuthorizationService {
             String clientId,
             String clientSecret,
             String redirectUri,
-            String codeVerifier) {}
+            String codeVerifier,
+            /** RFC 8707 resource on the TOKEN request. Must equal the one bound to the code. */
+            String resource) {
+
+        /** Backwards-compatible constructor for callers that name no resource. */
+        public CodeExchangeRequest(String code, String clientId, String clientSecret,
+                                   String redirectUri, String codeVerifier) {
+            this(code, clientId, clientSecret, redirectUri, codeVerifier, null);
+        }
+    }
 
     public record CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce,
                                      List<String> amr, Long codeId,
-                                     java.time.Instant authTime) {
+                                     java.time.Instant authTime,
+                                     /** The resource bound at /authorize, or null. Becomes the access token's aud. */
+                                     String resource) {
+
+        /** Backwards-compatible constructor for callers that don't record a resource. */
+        public CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce,
+                                  List<String> amr, Long codeId, java.time.Instant authTime) {
+            this(client, user, scopes, nonce, amr, codeId, authTime, null);
+        }
 
         /** Backwards-compatible constructor for callers that don't record the family. */
         public CodeExchangeResult(OidcClient client, User user, List<String> scopes, String nonce,
                                   List<String> amr) {
-            this(client, user, scopes, nonce, amr, null, null);
+            this(client, user, scopes, nonce, amr, null, null, null);
         }
     }
 
@@ -335,6 +379,18 @@ public class OidcAuthorizationService {
         if (LocalDateTime.now().isAfter(row.getExpiresAt())) {
             throw reject("invalid_grant", "Authorization code expired");
         }
+        // RFC 8707: the audience is fixed at /authorize, where the user
+        // consented to it. Letting the token request name a different one
+        // would mean a code obtained for one resource could be redeemed for
+        // another, which is the whole protection resource indicators exist to
+        // give. Absent on the token request is treated as "the one already
+        // bound", per RFC 8707 2.2, rather than as a request to drop it.
+        String requestedResource = normaliseResource(request.resource());
+        if (requestedResource != null && !requestedResource.equals(row.getResource())) {
+            throw new OidcAuthorizationException("invalid_target",
+                    "resource does not match the one this code was issued for");
+        }
+
         if (!row.getRedirectUri().equals(request.redirectUri())) {
             throw reject("invalid_grant", "redirect_uri mismatch");
         }
@@ -384,7 +440,8 @@ public class OidcAuthorizationService {
                 AuthenticationMethods.fromStorage(row.getAmr()),
                 row.getId(),
                 row.getAuthTime() == null ? null
-                        : row.getAuthTime().atZone(java.time.ZoneId.systemDefault()).toInstant());
+                        : row.getAuthTime().atZone(java.time.ZoneId.systemDefault()).toInstant(),
+                row.getResource());
     }
 
     // ---- Token endpoint: client credentials --------------------------
@@ -483,6 +540,46 @@ public class OidcAuthorizationService {
                         "Re-authentication required for this application");
             }
         }
+    }
+
+    /**
+     * An RFC 8707 {@code resource} value, canonicalised, or null when absent.
+     *
+     * <p>RFC 8707 2 requires an absolute URI and forbids a fragment, and says
+     * an unparseable or unacceptable value MUST be rejected with
+     * {@code invalid_target} -- the same error as an unregistered one, so a
+     * client cannot tell a malformed resource from one it is not allowed to
+     * ask for.
+     *
+     * <p>Scheme and host are lower-cased before comparison. The canonical form
+     * is lower-case and the Model Context Protocol asks servers to accept
+     * upper-case anyway for interoperability; doing it here means the
+     * allow-list is matched on one form rather than on whatever the client
+     * typed. Nothing else is normalised: a trailing slash is significant to
+     * the comparison, because it is significant to the resource.
+     */
+    static String normaliseResource(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        java.net.URI uri;
+        try {
+            uri = new java.net.URI(raw.trim());
+        } catch (java.net.URISyntaxException e) {
+            throw new OidcAuthorizationException("invalid_target", "resource is not a valid URI");
+        }
+        if (!uri.isAbsolute() || uri.getScheme() == null) {
+            throw new OidcAuthorizationException("invalid_target", "resource must be an absolute URI");
+        }
+        if (uri.getFragment() != null) {
+            throw new OidcAuthorizationException("invalid_target", "resource must not contain a fragment");
+        }
+        if (uri.getHost() == null) {
+            throw new OidcAuthorizationException("invalid_target", "resource must name a host");
+        }
+        String port = uri.getPort() == -1 ? "" : ":" + uri.getPort();
+        String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+        String query = uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery();
+        return uri.getScheme().toLowerCase(java.util.Locale.ROOT) + "://"
+                + uri.getHost().toLowerCase(java.util.Locale.ROOT) + port + path + query;
     }
 
     private OidcAuthorizationException reject(String code, String message) {

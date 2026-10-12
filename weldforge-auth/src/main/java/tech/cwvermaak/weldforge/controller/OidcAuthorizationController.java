@@ -78,6 +78,11 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "code_challenge", required = false) String codeChallenge,
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
                                        @RequestParam(value = "max_age", required = false) Integer maxAge,
+                                       // RFC 8707. Single-valued here: the parameter is
+                                       // repeatable in the RFC, but a code can only be
+                                       // bound to one audience and we refuse rather than
+                                       // silently pick one -- see rejectMultipleResources.
+                                       @RequestParam(value = "resource", required = false) String resource,
                                        @RequestParam(value = "prompt", required = false) String prompt,
                                        @AuthenticationPrincipal String email,
                                        HttpServletRequest request) {
@@ -92,6 +97,8 @@ public class OidcAuthorizationController {
         OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
                 .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
                         "Unknown client_id for this tenant"));
+
+        rejectMultipleResources(request);
 
         if (!RedirectUriMatcher.matches(client.getRedirectUriList(), redirectUri)) {
             throw new OidcAuthorizationException("invalid_request",
@@ -227,7 +234,7 @@ public class OidcAuthorizationController {
             String code = authorizationService.issueAuthorizationCode(tenant, user,
                     new AuthorizeRequest(clientId, redirectUri, requestedScopes, state, nonce,
                             codeChallenge, codeChallengeMethod, maxAge,
-                            sessionAuthTime(request), sessionAmr(request)));
+                            sessionAuthTime(request), sessionAmr(request), resource));
             String url = appendQuery(redirectUri, "code", code, "state", state,
                     "iss", OidcDiscoveryControllerHelper.tenantIssuer(request, slug));
             return ResponseEntity.status(302).location(URI.create(url)).build();
@@ -238,7 +245,7 @@ public class OidcAuthorizationController {
         // cross-site auto-submit of the consent form is rejected.
         String csrfToken = jwtService.generateConsentCsrfToken(email, tenant.getId(), slug);
         String html = renderConsent(slug, user, client, redirectUri, scope, state, nonce,
-                codeChallenge, codeChallengeMethod, maxAge, csrfToken,
+                codeChallenge, codeChallengeMethod, maxAge, resource, csrfToken,
                 tech.cwvermaak.weldforge.config.security.ContentSecurityPolicy.nonce(request));
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML_VALUE + "; charset=UTF-8")
@@ -262,6 +269,7 @@ public class OidcAuthorizationController {
                                        @RequestParam(value = "code_challenge", required = false) String codeChallenge,
                                        @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
                                        @RequestParam(value = "max_age", required = false) Integer maxAge,
+                                       @RequestParam(value = "resource", required = false) String resource,
                                        @RequestParam(value = "csrf_token", required = false) String csrfToken,
                                        @AuthenticationPrincipal String email,
                                        HttpServletRequest request) {
@@ -289,6 +297,8 @@ public class OidcAuthorizationController {
         OidcClient client = clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
                 .orElseThrow(() -> new OidcAuthorizationException("invalid_client",
                         "Unknown client_id for this tenant"));
+
+        rejectMultipleResources(request);
         if (!RedirectUriMatcher.matches(client.getRedirectUriList(), redirectUri)) {
             throw new OidcAuthorizationException("invalid_request",
                     "redirect_uri does not match a registered URI");
@@ -336,7 +346,8 @@ public class OidcAuthorizationController {
                 // endpoint can report it. Read from the request attribute the
                 // JWT filter sets on the session it accepted — never from a
                 // request parameter, which the client controls.
-                sessionAmr(request));
+                sessionAmr(request),
+                blankToNull(resource));
         String code = authorizationService.issueAuthorizationCode(tenant, user, req);
 
         // CONF-1.4 / RFC 9207: name the issuer that produced this response.
@@ -365,6 +376,7 @@ public class OidcAuthorizationController {
                                                      @RequestParam(value = "code_verifier", required = false) String codeVerifier,
                                                      @RequestParam(value = "refresh_token", required = false) String refreshToken,
                                                      @RequestParam(value = "scope", required = false) String scope,
+                                                     @RequestParam(value = "resource", required = false) String resource,
                                                      HttpServletRequest request) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant"));
@@ -379,12 +391,14 @@ public class OidcAuthorizationController {
 
         return switch (grantType) {
             case "authorization_code" -> {
+                rejectMultipleResources(request);
                 CodeExchangeResult result = authorizationService.exchangeCode(tenant,
-                        new CodeExchangeRequest(code, clientId, clientSecret, redirectUri, codeVerifier));
+                        new CodeExchangeRequest(code, clientId, clientSecret, redirectUri,
+                                codeVerifier, resource));
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
                         tenant, result.client(), result.user(),
                         result.scopes(), result.nonce(), issuer, result.amr(),
-                        result.authTime());
+                        result.authTime(), result.resource());
                 Map<String, Object> body = buildResponse(tokens, result.scopes());
                 // Only clients registered for the grant get one. Handing a
                 // refresh token to a client that never asked for it widens
@@ -434,6 +448,25 @@ public class OidcAuthorizationController {
                 // token still describes that authentication event — and the
                 // scopes the user granted at that login, which is what the
                 // refreshed token is allowed to carry (CONF-1.1, RFC 6749 §6).
+                // RFC 8707 on a refresh is refused rather than ignored.
+                //
+                // A refresh token here records no resource, so honouring the
+                // parameter would mean trusting the client's word for the
+                // audience at a point where nobody consented to it -- and
+                // ignoring it would hand back a token whose aud is the client
+                // id to a caller that asked for a resource, which its resource
+                // server then rejects with nothing saying why.
+                //
+                // Refusing is the only one of the three that is honest. A
+                // resource-bound session therefore cannot refresh yet; carrying
+                // the resource on the refresh family is follow-up work, and is
+                // deliberately not bolted onto the rotation path, which is the
+                // most safety-critical code in this service.
+                if (resource != null && !resource.isBlank()) {
+                    throw new OidcAuthorizationException("invalid_target",
+                            "resource is not supported on the refresh_token grant");
+                }
+
                 List<String> issuedScopes = resolveRefreshScopes(rotated.row(), client, scope);
                 IssuedTokens tokens = tokenService.issueForCodeExchange(
                         tenant, client, user, issuedScopes, null, issuer,
@@ -722,7 +755,7 @@ public class OidcAuthorizationController {
     static String renderConsent(String slug, User user, OidcClient client, String redirectUri,
                                 String scope, String state, String nonce,
                                 String codeChallenge, String codeChallengeMethod,
-                                Integer maxAge, String csrfToken, String cspNonce) {
+                                Integer maxAge, String resource, String csrfToken, String cspNonce) {
         String appName = client.getName() != null && !client.getName().isBlank()
                 ? client.getName() : client.getClientId();
         String scopesHtml = Arrays.stream(scope.split("\\s+"))
@@ -764,6 +797,11 @@ public class OidcAuthorizationController {
                 // Carried through the round-trip, or the freshness requirement
                 // the relying party asked for is silently dropped at consent.
                 + hidden("max_age", maxAge == null ? null : String.valueOf(maxAge))
+                // Carried for the same reason as max_age above: dropped here,
+                // the token comes back with the wrong audience and the
+                // resource server rejects it, with nothing on either side
+                // saying the consent screen was where it was lost.
+                + hidden("resource", resource)
                 + hidden("csrf_token", csrfToken)
                 + "<div class=\"actions\">"
                 + "<button class=\"deny\" type=\"submit\" name=\"decision\" value=\"deny\">Deny</button>"
@@ -798,6 +836,35 @@ public class OidcAuthorizationController {
     // Package-private so OidcAuthorizationControllerBlankParamTest can pin it
     // directly. The alternative -- driving a full authenticated consent round
     // trip -- buries the assertion under session and CSRF scaffolding.
+    /**
+     * RFC 8707 1 lets {@code resource} repeat, and we do not support that.
+     *
+     * <p>A code is bound to one audience, so several resources would mean
+     * either issuing a token good for all of them -- which defeats the point
+     * of naming one -- or picking one. Spring binds the first silently, and a
+     * client that asked for two audiences and got a token for one would have
+     * no way to tell. Refusing says so out loud.
+     *
+     * <p>Checked at /authorize and again at /decide: the consent form posts
+     * the value back, and a guard on only the first leg would be bypassed by
+     * posting straight to /decide.
+     *
+     * <p>Only distinct values count: the same resource twice is one request.
+     */
+    private static void rejectMultipleResources(HttpServletRequest request) {
+        String[] values = request.getParameterValues("resource");
+        if (values == null) return;
+        long distinct = java.util.Arrays.stream(values)
+                .filter(v -> v != null && !v.isBlank())
+                .map(String::trim)
+                .distinct()
+                .count();
+        if (distinct > 1) {
+            throw new OidcAuthorizationException("invalid_target",
+                    "Only one resource may be requested");
+        }
+    }
+
     static String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
     }

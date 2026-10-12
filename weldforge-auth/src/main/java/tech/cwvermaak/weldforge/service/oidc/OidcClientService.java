@@ -113,6 +113,7 @@ public class OidcClientService {
                 .redirectUris(joinCsv(dto.getRedirectUris()))
                 .postLogoutRedirectUris(joinCsv(dto.getPostLogoutRedirectUris()))
                 .webOrigins(joinCsv(dto.getWebOrigins()))
+                .resources(joinCsv(dto.getResources()))
                 .scopes(joinCsv(dto.getScopes()))
                 .grantTypes(joinCsv(dto.getGrantTypes()))
                 .requirePkce(requirePkce)
@@ -243,6 +244,7 @@ public class OidcClientService {
         if (dto.getRedirectUris() != null)           client.setRedirectUris(joinCsv(dto.getRedirectUris()));
         if (dto.getPostLogoutRedirectUris() != null) client.setPostLogoutRedirectUris(joinCsv(dto.getPostLogoutRedirectUris()));
         if (dto.getWebOrigins() != null)             client.setWebOrigins(joinCsv(dto.getWebOrigins()));
+        if (dto.getResources() != null)              client.setResources(joinCsv(dto.getResources()));
         if (dto.getScopes() != null)                 client.setScopes(joinCsv(dto.getScopes()));
         if (dto.getGrantTypes() != null)             client.setGrantTypes(joinCsv(dto.getGrantTypes()));
         if (dto.getRequireMfa() != null)             client.setRequireMfa(dto.getRequireMfa());
@@ -359,6 +361,7 @@ public class OidcClientService {
                 .requireMfa(c.getRequireMfa())
                 .maxAuthenticationAgeSeconds(c.getMaxAuthenticationAgeSeconds())
                 .webOrigins(c.getWebOriginList())
+                .resources(c.getResourceList())
                 .postLogoutRedirectUris(c.getPostLogoutRedirectUriList())
                 .publicClient(c.getPublicClient())
                 .tokenEndpointAuthMethod(c.getTokenEndpointAuthMethod())
