@@ -232,3 +232,32 @@ code, pre, .mono { font-family: var(--wf-mono); }
   font-size: 13px;
   user-select: all;
 }
+
+// A form field that carries a <wf-field-info> "i" on its top-right corner.
+// The wrapper only supplies the positioning context the badge hangs from;
+// the form field has to be told to fill it, because as a direct grid item it
+// stretched on its own. Global rather than per-component so the two halves of
+// this pattern -- the wrapper and the overlay panel below -- stay together.
+.wf-field {
+  position: relative;
+
+  mat-form-field { width: 100%; }
+}
+
+// Field info popouts (<wf-field-info>). The tooltip panel is rendered in a
+// CDK overlay at the document root, outside every component's view, so it
+// cannot be styled from the component that opened it.
+//
+// Material's default tooltip is sized for two or three words. These carry a
+// sentence, so they need a readable measure and a left edge to read down.
+.wf-field-info-tip {
+  .mdc-tooltip__surface {
+    max-width: 260px;
+    padding: 8px 12px;
+    font-family: var(--wf-sans);
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: left;
+    white-space: normal;
+  }
+}
