@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, of, tap } from 'rxjs';
+import { Observable, catchError, map, of, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { TokenRefreshScheduler } from './token-refresh.scheduler';
+import { refreshSession } from '../session-refresh';
 
 export type MfaFactorType = 'TOTP' | 'WEBAUTHN';
 
@@ -37,6 +38,32 @@ export class AuthService {
 
   isLoggedIn(): boolean {
     return !!localStorage.getItem('access_token');
+  }
+
+  /**
+   * Pick up a session that exists only as cookies.
+   *
+   * Every other way into this application ends in a JSON body with a token
+   * in it, which is why isLoggedIn() can be a localStorage read. A social
+   * sign-in does not: it ends as a 302 from the OAuth2 callback, and a
+   * redirect has no body for the SPA to read. The server had minted the
+   * session and set the cookies correctly; the portal simply never learned
+   * about it, sent the user to /login, and they signed in with Google again
+   * -- a loop with no error anywhere, on either side.
+   *
+   * It stayed hidden while a token from some earlier password login was
+   * still in localStorage, and appeared the moment Logout cleared it.
+   *
+   * One POST /api/auth/refresh against the rotating cookie answers the
+   * question. A signed-out visitor pays one 401 for it on a cold load;
+   * the interceptor does not retry /refresh, so it cannot recurse.
+   */
+  adoptCookieSession(): Observable<boolean> {
+    return refreshSession(this.http).pipe(
+      tap(res => this.storeIfAccess(res)),
+      map(res => !!res?.token),
+      catchError(() => of(false)),
+    );
   }
 
   login(credentials: LoginCredentials): Observable<AuthResponse> {
