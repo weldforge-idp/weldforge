@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { TokenRefreshScheduler } from './token-refresh.scheduler';
-import { refreshSession } from '../session-refresh';
+import { sharedRefresh } from '../session-refresh';
 
 export type MfaFactorType = 'TOTP' | 'WEBAUTHN';
 
@@ -57,9 +57,13 @@ export class AuthService {
    * One POST /api/auth/refresh against the rotating cookie answers the
    * question. A signed-out visitor pays one 401 for it on a cold load;
    * the interceptor does not retry /refresh, so it cannot recurse.
+   *
+   * Through sharedRefresh, never refreshSession directly. The cookie is
+   * single-use and a second concurrent redemption is read as theft, which
+   * revokes the family and kills the session. See sharedRefresh.
    */
   adoptCookieSession(): Observable<boolean> {
-    return refreshSession(this.http).pipe(
+    return sharedRefresh(this.http).pipe(
       tap(res => this.storeIfAccess(res)),
       map(res => !!res?.token),
       catchError(() => of(false)),

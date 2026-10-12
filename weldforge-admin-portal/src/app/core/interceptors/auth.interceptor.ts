@@ -10,10 +10,10 @@ import {
 } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, Observable, ReplaySubject, switchMap, take, throwError } from 'rxjs';
+import { catchError, Observable, switchMap, throwError } from 'rxjs';
 
 import { TokenRefreshScheduler } from '../services/token-refresh.scheduler';
-import { refreshSession } from '../session-refresh';
+import { sharedRefresh } from '../session-refresh';
 
 // x-app-authorization is injected by the nginx reverse proxy on the
 // admin.weldforge.org vhost using a value read from the
@@ -45,8 +45,8 @@ import { refreshSession } from '../session-refresh';
 //
 // Concurrency: if N requests fire and all get 401 around the same
 // moment (very common — a route activation triggers several
-// queries), they share a single in-flight refresh via the
-// module-scoped ReplaySubject. The first 401 starts /refresh; the
+// queries), they share a single in-flight refresh via sharedRefresh in
+// core/session-refresh. The first 401 starts /refresh; the
 // others wait for the same emission and use the new token to replay.
 // One /refresh, N replays.
 //
@@ -69,9 +69,6 @@ const PRE_AUTH_PATHS = [
   '/api/auth/verify-email',
   '/api/auth/resend-verification',
 ];
-
-/** Shared across the module so concurrent 401s collapse onto one /refresh. */
-let refreshInFlight$: ReplaySubject<string> | null = null;
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
@@ -121,20 +118,11 @@ function refreshAndReplay(
   router: Router,
   scheduler: TokenRefreshScheduler,
 ): Observable<HttpEvent<unknown>> {
-  // Another concurrent 401 has already kicked off /refresh — wait
-  // for it and replay with whatever token it produces (or propagate
-  // its failure).
-  if (refreshInFlight$) {
-    return refreshInFlight$.pipe(
-      take(1),
-      switchMap(newToken => next(replay(req, newToken))),
-    );
-  }
-
-  const subject = new ReplaySubject<string>(1);
-  refreshInFlight$ = subject;
-
-  return refreshSession(http)
+  // sharedRefresh collapses every caller in this tab onto one request,
+  // including the auth guard, which is not an interceptor and used to
+  // redeem the cookie on its own. Concurrent redemptions of a single-use
+  // token are read as theft and revoke the family.
+  return sharedRefresh(http)
     .pipe(
       switchMap(res => {
         localStorage.setItem('access_token', res.token);
@@ -142,14 +130,9 @@ function refreshAndReplay(
         // would still be set to the previous token's exp (probably in
         // the past) and fire a redundant /refresh on the next tick.
         scheduler.scheduleFromToken(res.token);
-        subject.next(res.token);
-        subject.complete();
-        refreshInFlight$ = null;
         return next(replay(req, res.token));
       }),
       catchError(refreshErr => {
-        subject.error(refreshErr);
-        refreshInFlight$ = null;
         scheduler.cancel();
         localStorage.removeItem('access_token');
         router.navigate(['/login'], {
