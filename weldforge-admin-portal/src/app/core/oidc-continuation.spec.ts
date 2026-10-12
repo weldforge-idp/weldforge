@@ -3,6 +3,8 @@ import {
   readOidcReturnTo,
   resolvePostAuthTarget,
   safeOidcReturnUrl,
+  stashOidcContinuation,
+  takeOidcContinuation,
 } from './oidc-continuation';
 
 /** base64url-encode, the way OidcAuthorizationController does (no padding). */
@@ -160,5 +162,69 @@ describe('oidc-continuation', () => {
         url: AUTHORIZE,
       });
     });
+  });
+});
+
+/**
+ * A social sign-in leaves this origin, so the continuation cannot ride in the
+ * URL. Confirmed against production on 2026-10-12: a value on the kickoff URL
+ * reaches neither `state` nor `redirect_uri`, so Google cannot hand it back
+ * and the user is dropped on the portal one step from finishing.
+ */
+describe('the continuation across a social sign-in', () => {
+  const BASE = 'sso.weldforge.org';
+  const AUTHORIZE = 'https://sso.weldforge.org/t/counteract-studios/oauth2/authorize?client_id=counter-shot';
+
+  beforeEach(() => sessionStorage.clear());
+
+  it('comes back after the round trip to the provider', () => {
+    stashOidcContinuation(enc(AUTHORIZE));
+
+    expect(takeOidcContinuation(BASE)).toBe(AUTHORIZE);
+  });
+
+  it('is single-use, so an abandoned sign-in cannot hijack a later visit', () => {
+    stashOidcContinuation(enc(AUTHORIZE));
+
+    expect(takeOidcContinuation(BASE)).toBe(AUTHORIZE);
+    expect(takeOidcContinuation(BASE)).toBeNull();
+  });
+
+  it('expires, so a continuation left this morning does not fire this afternoon', () => {
+    const elevenMinutesAgo = Date.now() - 11 * 60 * 1000;
+    sessionStorage.setItem('wf_oidc_continuation',
+        JSON.stringify({ raw: enc(AUTHORIZE), at: elevenMinutesAgo }));
+
+    expect(takeOidcContinuation(BASE)).toBeNull();
+  });
+
+  it('starting a plain sign-in clears an earlier one', () => {
+    stashOidcContinuation(enc(AUTHORIZE));
+    stashOidcContinuation(null);
+
+    expect(takeOidcContinuation(BASE)).toBeNull();
+  });
+
+  it('is still validated on the way out -- storage is not a way past the check', () => {
+    // Anything that can write sessionStorage can also just navigate the tab,
+    // so this is not the primary defence. It matters because it keeps the
+    // single validation rule in one place instead of trusting the store.
+    for (const hostile of [
+      enc('https://evil.example/phish'),
+      enc('https://evil-sso.weldforge.org/phish'),
+      enc('https://sso.weldforge.org.evil.com/phish'),
+      enc('http://sso.weldforge.org/t/x/oauth2/authorize'),
+      'not-base64-@@@',
+    ]) {
+      sessionStorage.setItem('wf_oidc_continuation', JSON.stringify({ raw: hostile, at: Date.now() }));
+      expect(takeOidcContinuation(BASE), `should refuse: ${hostile}`).toBeNull();
+    }
+  });
+
+  it('shrugs off junk in the store rather than throwing on a page load', () => {
+    for (const junk of ['', 'not json', '{}', '{"raw":123,"at":1}', '{"raw":"x"}']) {
+      sessionStorage.setItem('wf_oidc_continuation', junk);
+      expect(takeOidcContinuation(BASE)).toBeNull();
+    }
   });
 });

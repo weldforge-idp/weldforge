@@ -5,7 +5,10 @@ import { of, throwError, firstValueFrom, isObservable, Observable } from 'rxjs';
 
 import { authGuard } from './auth.guard';
 import { AuthService } from '../services/auth.service';
+import { ExternalNavigator } from '../external-navigator';
+import { stashOidcContinuation } from '../oidc-continuation';
 import { TokenRefreshScheduler } from './../services/token-refresh.scheduler';
+import { environment } from '../../../environments/environment';
 
 function token(claims: Record<string, unknown>): string {
   const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -24,12 +27,14 @@ const LOGIN_TREE = { __urlTree: '/login' } as unknown as UrlTree;
 describe('authGuard', () => {
   let router: { createUrlTree: ReturnType<typeof vi.fn> };
   let post: ReturnType<typeof vi.fn>;
+  let externalNav: { go: ReturnType<typeof vi.fn> };
 
   function run(opts: { storedToken?: string; refresh?: Observable<unknown> }) {
     localStorage.clear();
     if (opts.storedToken) localStorage.setItem('access_token', opts.storedToken);
     TestBed.resetTestingModule();
     router = { createUrlTree: vi.fn().mockReturnValue(LOGIN_TREE) };
+    externalNav = { go: vi.fn() };
     post = vi.fn().mockReturnValue(opts.refresh ?? of(null));
     TestBed.configureTestingModule({
       providers: [
@@ -37,6 +42,7 @@ describe('authGuard', () => {
         { provide: HttpClient, useValue: { post, get: vi.fn() } },
         { provide: TokenRefreshScheduler, useValue: { scheduleFromToken: vi.fn(), cancel: vi.fn() } },
         { provide: Router, useValue: router },
+        { provide: ExternalNavigator, useValue: externalNav },
       ],
     });
     return TestBed.runInInjectionContext(
@@ -76,5 +82,44 @@ describe('authGuard', () => {
     const result = await settle(run({ refresh: of({ expiresIn: 900 }) }));
 
     expect(result).toBe(LOGIN_TREE);
+  });
+
+  describe('resuming an interrupted OIDC flow', () => {
+    // Built from the configured base domain, because that is what the guard
+    // validates against -- it takes no baseDomain argument, so a hard-coded
+    // production host would only pass by coincidence of configuration.
+    const AUTHORIZE =
+        `https://${environment.publicBaseDomain}/t/counteract-studios/oauth2/authorize?client_id=counter-shot`;
+    const enc = (u: string) => btoa(u).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    beforeEach(() => sessionStorage.clear());
+
+    it('sends a social sign-in back to the application it started from', async () => {
+      // Started at counter.shot, bounced here, signed in with Google. The
+      // provider cannot carry the continuation, so the login screen left it
+      // in sessionStorage before redirecting.
+      stashOidcContinuation(enc(AUTHORIZE));
+      const result = await settle(run({ refresh: of({ token: token({}), expiresIn: 900 }) }));
+
+      expect(externalNav.go).toHaveBeenCalledWith(AUTHORIZE);
+      // The navigation is cancelled: the browser is leaving.
+      expect(result).toBe(false);
+    });
+
+    it('renders the portal normally when no flow was interrupted', async () => {
+      const result = await settle(run({ refresh: of({ token: token({}), expiresIn: 900 }) }));
+
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    it('does not leave the origin for a continuation naming a foreign host', async () => {
+      sessionStorage.setItem('wf_oidc_continuation',
+          JSON.stringify({ raw: enc('https://evil.example/phish'), at: Date.now() }));
+      const result = await settle(run({ refresh: of({ token: token({}), expiresIn: 900 }) }));
+
+      expect(externalNav.go).not.toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
   });
 });
