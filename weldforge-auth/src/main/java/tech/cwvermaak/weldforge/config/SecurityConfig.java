@@ -161,6 +161,14 @@ public class SecurityConfig {
                                 "/api/auth/mfa/verify",
                                 "/api/auth/mfa/webauthn/assertion/**",
                                 "/t/*/.well-known/openid-configuration",
+                                // The same document at the two URLs an OAuth
+                                // client builds first from a path-bearing
+                                // issuer (RFC 8414 3.1 and its 5 compatibility
+                                // notes). Public for the same reason as the
+                                // appended form: a relying party reads
+                                // discovery before it holds any credential.
+                                "/.well-known/openid-configuration/t/*",
+                                "/.well-known/oauth-authorization-server/t/*",
                                 "/t/*/oauth2/jwks",
                                 "/t/*/oauth2/token",
                                 "/t/*/oauth2/userinfo",

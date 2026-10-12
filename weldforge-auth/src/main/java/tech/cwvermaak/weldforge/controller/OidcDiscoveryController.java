@@ -38,7 +38,44 @@ public class OidcDiscoveryController {
     private final TenantRepository tenantRepository;
     private final TenantSigningKeyService signingKeyService;
 
-    @GetMapping("/t/{slug}/.well-known/openid-configuration")
+    /**
+     * The three URLs an OAuth client may build from a path-bearing issuer.
+     *
+     * <p>Our tenant issuer carries a path -- {@code https://host/t/{slug}} -- and
+     * RFC 8414 §3.1, its §5 compatibility notes, and the Model Context Protocol's
+     * discovery rules all say the same thing about that case: a client inserts the
+     * well-known segment BEFORE the issuer's path and only falls back to appending
+     * it. The order tried is oauth-authorization-server with path insertion, then
+     * openid-configuration with path insertion, then openid-configuration appended.
+     *
+     * <p>Only the third existed here. The other two were not 404s, which would at
+     * least have let a client fall through: everything outside {@code /api},
+     * {@code /t/}, {@code /saml2}, {@code /scim} and {@code /health} is routed to
+     * the admin portal, so both answered <b>200 with an HTML page</b>. A careful
+     * client parses it, fails, and moves on; a strict one stops at the first 200 and
+     * never reaches the document that exists. Verified against production on
+     * 2026-10-12. It is the same shape as the {@code /actuator} and
+     * {@code /api/auth/**} traps already on record: a 200 from this estate is not
+     * evidence that an endpoint exists.
+     *
+     * <p><b>The ingress must route {@code /.well-known/} to this service</b> or these
+     * two mappings are unreachable and nothing changes. That is a change in the
+     * infrastructure repository.
+     *
+     * <p>One builder behind all three, because the {@code issuer} they publish has to
+     * be byte-identical -- a client MUST reject a document whose issuer differs from
+     * the one it used to build the URL (RFC 8414 §3.3), so drift between these would
+     * not degrade, it would fail.
+     *
+     * <p>RFC 8414 permits additional metadata parameters, so the OIDC-specific
+     * members below are legitimate in the oauth-authorization-server document and
+     * one document can serve both.
+     */
+    @GetMapping({
+            "/t/{slug}/.well-known/openid-configuration",
+            "/.well-known/openid-configuration/t/{slug}",
+            "/.well-known/oauth-authorization-server/t/{slug}",
+    })
     public ResponseEntity<Map<String, Object>> discovery(@PathVariable String slug,
                                                          HttpServletRequest request) {
         Tenant tenant = lookupTenant(slug);

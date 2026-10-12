@@ -64,7 +64,15 @@ class AppAuthorizationFilterExemptionTest {
     }
 
     @ParameterizedTest(name = "{0} keeps its existing exemption")
-    @ValueSource(strings = {"/api/auth/login", "/api/admin/tenants", "/t/leap/oauth2/token", "/scim/v2/Users"})
+    @ValueSource(strings = {"/api/auth/login", "/api/admin/tenants", "/t/leap/oauth2/token", "/scim/v2/Users",
+            // Discovery at the two URLs an OAuth client builds from a
+            // path-bearing issuer before the /t/ form. Permitting them in
+            // SecurityConfig was not enough -- this filter is a second,
+            // independent allow-list, and a path on one but not the other
+            // answers 403 to a caller that by definition holds no credential.
+            // Both returned 403 in CI until this line existed.
+            "/.well-known/oauth-authorization-server/t/leap",
+            "/.well-known/openid-configuration/t/leap"})
     void existing_exemptions_unchanged(String path) throws Exception {
         assertThat(passes("POST", path)).isTrue();
     }

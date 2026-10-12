@@ -84,6 +84,16 @@ public class AppAuthorizationFilter extends OncePerRequestFilter {
                 || path.startsWith("/actuator/")
                 || path.startsWith("/api/auth/")   // SPA pre-login + auth flows
                 || path.startsWith("/t/")          // per-tenant OIDC + SAML IdP
+                // The same tenant discovery document at the two URLs an
+                // OAuth client builds before the /t/ one (RFC 8414 3.1).
+                // Exempt here as well as permitted in SecurityConfig:
+                // these are two independent allow-lists, and a path on
+                // one but not the other answers 403 to a caller that by
+                // definition holds no credential yet. Caught by
+                // OidcConformanceRegressionIntegrationTest asserting the
+                // status, not merely that something answered.
+                || path.startsWith("/.well-known/oauth-authorization-server")
+                || path.startsWith("/.well-known/openid-configuration")
                 || path.startsWith("/saml2/")      // SAML SP login
                 || path.startsWith("/scim/v2/")    // SCIM (has its own auth filter)
                 // The order funnel is called by a browser on www.weldforge.org

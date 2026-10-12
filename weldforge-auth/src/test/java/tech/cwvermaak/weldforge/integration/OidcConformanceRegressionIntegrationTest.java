@@ -8,6 +8,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -15,6 +16,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 
+import com.jayway.jsonpath.JsonPath;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -95,6 +99,58 @@ class OidcConformanceRegressionIntegrationTest {
         assertThat(postStatus)
                 .as("both methods are the same code path, so they answer alike")
                 .isEqualTo(getStatus);
+    }
+
+    /**
+     * RFC 8414 3.1 and the Model Context Protocol's discovery rules: for an
+     * issuer with a path, a client inserts the well-known segment before the
+     * path and only falls back to appending it. It tries
+     * oauth-authorization-server inserted, then openid-configuration inserted,
+     * then openid-configuration appended, and stops at the first document.
+     *
+     * <p>Only the appended form existed. The other two answered 200 with the
+     * admin portal's HTML in production, because the ingress sends everything
+     * outside a short list of prefixes to the SPA -- so a client stopping at
+     * the first 200 never reached the real document.
+     *
+     * <p>This test can only prove the application side. The ingress route is in
+     * the infrastructure repository and no test here can see it.
+     */
+    @Test
+    @DisplayName("discovery answers at all three URLs a client builds, with one issuer")
+    void discovery_at_every_well_known_url() throws Exception {
+        Tenant t = newTenant();
+        List<String> urls = List.of(
+                "/.well-known/oauth-authorization-server/t/" + t.getSlug(),
+                "/.well-known/openid-configuration/t/" + t.getSlug(),
+                "/t/" + t.getSlug() + "/.well-known/openid-configuration");
+
+        List<String> issuers = new ArrayList<>();
+        for (String url : urls) {
+            MockHttpServletResponse res = mvc.perform(get(url)).andReturn().getResponse();
+            assertThat(res.getStatus()).as("%s must serve the document", url).isEqualTo(200);
+            assertThat(res.getContentType())
+                    .as("%s must be JSON -- an HTML 200 here is the production defect", url)
+                    .startsWith("application/json");
+            issuers.add(JsonPath.read(res.getContentAsString(), "$.issuer"));
+        }
+
+        // RFC 8414 3.3: a client MUST reject a document whose issuer differs
+        // from the one it used to build the URL. Drift between these three
+        // would not degrade, it would fail.
+        assertThat(issuers).as("one issuer, byte-identical, from all three URLs")
+                .containsExactly(issuers.get(0), issuers.get(0), issuers.get(0));
+        assertThat(issuers.get(0)).endsWith("/t/" + t.getSlug());
+    }
+
+    /** An unknown tenant must not be answered with a document at the new URLs either. */
+    @Test
+    @DisplayName("the inserted-path URLs 404 for a tenant that does not exist")
+    void inserted_path_unknown_tenant_is_not_found() throws Exception {
+        assertThat(mvc.perform(get("/.well-known/oauth-authorization-server/t/no-such-tenant"))
+                .andReturn().getResponse().getStatus()).isEqualTo(404);
+        assertThat(mvc.perform(get("/.well-known/openid-configuration/t/no-such-tenant"))
+                .andReturn().getResponse().getStatus()).isEqualTo(404);
     }
 
 }
