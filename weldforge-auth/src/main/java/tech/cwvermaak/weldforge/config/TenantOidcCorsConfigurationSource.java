@@ -47,6 +47,18 @@ public class TenantOidcCorsConfigurationSource implements CorsConfigurationSourc
             "^/t/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])/"
             + "(\\.well-known/openid-configuration|oauth2/(jwks|token|userinfo|authorize))$");
 
+    /**
+     * The same discovery document at the two path-inserted URLs a client tries
+     * first (RFC 8414 3.1). Matched separately because the tenant slug is last
+     * here rather than first, so an agent fetching discovery from a browser gets
+     * the same CORS answer at whichever of the three URLs it reached.
+     *
+     * <p>[.] rather than an escaped dot: same match, one less thing to get wrong.
+     */
+    private static final Pattern OIDC_WELL_KNOWN_INSERTED = Pattern.compile(
+            "^/[.]well-known/(openid-configuration|oauth-authorization-server)"
+            + "/t/([a-z0-9][a-z0-9-]{0,62}[a-z0-9])$");
+
     private final OidcClientRepository oidcClientRepository;
     private final TenantRepository tenantRepository;
 
@@ -54,12 +66,10 @@ public class TenantOidcCorsConfigurationSource implements CorsConfigurationSourc
     public CorsConfiguration getCorsConfiguration(HttpServletRequest request) {
         String path = request.getRequestURI();
         if (path == null) return null;
-        Matcher m = OIDC_BROWSER_PATH.matcher(path);
         // Not a tenant OIDC endpoint — signal the caller to fall back to the
         // global CORS configuration.
-        if (!m.matches()) return null;
-
-        String slug = m.group(1);
+        String slug = tenantSlug(path);
+        if (slug == null) return null;
         List<String> origins = tenantRepository.findBySlug(slug)
                 .map(t -> oidcClientRepository.findByTenantId(t.getId()).stream()
                         .flatMap(c -> c.getWebOriginList().stream())
@@ -76,5 +86,14 @@ public class TenantOidcCorsConfigurationSource implements CorsConfigurationSourc
         cfg.setAllowCredentials(false);
         cfg.setMaxAge(3600L);
         return cfg;
+    }
+
+    /** The tenant named by a browser-reachable OIDC path, or null if it is not one. */
+    private static String tenantSlug(String path) {
+        Matcher appended = OIDC_BROWSER_PATH.matcher(path);
+        if (appended.matches()) return appended.group(1);
+        Matcher inserted = OIDC_WELL_KNOWN_INSERTED.matcher(path);
+        if (inserted.matches()) return inserted.group(2);
+        return null;
     }
 }

@@ -49,12 +49,38 @@ class OidcDiscoveryCompletenessTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> discovery() {
-        MockHttpServletRequest request = new MockHttpServletRequest(
-                "GET", "/t/leap/.well-known/openid-configuration");
+        return discoveryAt("/t/leap/.well-known/openid-configuration");
+    }
+
+    private Map<String, Object> discoveryAt(String requestUri) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", requestUri);
         request.setScheme("https");
         request.setServerName("sso.weldforge.org");
         request.setServerPort(443);
         return controller.discovery("leap", request).getBody();
+    }
+
+    /**
+     * The issuer is built from the Host header, never from the path the request
+     * arrived on, so the three URLs a client may try all publish the same one.
+     * RFC 8414 3.3 makes a client reject a document whose issuer differs from
+     * the issuer it used to build the URL, so a difference here would not be a
+     * cosmetic inconsistency -- it would stop discovery working at two of three
+     * URLs while appearing to succeed.
+     */
+    @Test
+    @DisplayName("all three well-known URLs publish one byte-identical issuer")
+    void one_issuer_whatever_url_was_used() {
+        String appended = (String) discoveryAt(
+                "/t/leap/.well-known/openid-configuration").get("issuer");
+        String insertedOidc = (String) discoveryAt(
+                "/.well-known/openid-configuration/t/leap").get("issuer");
+        String insertedOauth = (String) discoveryAt(
+                "/.well-known/oauth-authorization-server/t/leap").get("issuer");
+
+        assertThat(appended).isEqualTo("https://sso.weldforge.org/t/leap");
+        assertThat(insertedOidc).isEqualTo(appended);
+        assertThat(insertedOauth).isEqualTo(appended);
     }
 
     @Test
