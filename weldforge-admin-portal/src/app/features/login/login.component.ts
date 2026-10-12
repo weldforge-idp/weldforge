@@ -13,7 +13,7 @@ import { WebAuthnCeremony } from '../../core/webauthn-ceremony';
 import { TenantBrandingService } from '../../core/services/tenant-branding.service';
 import { catchError, tap } from 'rxjs/operators';
 import { firstValueFrom, of } from 'rxjs';
-import { forwardOidcParams, resolvePostAuthTarget, oidcClientIdFrom } from '../../core/oidc-continuation';
+import { forwardOidcParams, oidcClientIdFrom, resolvePostAuthTarget, stashOidcContinuation } from '../../core/oidc-continuation';
 import { environment } from '../../../environments/environment';
 import { ExternalNavigator } from '../../core/external-navigator';
 import { apiErrorMessage } from '../../core/api-error';
@@ -355,6 +355,14 @@ export class LoginComponent implements OnInit {
   signInWith(p: { provider: string }) {
     const slug = this.branding.slugFromHost();
     const params = forwardOidcParams(this.route.snapshot.queryParams);
+
+    // The query parameter does not survive the provider: Spring drops it
+    // building the authorization request, so the callback carries only
+    // `code` and `state`. Verified against production on 2026-10-12. It is
+    // still sent, because the server reads it when it is there and that
+    // costs nothing; sessionStorage is what actually gets it back.
+    stashOidcContinuation(params['oidcReturnTo'] ?? null);
+
     const query = params['oidcReturnTo']
         ? `?oidcReturnTo=${encodeURIComponent(params['oidcReturnTo'])}`
         : '';

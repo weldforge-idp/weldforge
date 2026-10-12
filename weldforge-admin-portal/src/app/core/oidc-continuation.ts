@@ -143,3 +143,78 @@ export function oidcClientIdFrom(raw: string | null): string | null {
     return null;
   }
 }
+
+/**
+ * Carrying the continuation across a social sign-in.
+ *
+ * Every other auth screen keeps `oidcReturnTo` in the URL, because it never
+ * leaves this origin. A social sign-in does: the browser goes to Google and
+ * comes back to `/login/oauth2/code/{registrationId}?code=…&state=…`.
+ * Verified against production on 2026-10-12 -- a value put on the kickoff URL
+ * reaches neither `state` nor `redirect_uri`, so it cannot come back, and
+ * OAuth2LoginSuccessHandler finds no continuation and lands the user on the
+ * portal. For a person who started at a relying party, that is the flow
+ * abandoning them one step from the end.
+ *
+ * sessionStorage survives the round trip -- same origin, same tab -- and is
+ * scoped to that tab, so two sign-ins in two tabs cannot take each other's
+ * continuation.
+ *
+ * What is stored is the RAW, still-encoded value, exactly as it arrived.
+ * Validation happens on the way out through {@link safeOidcReturnUrl}, so
+ * storage is never a way to get an unchecked URL into a redirect: a value
+ * edited in devtools is refused on read like any other.
+ */
+const PENDING_KEY = 'wf_oidc_continuation';
+
+/** How long a stashed continuation stays usable. */
+const PENDING_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Remember the continuation across a sign-in that leaves this origin.
+ *
+ * A no-op when there is nothing to carry, which also clears any stale value:
+ * starting a plain sign-in must not resume someone's abandoned OIDC flow.
+ */
+export function stashOidcContinuation(raw: string | null): void {
+  try {
+    if (!raw) {
+      sessionStorage.removeItem(PENDING_KEY);
+      return;
+    }
+    sessionStorage.setItem(PENDING_KEY, JSON.stringify({ raw, at: Date.now() }));
+  } catch {
+    // Private mode, blocked storage, quota. The sign-in still works; it
+    // just ends on the portal, which is where it ended before this existed.
+  }
+}
+
+/**
+ * Take back the continuation, if there is a usable one.
+ *
+ * Single-use and time-limited. Without both, a continuation left by an
+ * abandoned sign-in would hijack an ordinary visit to the portal later in
+ * the same tab.
+ */
+export function takeOidcContinuation(baseDomain?: string): string | null {
+  let stored: string | null = null;
+  try {
+    stored = sessionStorage.getItem(PENDING_KEY);
+    sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    return null;
+  }
+  if (!stored) return null;
+
+  let raw: unknown;
+  let at: unknown;
+  try {
+    ({ raw, at } = JSON.parse(stored));
+  } catch {
+    return null;
+  }
+  if (typeof raw !== 'string' || typeof at !== 'number') return null;
+  if (!Number.isFinite(at) || Date.now() - at > PENDING_TTL_MS || at > Date.now()) return null;
+
+  return safeOidcReturnUrl(raw, baseDomain ?? environment.publicBaseDomain);
+}
