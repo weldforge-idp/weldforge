@@ -1,9 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { refreshSession, storedSessionTenant } from './session-refresh';
+import { Subject, firstValueFrom, of } from 'rxjs';
+
+import {
+  RefreshResponse,
+  refreshSession,
+  resetSharedRefresh,
+  sharedRefresh,
+  storedSessionTenant,
+} from './session-refresh';
 import { tenantInterceptor } from './interceptors/tenant.interceptor';
 import { TenantPickerService } from './services/tenant-picker.service';
 import { AuthService } from './services/auth.service';
@@ -76,5 +84,83 @@ describe('refreshSession', () => {
     expect(storedSessionTenant()).toBeNull();
     localStorage.setItem('access_token', token({ tenant: 42 }));
     expect(storedSessionTenant()).toBeNull();
+  });
+});
+
+/**
+ * The refresh cookie is single-use and rotates. A second concurrent
+ * redemption is read by the server as theft, and it revokes the whole
+ * family -- killing the session the winning rotation just created. That is
+ * deliberate (B-AUTH-6) and is not going to change, so the client's job is
+ * to never redeem it twice at once.
+ *
+ * Production, 2026-10-12, 20ms apart, straight after a Google sign-in:
+ *   11:40:13.264  Refresh token reuse detected: family 336c90b1 revoked
+ *   11:40:13.284  auth.refresh.rotate  SUCCESS
+ *   11:40:13.466  jwt_session_terminated
+ */
+describe('sharedRefresh', () => {
+  let post: ReturnType<typeof vi.fn>;
+  let http: HttpClient;
+
+  beforeEach(() => {
+    resetSharedRefresh();
+    localStorage.clear();
+    post = vi.fn();
+    http = { post } as unknown as HttpClient;
+  });
+
+  it('redeems the cookie once however many callers ask at the same moment', async () => {
+    const server = new Subject<RefreshResponse>();
+    post.mockReturnValue(server);
+
+    const callers = [sharedRefresh(http), sharedRefresh(http), sharedRefresh(http)]
+        .map(o => firstValueFrom(o));
+
+    expect(post).toHaveBeenCalledTimes(1);
+
+    server.next({ token: 'fresh', expiresIn: 900 });
+    server.complete();
+
+    expect(await Promise.all(callers)).toEqual([
+      { token: 'fresh', expiresIn: 900 },
+      { token: 'fresh', expiresIn: 900 },
+      { token: 'fresh', expiresIn: 900 },
+    ]);
+  });
+
+  it('starts the request even if nobody subscribes to the returned observable', () => {
+    post.mockReturnValue(new Subject<RefreshResponse>());
+
+    sharedRefresh(http);
+
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('redeems again once the previous one has finished', async () => {
+    post.mockReturnValue(of({ token: 'first', expiresIn: 900 }));
+    await firstValueFrom(sharedRefresh(http));
+
+    post.mockReturnValue(of({ token: 'second', expiresIn: 900 }));
+    const again = await firstValueFrom(sharedRefresh(http));
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(again.token).toBe('second');
+  });
+
+  it('gives every waiting caller the same failure, and does not wedge', async () => {
+    const server = new Subject<RefreshResponse>();
+    post.mockReturnValue(server);
+
+    const a = firstValueFrom(sharedRefresh(http)).catch(e => e);
+    const b = firstValueFrom(sharedRefresh(http)).catch(e => e);
+    server.error({ status: 401 });
+
+    expect(await a).toEqual({ status: 401 });
+    expect(await b).toEqual({ status: 401 });
+
+    // A failed refresh must not leave the door latched shut.
+    post.mockReturnValue(of({ token: 'later', expiresIn: 900 }));
+    expect((await firstValueFrom(sharedRefresh(http))).token).toBe('later');
   });
 });
