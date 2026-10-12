@@ -366,6 +366,25 @@ public class AuthService {
                 AuthenticationMethods.fromStorage(issued.row().getAmr()),
                 // Same family, same session: a refresh is not a new login.
                 issued.row().getFamilyId().toString());
+        // The browser session follows the rotation, exactly as it follows a
+        // sign-in. wf_session carries an access token and expires with it, so
+        // without this the OIDC browser session died one access TTL after the
+        // last full login while the portal session rolled on indefinitely --
+        // the portal refreshes localStorage, nothing refreshed the cookie.
+        //
+        // What that looked like: a signed-in person arriving at /authorize
+        // from a relying party was sent to a login screen, because /authorize
+        // authenticates on this cookie and the SPA's token is a separate
+        // credential it cannot see. Nothing was broken, nothing was logged,
+        // and the person had every reason to think they were already signed
+        // in. Found on 2026-10-12 behind a social sign-in that looked like it
+        // had failed; it is the reason that flow left the portal at all.
+        //
+        // Scoped and bound as at sign-in: the token names its tenant and
+        // JwtAuthenticationFilter refuses it against any other, so extending
+        // it reaches no further than the session it belongs to.
+        writeSessionCookie(response, accessToken, tenant.getAccessTtlMs());
+
         long effectiveTtl = tenant.getAccessTtlMs() != null
                 ? tenant.getAccessTtlMs() / 1000
                 : jwtService.getExpirationTime();
