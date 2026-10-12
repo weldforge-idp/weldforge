@@ -29,6 +29,11 @@ describe('authGuard', () => {
   let post: ReturnType<typeof vi.fn>;
   let externalNav: { go: ReturnType<typeof vi.fn> };
 
+  // The guard reads the continuation stash on every path now, so a value left
+  // by one spec would steer the next. Cleared here rather than in run(),
+  // because the specs that use it stash before calling run().
+  beforeEach(() => sessionStorage.clear());
+
   function run(opts: { storedToken?: string; refresh?: Observable<unknown> }) {
     localStorage.clear();
     if (opts.storedToken) localStorage.setItem('access_token', opts.storedToken);
@@ -104,6 +109,21 @@ describe('authGuard', () => {
       expect(externalNav.go).toHaveBeenCalledWith(AUTHORIZE);
       // The navigation is cancelled: the browser is leaving.
       expect(result).toBe(false);
+    });
+
+    it('resumes even when a token from an earlier sign-in is still in localStorage', async () => {
+      // The production failure of 2026-10-12. localStorage is per origin, not
+      // per tab: he had signed in on this host an hour earlier and never
+      // logged out, so the guard saw a token the moment Google sent him back
+      // and let him through before anything looked at the stash. He landed on
+      // the portal instead of counter.shot, with no error anywhere.
+      stashOidcContinuation(enc(AUTHORIZE));
+      const result = run({ storedToken: token({ adm: 'SUPER_ADMIN' }) });
+
+      expect(externalNav.go).toHaveBeenCalledWith(AUTHORIZE);
+      expect(result).toBe(false);
+      // Still no round trip: the session in hand is a perfectly good one.
+      expect(post).not.toHaveBeenCalled();
     });
 
     it('renders the portal normally when no flow was interrupted', async () => {

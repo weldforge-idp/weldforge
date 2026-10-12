@@ -280,6 +280,69 @@ class RefreshCookieTenantIsolationIntegrationTest {
         assertThat(legacyRefresh(other.getSlug(), raw).getResponse().getStatus()).isEqualTo(200);
     }
 
+    // ---- the OIDC browser session follows the live session ---------------------
+
+    @Test
+    @DisplayName("a refresh renews the session cookie the OIDC flow runs on")
+    void refresh_renews_the_session_cookie() throws Exception {
+        login(home, alice);
+
+        MvcResult r = refresh("default");
+
+        assertThat(r.getResponse().getStatus()).isEqualTo(200);
+        Cookie session = r.getResponse().getCookie("wf_session");
+        assertThat(session)
+                .as("wf_session carries an access token and expires with it, so a rotation "
+                        + "that leaves it alone lets the OIDC session die while the portal's "
+                        + "rolls on -- /authorize then sends a signed-in person to a login screen")
+                .isNotNull();
+        // Presence of the Set-Cookie is the whole fix -- it is what restarts
+        // the browser's clock on this cookie. Deliberately not asserted
+        // different from the one at sign-in: an access token carries no jti
+        // and second-granularity timestamps, so a rotation in the same second
+        // as the login is legitimately byte-identical.
+        assertThat(session.getValue())
+                .as("the renewed cookie must hold the token this rotation just minted")
+                .isEqualTo(bodyToken(r));
+        assertThat(session.getMaxAge()).isGreaterThan(0);
+        assertThat(session.getAttribute("SameSite"))
+                .as("Lax, because /authorize arrives as a cross-site top-level navigation")
+                .isEqualTo("Lax");
+        assertThat(session.isHttpOnly()).isTrue();
+    }
+
+    @Test
+    @DisplayName("the renewed session cookie names the tenant that was refreshed")
+    void renewed_session_cookie_is_tenant_bound() throws Exception {
+        login(home, alice);
+        login(other, bob);
+
+        // Each refresh names its own tenant; the cookie it leaves must be that
+        // tenant's session and not the one the jar happened to be holding.
+        Cookie afterHome = refresh("default").getResponse().getCookie("wf_session");
+        assertThat(tenantOf(afterHome.getValue())).isEqualTo("default");
+
+        Cookie afterOther = refresh(other.getSlug()).getResponse().getCookie("wf_session");
+        assertThat(tenantOf(afterOther.getValue())).isEqualTo(other.getSlug());
+    }
+
+    /** The raw access token in a response body. */
+    private static String bodyToken(MvcResult r) throws Exception {
+        return r.getResponse().getContentAsString()
+                .replaceAll(".*\"token\":\"([^\"]+)\".*", "$1");
+    }
+
+    /** The `tenant` claim of a raw access token. */
+    private static String tenantOf(String token) throws Exception {
+        // Substring rather than a split: the payload is between the two dots,
+        // and this needs no escaped regex to say so.
+        String payload = new String(Base64.getUrlDecoder().decode(
+                token.substring(token.indexOf('.') + 1, token.lastIndexOf('.'))),
+                StandardCharsets.UTF_8);
+        return (String) new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(payload, Map.class).get("tenant");
+    }
+
     // ---- a leftover session cookie never picks the tenant of a sign-in ---------
 
     @Test
