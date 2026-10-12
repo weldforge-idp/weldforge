@@ -65,6 +65,17 @@ public class OAuthAuthorizationCode {
     @Column(name = "amr", length = 255)
     private String amr;
 
+    /**
+     * RFC 8707 resource bound at {@code /authorize}, or null when none was asked
+     * for -- which is the overwhelming majority.
+     *
+     * <p>Recorded so the token request must name the same value. Without that,
+     * a client could obtain a code for one audience and redeem it for another,
+     * which is the whole protection resource indicators exist to provide.
+     */
+    @Column(name = "resource", length = 2048)
+    private String resource;
+
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 

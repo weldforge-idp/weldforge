@@ -53,7 +53,7 @@ class ServerRenderedPagesCspTest {
         String html = OidcAuthorizationController.renderConsent("acme",
                 User.builder().email("alice@acme.test").build(),
                 OidcClient.builder().clientId("wf_client_1").name("Acme App").build(),
-                "https://app.acme.test/cb", "openid email", "st", "no", null, null, null,
+                "https://app.acme.test/cb", "openid email", "st", "no", null, null, null, null,
                 "csrf-token", nonce);
 
         assertThat(headerNonce(req)).isEqualTo(nonce);

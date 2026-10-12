@@ -231,4 +231,149 @@ class OidcAuthorizationServiceTest {
         assertThatThrownBy(() -> service.verifyClientCredentials(tenant, "acme-app", "nope"))
                 .isInstanceOf(OidcAuthorizationException.class);
     }
+
+    /**
+     * RFC 8707 resource indicators.
+     *
+     * <p>The audience is the point of the whole feature, so these assert where
+     * it ends up rather than only that a value was accepted. Opt-in is
+     * asserted hardest: every client in production today has an empty
+     * allow-list, and if the default ever stopped being "aud is the client id"
+     * it would break every live relying party at once.
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("resource indicators (RFC 8707)")
+    class ResourceIndicators {
+
+        private static final String MCP = "https://shot.cwvermaak.tech/mcp/counteract-studios";
+        private static final String VERIFIER = "verifier-1234567890abcdef";
+
+        private AuthorizeRequest withResource(String challenge, String resource) {
+            return new AuthorizeRequest("acme-app", "https://app.acme.test/callback",
+                    List.of("openid", "email"), "state-xyz", "nonce-abc",
+                    challenge, "S256", null, null, null, resource);
+        }
+
+        private CodeExchangeRequest exchange(String code, String resource) {
+            return new CodeExchangeRequest(code, "acme-app", "super-secret",
+                    "https://app.acme.test/callback", VERIFIER, resource);
+        }
+
+        @Test
+        @DisplayName("a client with no registered resource may not ask for one")
+        void unregistered_resource_is_invalid_target() {
+            String challenge = OidcAuthorizationService.base64UrlSha256(VERIFIER);
+
+            assertThatThrownBy(() ->
+                    service.issueAuthorizationCode(tenant, user, withResource(challenge, MCP)))
+                    .isInstanceOf(OidcAuthorizationException.class)
+                    .satisfies(e -> assertThat(((OidcAuthorizationException) e).getErrorCode())
+                            .isEqualTo("invalid_target"));
+        }
+
+        @Test
+        @DisplayName("asking for nothing is unchanged -- no resource is bound")
+        void no_resource_binds_nothing() {
+            String challenge = OidcAuthorizationService.base64UrlSha256(VERIFIER);
+
+            String code = service.issueAuthorizationCode(tenant, user, validRequest(challenge));
+            CodeExchangeResult result = service.exchangeCode(tenant, exchange(code, null));
+
+            assertThat(result.resource())
+                    .as("no resource means aud stays the client id, as it always has")
+                    .isNull();
+        }
+
+        @Test
+        @DisplayName("a registered resource is bound to the code and comes back on exchange")
+        void registered_resource_round_trips() {
+            client.setResources(MCP);
+            String challenge = OidcAuthorizationService.base64UrlSha256(VERIFIER);
+
+            String code = service.issueAuthorizationCode(tenant, user, withResource(challenge, MCP));
+            CodeExchangeResult result = service.exchangeCode(tenant, exchange(code, MCP));
+
+            assertThat(result.resource()).isEqualTo(MCP);
+        }
+
+        @Test
+        @DisplayName("the token request may not redeem a code for a different resource")
+        void token_request_cannot_switch_resource() {
+            client.setResources(MCP + ",https://shot.cwvermaak.tech/api");
+            String challenge = OidcAuthorizationService.base64UrlSha256(VERIFIER);
+            String code = service.issueAuthorizationCode(tenant, user, withResource(challenge, MCP));
+
+            // Both are registered to the client, so this is not the allow-list
+            // check -- it is the binding. The user consented to one audience.
+            assertThatThrownBy(() ->
+                    service.exchangeCode(tenant, exchange(code, "https://shot.cwvermaak.tech/api")))
+                    .isInstanceOf(OidcAuthorizationException.class)
+                    .satisfies(e -> assertThat(((OidcAuthorizationException) e).getErrorCode())
+                            .isEqualTo("invalid_target"));
+        }
+
+        @Test
+        @DisplayName("omitting resource on the token request keeps the one already bound")
+        void token_request_may_omit_resource() {
+            client.setResources(MCP);
+            String challenge = OidcAuthorizationService.base64UrlSha256(VERIFIER);
+            String code = service.issueAuthorizationCode(tenant, user, withResource(challenge, MCP));
+
+            CodeExchangeResult result = service.exchangeCode(tenant, exchange(code, null));
+
+            assertThat(result.resource())
+                    .as("RFC 8707 2.2: absent is not a request to drop the audience")
+                    .isEqualTo(MCP);
+        }
+
+        @Test
+        @DisplayName("case in scheme and host does not decide whether a resource is allowed")
+        void scheme_and_host_are_case_insensitive() {
+            client.setResources(MCP);
+            String challenge = OidcAuthorizationService.base64UrlSha256(VERIFIER);
+
+            // The canonical form is lower-case, and MCP asks servers to accept
+            // upper-case anyway. The PATH is left alone: it is case-sensitive.
+            String shouted = "HTTPS://SHOT.CWVERMAAK.TECH/mcp/counteract-studios";
+
+            assertThat(service.issueAuthorizationCode(tenant, user, withResource(challenge, shouted)))
+                    .isNotBlank();
+        }
+
+        @Test
+        @DisplayName("a malformed resource is refused, and refused as invalid_target")
+        void malformed_resources_are_invalid_target() {
+            client.setResources(MCP);
+            String challenge = OidcAuthorizationService.base64UrlSha256(VERIFIER);
+
+            // RFC 8707 2: unparseable and unacceptable get the SAME error, so a
+            // client cannot tell a bad URI from one it is not allowed to name.
+            for (String bad : List.of(
+                    "shot.cwvermaak.tech/mcp",
+                    "https://shot.cwvermaak.tech/mcp#frag",
+                    "/mcp/counteract-studios")) {
+                assertThatThrownBy(() ->
+                        service.issueAuthorizationCode(tenant, user, withResource(challenge, bad)))
+                        .as("%s must be refused", bad)
+                        .isInstanceOf(OidcAuthorizationException.class)
+                        .satisfies(e -> assertThat(((OidcAuthorizationException) e).getErrorCode())
+                                .isEqualTo("invalid_target"));
+            }
+        }
+
+        @Test
+        @DisplayName("normalisation lower-cases scheme and host, and nothing else")
+        void normalisation_is_narrow() {
+            assertThat(OidcAuthorizationService.normaliseResource(null)).isNull();
+            assertThat(OidcAuthorizationService.normaliseResource("  ")).isNull();
+            assertThat(OidcAuthorizationService.normaliseResource("HTTPS://Example.COM/Path"))
+                    .as("path case is significant to the resource and is left alone")
+                    .isEqualTo("https://example.com/Path");
+            assertThat(OidcAuthorizationService.normaliseResource("https://example.com:8443/mcp"))
+                    .isEqualTo("https://example.com:8443/mcp");
+            assertThat(OidcAuthorizationService.normaliseResource("https://example.com/mcp/"))
+                    .as("a trailing slash is not stripped -- it is part of the identifier")
+                    .isEqualTo("https://example.com/mcp/");
+        }
+    }
 }

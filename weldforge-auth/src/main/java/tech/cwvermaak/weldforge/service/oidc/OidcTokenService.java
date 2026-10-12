@@ -80,9 +80,25 @@ public class OidcTokenService {
      *
      * @param authTime the login instant, or null to omit the claim
      */
+    /** Backwards-compatible overload for callers with no resource to bind. */
     public IssuedTokens issueForCodeExchange(Tenant tenant, OidcClient client, User user,
                                              List<String> scopes, String nonce, String issuer,
                                              List<String> amr, Instant authTime) {
+        return issueForCodeExchange(tenant, client, user, scopes, nonce, issuer, amr, authTime, null);
+    }
+
+    /**
+     * @param resource RFC 8707 resource bound to the grant, or null. When
+     *                 present it becomes the ACCESS token's {@code aud}.
+     *                 <p>The ID token's audience is untouched and stays the
+     *                 client id: OIDC Core defines the ID token as being for
+     *                 the client, and RFC 8707 is about access tokens. Giving
+     *                 an ID token a resource audience would break every
+     *                 conformant client's validation of it.
+     */
+    public IssuedTokens issueForCodeExchange(Tenant tenant, OidcClient client, User user,
+                                             List<String> scopes, String nonce, String issuer,
+                                             List<String> amr, Instant authTime, String resource) {
         TenantSigningKey key = signingKeyService.getOrCreateActive(tenant);
         RSAPrivateKey privateKey = signingKeyService.loadPrivateKey(key);
         Instant now = Instant.now();
@@ -90,7 +106,7 @@ public class OidcTokenService {
         long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
         Map<String, Object> tenantClaims = tenant.getCustomClaims();
         String accessToken = buildAccessToken(client, user, scopes, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenantClaims, amr);
+                tenantTtlSeconds, tenantClaims, amr, resource);
         // at_hash binds the ID token to the access token issued alongside it
         // (CONF-2.4), so a substituted access token is detectable. It can only
         // be computed once the access token exists, hence the ordering.
@@ -111,8 +127,11 @@ public class OidcTokenService {
         long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
         // No end-user authenticated, so no amr: the claim describes how a
         // *person* proved who they are, and this grant has no person in it.
+        // No resource: client_credentials does not accept one yet. The grant
+        // has no user and no consent step, so an audience would be the
+        // client's word alone -- see the refresh grant for the same reasoning.
         String accessToken = buildAccessToken(client, null, scopes, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenant.getCustomClaims(), null);
+                tenantTtlSeconds, tenant.getCustomClaims(), null, null);
         // No ID token in the client_credentials grant; expiresIn carries the
         // *resolved* per-tenant TTL so the response doesn't lie (B-OIDC-5).
         return new IssuedTokens(accessToken, null, tenantTtlSeconds);
@@ -129,7 +148,7 @@ public class OidcTokenService {
     private String buildAccessToken(OidcClient client, User user, List<String> scopes,
                                     String issuer, String kid, RSAPrivateKey privateKey, Instant now,
                                     long ttlSeconds, Map<String, Object> tenantCustomClaims,
-                                    List<String> amr) {
+                                    List<String> amr, String resource) {
         Map<String, Object> claims = new LinkedHashMap<>();
         // Per-tenant custom claims go in first so the reserved claims below
         // always win on collision (OA2-07).
@@ -141,7 +160,17 @@ public class OidcTokenService {
             }
         }
         claims.put("iss", issuer);
-        claims.put("aud", client.getClientId());
+        // RFC 8707 2.2: a token issued for a named resource carries that
+        // resource as its audience. Absent, aud stays the client id --
+        // what every token has carried until now and what live
+        // integrations validate against, so it must not change for a
+        // client that did not ask.
+        //
+        // The ACCESS token only. The ID token keeps the client as its
+        // audience because OIDC Core defines it as a token for the client,
+        // and giving it a resource audience would break every conformant
+        // client validating it.
+        claims.put("aud", resource != null ? resource : client.getClientId());
         claims.put("client_id", client.getClientId());
         claims.put("scope", String.join(" ", scopes));
         claims.put("token_type", "access");
@@ -188,6 +217,11 @@ public class OidcTokenService {
             }
         }
         claims.put("iss", issuer);
+        // RFC 8707 2.2: a token issued for a named resource carries that
+        // resource as its audience. Absent, aud stays the client id -- which
+        // is what every token has carried until now and what live
+        // integrations validate against, so this must never change for a
+        // client that did not ask.
         claims.put("aud", client.getClientId());
         claims.put("sub", String.valueOf(user.getId()));
         claims.put("email", user.getEmail());
