@@ -11,11 +11,7 @@ import org.springframework.security.web.authentication.AuthenticationSuccessHand
 import org.springframework.stereotype.Component;
 import tech.cwvermaak.weldforge.config.oauth.SocialRegistrationId;
 import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
-import tech.cwvermaak.weldforge.model.User;
-import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.AuthService;
-import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
-import tech.cwvermaak.weldforge.service.audit.AuditService;
 
 import java.io.IOException;
 import java.net.URI;
@@ -45,10 +41,8 @@ import java.util.Base64;
 @RequiredArgsConstructor
 public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
 
-    private final UserRepository userRepository;
     private final AuthService authService;
     private final PublicHostProperties publicHost;
-    private final AuditService auditService;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
@@ -80,22 +74,25 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             return;
         }
 
+        // The lookup, the session and the audit all happen inside
+        // AuthService's transaction rather than here. This method runs in the
+        // filter chain, where nothing has opened a persistence context, so an
+        // entity loaded at this level is detached and its first lazy
+        // association throws -- which is what turned a good Google sign-in
+        // into a 500 on 2026-10-11. See issueFederatedSession.
+        //
         // CustomOAuth2UserService has already provisioned (or refused) this
-        // person, so the row exists by the time we are called. If it does not,
-        // something changed underneath us and guessing is worse than failing.
-        User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(slug, email).orElse(null);
-        if (user == null) {
+        // person, so the row exists by the time we are called. If it does
+        // not, something changed underneath us and guessing is worse than
+        // failing.
+        boolean issued = authService
+                .issueFederatedSession(slug, email, parsed.providerKey(), request, response)
+                .isPresent();
+        if (!issued) {
             log.warn("Social sign-in succeeded but no user row exists: tenant={} email={}", slug, email);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "No account for this sign-in");
             return;
         }
-
-        authService.issueFederatedSession(user, request, response);
-
-        auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_SUCCESS, user,
-                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
-                AuditService.meta("tenant", slug, "provider", parsed.providerKey(),
-                        "federated", true));
 
         response.sendRedirect(destination(request, slug));
     }
