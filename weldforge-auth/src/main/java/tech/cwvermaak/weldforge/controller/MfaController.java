@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
@@ -230,9 +231,35 @@ public class MfaController {
         throw new IllegalArgumentException(field + " must be a string");
     }
 
+    /**
+     * Spring's name for "nobody is signed in". It arrives here as the
+     * principal rather than as a null whenever the filter chain let an
+     * anonymous request reach a controller.
+     */
+    private static final String ANONYMOUS = "anonymousUser";
+
+    /**
+     * The account this request is acting as, or a 401.
+     *
+     * Both halves used to be an IllegalStateException, which the global
+     * handler turned into a 500. That mattered: the portal retries a 401 by
+     * refreshing the session and replaying, so a 401 self-heals a stale
+     * token while a 500 strands the page. Seen in production on 2026-10-12,
+     * where a signed-in user's revoked token produced
+     * "Failed to load factors: An unexpected error occurred" and no way
+     * forward but a manual sign-out.
+     *
+     * The second case -- authenticated, but no such user in this tenant --
+     * is a 401 as well, not a 500. The session names an account that is not
+     * here, and the answer is to authenticate again, not to retry.
+     */
     private User requireUser(String email) {
+        if (email == null || email.isBlank() || ANONYMOUS.equals(email)) {
+            throw new InsufficientAuthenticationException("Authentication required");
+        }
         String tenantSlug = TenantContext.get();
         return userRepository.findByTenant_SlugAndEmailIgnoreCase(tenantSlug, email)
-                .orElseThrow(() -> new IllegalStateException("User not found in current tenant"));
+                .orElseThrow(() -> new InsufficientAuthenticationException(
+                        "This session has no account in this tenant"));
     }
 }

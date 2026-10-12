@@ -257,4 +257,28 @@ class GlobalExceptionHandlerTest {
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(resp.getBody()).containsEntry("error", "webauthn_failed");
     }
+
+    @Test
+    void unauthenticatedReturns401NotTheCatchAll500() {
+        // A 500 and a 401 are different instructions to a client: the admin
+        // portal refreshes and replays on a 401 and gives up on a 500.
+        ResponseEntity<Map<String, Object>> resp = handler.handleUnauthenticated(
+                new org.springframework.security.authentication.InsufficientAuthenticationException(
+                        "Authentication required"),
+                new MockHttpServletRequest("GET", "/api/auth/mfa/factors"));
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void badCredentialsKeepsItsOwnHandler() {
+        // BadCredentialsException is an AuthenticationException. Spring picks
+        // the most specific handler, so a failed login is unchanged -- this
+        // asserts the new handler did not swallow it.
+        ResponseEntity<Map<String, Object>> resp = handler.handleUnauthorized(
+                new BadCredentialsException("Invalid email or password"), request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(resp.getBody()).containsEntry("error", "unauthorized");
+    }
 }

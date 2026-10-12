@@ -52,6 +52,28 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.UNAUTHORIZED, "unauthorized", ex.getMessage(), request);
     }
 
+    /**
+     * No usable authentication on a call that needs one.
+     *
+     * Without this the catch-all below answered 500, and a 500 is not just
+     * an uglier 401 -- it is a different instruction to the client. The
+     * portal's interceptor recovers from a 401 by refreshing the session and
+     * replaying the request, and from a 500 not at all. On 2026-10-12 that
+     * left a signed-in user sitting on a broken Security page holding a
+     * token whose session had been revoked, with the recovery path that
+     * exists for exactly this case never invoked, because the server had
+     * called it a server fault instead of an authentication one.
+     *
+     * {@link BadCredentialsException} keeps its own handler above; Spring
+     * picks the most specific, so this changes nothing for a failed login.
+     */
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ResponseEntity<Map<String, Object>> handleUnauthenticated(
+            org.springframework.security.core.AuthenticationException ex, HttpServletRequest request) {
+        log.debug("unauthenticated on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        return respond(HttpStatus.UNAUTHORIZED, "unauthorized", ex.getMessage(), request);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleForbidden(AccessDeniedException ex,
                                                                 HttpServletRequest request) {
