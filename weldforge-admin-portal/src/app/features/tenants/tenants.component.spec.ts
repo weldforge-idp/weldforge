@@ -60,11 +60,19 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     customClaimsError(t: Row): string | null;
     saveSessionSettings(t: Row): void;
     newOidcPostLogout: string;
+    newOidcClient: { name?: string };
+    newOidcScopes: string;
+    newOidcGrants: string;
+    newOidcMaxAge: number;
+    newOidcRequirePkce: boolean;
+    newOidcRequireMfa: boolean;
+    resetNewOidcClient(): void;
     startEditOidc(c: object): void;
     saveEditOidc(t: Row, c: { id?: number; clientId: string; publicClient?: boolean }): void;
     editOidc: { redirects: string; webOrigins: string; postLogout: string; scopes: string; grants: string; refreshTtl: number | null };
     editOidcId: number | null;
-    samlIdpDraft: { entityId: string; acsUrl: string };
+    samlIdpDraft: { entityId: string; acsUrl: string; spCertificate?: string; enabled?: boolean };
+    resetSamlIdpDraft(): void;
     issuedCredentials(): { tenantId: number; clientId: string; secret: string | null; note: string } | null;
     issuedFor(t: Row): { clientId: string; secret: string | null; note: string } | null;
     secretVisible: { (): boolean; set(v: boolean): void };
@@ -223,6 +231,126 @@ describe('TenantsComponent — row-scoped OIDC clients and SAML SPs', () => {
     expect(window.alert).not.toHaveBeenCalled();
     expect(c.issuedCredentials()).toBeNull();
     expect(snack.open).toHaveBeenCalledWith(expect.stringContaining("ran in tenant 'default'"), expect.anything(), expect.anything());
+  });
+
+  /**
+   * The form is a draft, not a record. A refused create used to leave nine
+   * fields and three toggles filled in with no way to empty them but by hand
+   * or a page reload, which is how an operator ends up editing a form they
+   * meant to abandon.
+   */
+  function fillTheForm(c: Exposed) {
+    c.newOidcClient = { name: 'Augur dev' };
+    c.newOidcClientId = 'augur-dev';
+    c.newOidcRedirects = 'https://augur.test/cb';
+    c.newOidcWebOrigins = 'https://augur.test';
+    c.newOidcPostLogout = 'https://augur.test/bye';
+    c.newOidcScopes = 'openid augur.read';
+    c.newOidcGrants = 'authorization_code refresh_token';
+    c.newOidcMaxAge = 300;
+    c.newOidcRefreshTtl = 86400;
+    c.newOidcPublic = true;
+    c.newOidcRequirePkce = false;
+    c.newOidcRequireMfa = true;
+  }
+
+  /** Every field the form has, as a plain object, for comparing two states. */
+  const formState = (c: Exposed) => ({
+    name: c.newOidcClient.name,
+    clientId: c.newOidcClientId,
+    redirects: c.newOidcRedirects,
+    webOrigins: c.newOidcWebOrigins,
+    postLogout: c.newOidcPostLogout,
+    scopes: c.newOidcScopes,
+    grants: c.newOidcGrants,
+    maxAge: c.newOidcMaxAge,
+    refreshTtl: c.newOidcRefreshTtl,
+    publicClient: c.newOidcPublic,
+    requirePkce: c.newOidcRequirePkce,
+    requireMfa: c.newOidcRequireMfa,
+  });
+
+  it('Clear puts the new-client form back to its first-load state', () => {
+    const c = create();
+    const pristine = formState(c);
+
+    fillTheForm(c);
+    expect(formState(c)).not.toEqual(pristine);
+
+    c.resetNewOidcClient();
+
+    // Back to first load, which is not the same as empty: scopes, grant types
+    // and Require PKCE carry defaults an operator should not have to retype.
+    expect(formState(c)).toEqual(pristine);
+    expect(c.newOidcScopes).toBe('openid profile email');
+    expect(c.newOidcGrants).toBe('authorization_code');
+    expect(c.newOidcRequirePkce).toBe(true);
+  });
+
+  it('Clear talks to nobody', () => {
+    const c = create();
+    fillTheForm(c);
+
+    c.resetNewOidcClient();
+
+    // afterEach's ctl.verify() would catch a stray request, but saying it here
+    // is the point of the button: it abandons a draft, it does not undo a
+    // create.
+    ctl.expectNone(() => true);
+  });
+
+  it('a refused create leaves the form alone, and Clear is what empties it', () => {
+    const c = create();
+    const b = row(c, 'cwvermaak-tech');
+    expand(c, b);
+    fillTheForm(c);
+    const typed = formState(c);
+
+    c.createOidcClient(b);
+    ctl.expectOne(r => r.url === OIDC && r.method === 'POST')
+      .flush({ error: 'clientId already in use for this tenant' },
+             { status: 400, statusText: 'Bad Request' });
+
+    // Keeping the values after a refusal is correct -- the operator usually
+    // wants to fix one field. The defect was that there was no way out.
+    expect(formState(c)).toEqual(typed);
+
+    c.resetNewOidcClient();
+    expect(c.newOidcClientId).toBe('');
+    expect(c.newOidcScopes).toBe('openid profile email');
+  });
+
+  it('a successful create leaves the form exactly as Clear would', () => {
+    const c = create();
+    const b = row(c, 'cwvermaak-tech');
+    expand(c, b);
+    const pristine = formState(c);
+    fillTheForm(c);
+    c.newOidcPublic = false;
+
+    c.createOidcClient(b);
+    ctl.expectOne(r => r.url === OIDC && r.method === 'POST')
+      .flush({ id: 20, clientId: 'augur-dev', clientSecret: 's' }, acting('cwvermaak-tech'));
+
+    // The reset after a create was written out inline and had drifted: scopes,
+    // grant types and Require PKCE stayed at whatever the last attempt used,
+    // so the next client silently inherited them. One method, two callers.
+    expect(formState(c)).toEqual(pristine);
+  });
+
+  it('Clear empties the SAML SP form too, including a pasted certificate', () => {
+    const c = create();
+    c.samlIdpDraft.entityId = 'https://sp.augur.test/metadata';
+    c.samlIdpDraft.acsUrl = 'https://sp.augur.test/acs';
+    c.samlIdpDraft.spCertificate = '-----BEGIN CERTIFICATE-----\nMIIC\n-----END CERTIFICATE-----';
+
+    c.resetSamlIdpDraft();
+
+    expect(c.samlIdpDraft.entityId).toBe('');
+    expect(c.samlIdpDraft.acsUrl).toBe('');
+    expect(c.samlIdpDraft.spCertificate).toBe('');
+    // The one default on this form that is not blank.
+    expect(c.samlIdpDraft.enabled).toBe(true);
   });
 
   it("rotates and deletes in the row's tenant", () => {

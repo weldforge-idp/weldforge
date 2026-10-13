@@ -613,6 +613,7 @@ interface TenantRow extends Tenant {
                                     [disabled]="newOidcPublic">Require PKCE</mat-slide-toggle>
                   <mat-slide-toggle [(ngModel)]="newOidcRequireMfa">Require MFA</mat-slide-toggle>
                   <span class="spacer"></span>
+                  <button mat-button type="button" (click)="resetNewOidcClient()">Clear</button>
                   <button mat-raised-button color="primary" (click)="createOidcClient(t)">Create client in {{ t.slug }}</button>
                 </div>
               </div>
@@ -729,6 +730,7 @@ interface TenantRow extends Tenant {
                 <div class="wf-actions">
                   <mat-slide-toggle [(ngModel)]="samlIdpDraft.enabled">Enabled</mat-slide-toggle>
                   <span class="spacer"></span>
+                  <button mat-button type="button" (click)="resetSamlIdpDraft()">Clear</button>
                   <button mat-raised-button color="primary" (click)="createSamlIdpSp(t)">Register SP in {{ t.slug }}</button>
                 </div>
               </div>
@@ -1815,6 +1817,19 @@ export class TenantsComponent implements OnInit {
     };
   }
 
+  /**
+   * The "Register a service provider" form as it is on first load.
+   *
+   * <p>The same gap as the OIDC form beside it: the draft is replaced only on
+   * success, so a refused register left a filled form -- including a pasted
+   * certificate -- with no way out but a reload. The factory already existed
+   * and was already the single source of the defaults; only a way to call it
+   * was missing.
+   */
+  resetSamlIdpDraft(): void {
+    this.samlIdpDraft = this.freshSamlIdpDraft();
+  }
+
   createSamlIdpSp(t: TenantRow) {
     if (!this.samlIdpDraft.entityId) { this.err('Entity ID is required', null); return; }
     if (!this.samlIdpDraft.acsUrl) { this.err('ACS URL is required', null); return; }
@@ -2038,15 +2053,7 @@ export class TenantsComponent implements OnInit {
     this.oidcApi.create(dto, t.slug).subscribe({
       next: created => {
         this.setOidc(t, [...this.oidcClientsFor(t), created]);
-        this.newOidcClient = { name: '' };
-        this.newOidcClientId = '';
-        this.newOidcPublic = false;
-        this.newOidcRedirects = '';
-        this.newOidcWebOrigins = '';
-        this.newOidcPostLogout = '';
-        this.newOidcRefreshTtl = null;
-        this.newOidcRequireMfa = false;
-        this.newOidcMaxAge = 0;
+        this.resetNewOidcClient();
         // Shown in the page, not an alert: a secret that appears once must be
         // selectable and must survive a stray keypress.
         this.showIssued(t, created.clientId, created.clientSecret ?? null,
@@ -2056,6 +2063,33 @@ export class TenantsComponent implements OnInit {
       },
       error: err => this.err('Create failed', err),
     });
+  }
+
+  /**
+   * The "Register a new OIDC client" form as it is on first load.
+   *
+   * <p>Also what the Clear button does. A refused create left nine fields and
+   * three toggles filled in with no way to empty them but by hand or a reload,
+   * which is how an operator ends up editing a form they meant to abandon.
+   *
+   * <p>One method rather than a reset written out at each call site: the reset
+   * after a successful create was inline and had already drifted, leaving
+   * scopes, grant types and Require PKCE at whatever the last attempt used
+   * rather than back at their defaults.
+   */
+  resetNewOidcClient(): void {
+    this.newOidcClient = { name: '' };
+    this.newOidcClientId = '';
+    this.newOidcRedirects = '';
+    this.newOidcWebOrigins = '';
+    this.newOidcPostLogout = '';
+    this.newOidcScopes = 'openid profile email';
+    this.newOidcGrants = 'authorization_code';
+    this.newOidcMaxAge = 0;
+    this.newOidcRefreshTtl = null;
+    this.newOidcPublic = false;
+    this.newOidcRequirePkce = true;
+    this.newOidcRequireMfa = false;
   }
 
   startEditOidc(c: OidcClient) {
