@@ -24,6 +24,12 @@ public class ServiceAccountDto {
     private String token;
     private String tokenPrefix;
     private AdminRole adminRole;
+
+    /**
+     * Optional role-grant prefix. Lets this account assign tenant roles whose
+     * names start with it and nothing else; blank clears the capability.
+     */
+    private String roleGrantPrefix;
     private Boolean enabled;
     /**
      * When the token stops authenticating. Null means it never does.

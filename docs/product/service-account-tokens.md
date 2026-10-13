@@ -123,3 +123,32 @@ user-side rule.
 This is separate from the tenant **Role** assigned to human users, which feeds
 the token's `roles` claim for relying parties. See
 `docs/product/oidc-client-administration.md`.
+
+---
+
+## Role grant prefix
+
+A service account may also carry a **`roleGrantPrefix`**, which is a capability
+rather than a role. An account that has one may assign tenant roles whose names
+start with that prefix -- and nothing else, anywhere.
+
+```json
+POST /api/admin/service-accounts
+{ "name": "clepsydra", "adminRole": "NONE", "roleGrantPrefix": "clepsydra:" }
+```
+
+It exists so a downstream application can manage its own namespace of roles
+without being handed `TENANT_ADMIN`, which would also let it delete users,
+reset MFA and edit OIDC clients across the whole tenant.
+
+`adminRole` is expected to be `NONE` alongside it. The prefix is not an
+escalation of the admin role and does not interact with it: an account with a
+prefix and `NONE` can reach exactly two endpoints and no other part of
+`/api/admin`.
+
+Null or blank, which is every account that existed before this, means no
+role-grant capability at all.
+
+Full contract, the case-insensitivity rule, what a replace does to roles
+outside the prefix, and when a change is felt by a relying party:
+**`docs/product/scoped-role-grants.md`**.

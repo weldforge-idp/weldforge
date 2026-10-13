@@ -71,6 +71,7 @@ public class ServiceAccountService {
                 .tokenPrefix(ApiKeyHasher.displayPrefix(raw))
                 .tokenHash(ApiKeyHasher.hash(raw))
                 .adminRole(role)
+                .roleGrantPrefix(RoleGrantService.validatePrefix(dto.getRoleGrantPrefix()))
                 .enabled(dto.getEnabled() == null || dto.getEnabled())
                 .expiresAt(expiresAt)
                 .build();
@@ -82,6 +83,11 @@ public class ServiceAccountService {
                         "name", saved.getName(),
                         "admin_role", role.name(),
                         "prefix", saved.getTokenPrefix(),
+                        // A role-grant prefix is a capability of its own, not a
+                        // rung on the admin-role ladder, so it is named here in
+                        // its own right rather than left to be inferred.
+                        "role_grant_prefix", saved.getRoleGrantPrefix() == null
+                                ? "none" : saved.getRoleGrantPrefix(),
                         // A permanent credential is a standing risk, so the
                         // audit trail should say plainly that one was issued.
                         "expires_at", saved.getExpiresAt() == null
@@ -166,6 +172,11 @@ public class ServiceAccountService {
             }
             sa.setAdminRole(dto.getAdminRole());
         }
+        // An empty string is a real value here: it clears the capability.
+        // Null is "leave alone", matching every other field on this path.
+        if (dto.getRoleGrantPrefix() != null) {
+            sa.setRoleGrantPrefix(RoleGrantService.validatePrefix(dto.getRoleGrantPrefix()));
+        }
         return toMaskedDto(sa);
     }
 
@@ -197,6 +208,7 @@ public class ServiceAccountService {
                             ? t.getDisplayName() : t.getName()))
                 .tokenPrefix(sa.getTokenPrefix())
                 .adminRole(sa.getAdminRole())
+                .roleGrantPrefix(sa.getRoleGrantPrefix())
                 .enabled(sa.isEnabled())
                 .expiresAt(sa.getExpiresAt())
                 .createdAt(sa.getCreatedAt())
