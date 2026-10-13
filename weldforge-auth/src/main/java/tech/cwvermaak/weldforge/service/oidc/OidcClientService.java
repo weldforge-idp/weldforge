@@ -41,6 +41,12 @@ public class OidcClientService {
      * in which tenant, or through which selector.
      */
     private final AuditService auditService;
+    /**
+     * The ceiling a client's own access TTL is measured against. Shared with
+     * {@link OidcTokenService} so that what registration accepts and what
+     * issuance stamps cannot drift apart.
+     */
+    private final AccessTokenLifetime accessTokenLifetime;
 
     public List<OidcClientDto> list() {
         tenantAccessor.requireAnyAdmin();
@@ -132,6 +138,7 @@ public class OidcClientService {
                 // in the update path, so a caller sending it at create got a
                 // 200 and a client that inherited the default anyway.
                 .refreshTokenTtlSeconds(requirePositiveTtl(dto.getRefreshTokenTtlSeconds()))
+                .accessTokenTtlSeconds(requireAccessTtlWithinCeiling(dto.getAccessTokenTtlSeconds(), tenant))
                 .branding(dto.getBranding())
                 .build();
         OidcClient saved = repository.save(client);
@@ -234,6 +241,7 @@ public class OidcClientService {
             require(dto.getGrantTypes(), "grantTypes");
         }
         requirePositiveTtl(dto.getRefreshTokenTtlSeconds());
+        requireAccessTtlWithinCeiling(dto.getAccessTokenTtlSeconds(), client.getTenant());
 
         // The same guard as create, against the merged result rather than the
         // payload: clearing the origins of a browser client is exactly as
@@ -253,6 +261,9 @@ public class OidcClientService {
         }
         if (dto.getRefreshTokenTtlSeconds() != null) {
             client.setRefreshTokenTtlSeconds(dto.getRefreshTokenTtlSeconds());
+        }
+        if (dto.getAccessTokenTtlSeconds() != null) {
+            client.setAccessTokenTtlSeconds(dto.getAccessTokenTtlSeconds());
         }
         // An empty object is a real value: it clears the override and returns
         // the client to the tenant's branding. Null is "leave alone".
@@ -281,6 +292,38 @@ public class OidcClientService {
      * token that expires the instant it is minted, and accepting it silently
      * would be worse than refusing it.
      */
+    /**
+     * A client may shorten its access tokens, never lengthen them.
+     *
+     * <p>Refused here rather than quietly capped, so an admin who asks for
+     * longer than the tenant allows sees a 400 against the field they typed
+     * instead of discovering the real number later from a token. Issuance
+     * caps as well, for the case this check cannot see: a tenant lowering its
+     * own TTL after the client was registered.
+     *
+     * <p>The ceiling is not about distrusting admins -- an admin who wants
+     * longer can raise the tenant's own TTL. It is about
+     * {@link #createForDynamicRegistration}, which reaches this same
+     * validation with no admin session at all.
+     */
+    private Integer requireAccessTtlWithinCeiling(Integer seconds, Tenant tenant) {
+        if (seconds == null) {
+            return null;
+        }
+        if (seconds <= 0) {
+            throw new IllegalArgumentException(
+                    "accessTokenTtlSeconds must be positive; omit it to inherit the tenant "
+                            + "or application default");
+        }
+        long ceiling = accessTokenLifetime.forTenant(tenant);
+        if (seconds > ceiling) {
+            throw new IllegalArgumentException(
+                    "accessTokenTtlSeconds must not exceed the tenant's access-token lifetime of "
+                            + ceiling + "s; a client may shorten its access tokens, not lengthen them");
+        }
+        return seconds;
+    }
+
     private static Integer requirePositiveTtl(Integer seconds) {
         if (seconds != null && seconds <= 0) {
             throw new IllegalArgumentException(
@@ -309,6 +352,7 @@ public class OidcClientService {
         if (d.getRequireMfa() != null)                 names.add("requireMfa");
         if (d.getMaxAuthenticationAgeSeconds() != null) names.add("maxAuthenticationAgeSeconds");
         if (d.getRefreshTokenTtlSeconds() != null)     names.add("refreshTokenTtlSeconds");
+        if (d.getAccessTokenTtlSeconds() != null)      names.add("accessTokenTtlSeconds");
         if (d.getRequirePkce() != null)                names.add("requirePkce");
         if (d.getBranding() != null)                   names.add("branding");
         return String.join(",", names);
@@ -366,6 +410,7 @@ public class OidcClientService {
                 .publicClient(c.getPublicClient())
                 .tokenEndpointAuthMethod(c.getTokenEndpointAuthMethod())
                 .refreshTokenTtlSeconds(c.getRefreshTokenTtlSeconds())
+                .accessTokenTtlSeconds(c.getAccessTokenTtlSeconds())
                 .branding(c.getBranding())
                 // clientSecret intentionally null unless caller overrides.
                 .build();

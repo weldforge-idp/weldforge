@@ -70,8 +70,8 @@ class OidcUserinfoControllerTest {
         // collection. These suites assert other claims, so an empty set is fine.
         var roleRepositoryForTest = org.mockito.Mockito.mock(
                 tech.cwvermaak.weldforge.repository.RoleRepository.class);
-        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
-        ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
+        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest,
+                new tech.cwvermaak.weldforge.service.oidc.AccessTokenLifetime(3600L));
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
         // CONF-6.1: userinfo now consults the revocation list. Nothing is
         // revoked in these scenarios, so the stub answers false throughout.

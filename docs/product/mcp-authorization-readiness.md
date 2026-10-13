@@ -1,7 +1,7 @@
 # What an MCP client needs from WeldForge
 
 **Status:** research and design. The Built column is kept current as items ship; items
-1, 2 and 3 of the order in §8 are now in production.
+1, 2, 3 and 4 of the order in §8 are now in production.
 **Written:** 2026-10-12. **Last updated:** 2026-10-13.
 **Sources read:** the Model Context Protocol specification revision **2026-07-28**
 (`basic/authorization`, `.../authorization-server-discovery`, `.../client-registration`),
@@ -53,6 +53,7 @@ own connector must do, not from a requirement on us.
 | Dynamic Client Registration | MAY, deprecated | Built, off, instance-wide |
 | Token exchange (RFC 8693) | not on us, but see §5 | **No** |
 | Scope descriptions | not in the spec at all | **Yes** — PR #150 |
+| Per-client access-token lifetime | not in the spec, prerequisite of §5 | **Yes**, capped at the tenant's — PR #152 |
 
 ---
 
@@ -163,12 +164,36 @@ counter.shot asked to be told if WeldForge will differ, and it will:
    `client_id` alongside it if counter.shot wants it. Costs them nothing now and avoids an
    interop surprise later.
 
-**The prerequisite that is not WF5.** counter.shot expects an exchanged token to live
-about 60 seconds. There is no per-client or per-grant access-token lifetime:
-`OidcClient` carries `refresh_token_ttl_s` only, and the access lifetime resolves from the
-tenant then the instance (`OidcTokenService.resolveAccessTtlSeconds`). The shortcut —
-dropping the tenant's access TTL — would apply to every client in the tenant including the
-admin portal's own sessions. A per-grant lifetime is separate work and comes first.
+**The prerequisite that is not WF5 — shipped** in PR #152 (`V67`). counter.shot expects an
+exchanged token to live about 60 seconds, and until now there was no per-client lifetime:
+`OidcClient` carried `refresh_token_ttl_s` only, and the access lifetime resolved from the
+tenant then the instance. The shortcut — dropping the tenant's access TTL — would have
+applied to every client in the tenant including the admin portal's own sessions.
+
+- `oidc_clients.access_token_ttl_s`, nullable. Null inherits the tenant's access TTL and
+  then the instance default, exactly as `refresh_token_ttl_s` does. Zero is not the
+  sentinel for unset.
+- Resolution lives in one place, `AccessTokenLifetime` (`forTenant` / `forClient`), shared
+  by the issuing path and the registration path so the number a client is told it has and
+  the number it gets cannot drift.
+- **A client may shorten its access tokens, never lengthen them.** The tenant's effective
+  TTL is a ceiling: refused with a 400 at registration, and capped again at issuance
+  because a tenant may lower its own TTL after a client was registered and nothing
+  re-validates stored clients when it does.
+- The ceiling is there for **dynamic client registration**, not to restrain admins — an
+  admin who wants longer raises the tenant's TTL, which is the setting that means that.
+  `createForDynamicRegistration` reaches the same validation with no admin session, so
+  without a ceiling a self-registering client could mint itself a thirty-day access token.
+- `expires_in` and the token's `exp` both carry the resolved value (B-OIDC-5).
+- The **ID token is deliberately unaffected** and keeps the tenant's lifetime. The column
+  is `access_token_ttl_s`; an ID token is spent once at sign-in, and shrinking it as a
+  side effect would be a second undocumented behaviour riding on one field.
+- **Knowingly inconsistent:** `refresh_token_ttl_s` beside it still takes a client value
+  with no ceiling at all. That is the gap, not this — a refresh token is the longer-lived
+  credential, so an unbounded client override matters more there. Closing it breaks any
+  client already relying on it, so it is tracked separately rather than bundled here.
+- **Not built:** a portal field. The value is settable over the admin API only, like the
+  scope registry (#150) and `resources` (#149).
 
 **Policy, unchanged from the hand-over and agreed:** a per-client "may act for people"
 flag, default off; requested scope within both the subject token's scope and the client's
@@ -261,7 +286,7 @@ would let anyone on the internet create clients in any tenant.
 | 1 | ~~Discovery at the path-inserted URLs (§3)~~ **done, #148** | Blocks every client. Standards-stable. Needs the infra repo too | Small |
 | 2 | ~~Resource indicators (§4)~~ **done, #149** | Everything about audiences depends on it. Opt-in, so no blast radius | Medium |
 | 3 | ~~Scope descriptions (§6)~~ **done, #150** | Consent quality, ours anyway, prerequisite for honest WF5 consent | Medium |
-| 4 | Per-grant access-token lifetime (§5) | Prerequisite of WF5, useful alone | Small–medium |
+| 4 | ~~Per-grant access-token lifetime (§5)~~ **done, #152** | Prerequisite of WF5, useful alone | Small–medium |
 | 5 | Client ID Metadata Documents (§7) | SHOULD, draft-00, SSRF surface | Medium |
 | 6 | Token exchange (§5) | The large one. Security review before switch-on | Large |
 

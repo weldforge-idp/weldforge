@@ -101,6 +101,24 @@ public class OidcClient {
     private Integer refreshTokenTtlSeconds;
 
     /**
+     * Access-token lifetime for this client in seconds. Null inherits the
+     * tenant's access TTL and then the application default.
+     *
+     * <p>A ceiling applies that {@code refreshTokenTtlSeconds} above does not
+     * have: this value is capped at the tenant's effective TTL when a token is
+     * issued, and refused outright above it at registration. A client may
+     * shorten its own access tokens, never lengthen them -- see
+     * {@link tech.cwvermaak.weldforge.service.oidc.AccessTokenLifetime} for
+     * why, which is dynamic client registration rather than distrust of
+     * admins.
+     *
+     * <p>Nullable for the same reason as the field above, and zero is not the
+     * sentinel for the same reason either.
+     */
+    @Column(name = "access_token_ttl_s")
+    private Integer accessTokenTtlSeconds;
+
+    /**
      * Login-screen branding for this client, overlaying the tenant's one key
      * at a time. Null inherits entirely.
      *

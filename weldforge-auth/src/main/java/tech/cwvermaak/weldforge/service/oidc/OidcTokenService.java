@@ -32,10 +32,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OidcTokenService {
 
-    /** Access token lifetime in seconds. Configurable via {@code app.oidc.access-token-seconds}. */
-    @Value("${app.oidc.access-token-seconds:3600}")
-    private long accessTokenSeconds;
-
     /** ID token lifetime in seconds. */
     @Value("${app.oidc.id-token-seconds:3600}")
     private long idTokenSeconds;
@@ -43,6 +39,11 @@ public class OidcTokenService {
     private final TenantSigningKeyService signingKeyService;
     private final MeterRegistry meterRegistry;
     private final tech.cwvermaak.weldforge.repository.RoleRepository roleRepository;
+    /**
+     * Client -> tenant -> instance, in one place because the registration path
+     * in {@link OidcClientService} has to agree with what is stamped here.
+     */
+    private final AccessTokenLifetime accessTokenLifetime;
 
     /**
      * Issue an access token + ID token pair for a successful authorization
@@ -103,19 +104,27 @@ public class OidcTokenService {
         RSAPrivateKey privateKey = signingKeyService.loadPrivateKey(key);
         Instant now = Instant.now();
 
-        long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
+        // Two numbers, deliberately. The client may shorten its *access*
+        // tokens; the ID token keeps the tenant's lifetime it has always had.
+        // The column is access_token_ttl_s and an ID token is spent once at
+        // sign-in to establish a session, so shrinking it as a side effect
+        // would be a second, undocumented behaviour riding on one field.
+        long accessTtlSeconds = accessTokenLifetime.forClient(tenant, client);
+        long idTtlSeconds     = accessTokenLifetime.forTenant(tenant);
         Map<String, Object> tenantClaims = tenant.getCustomClaims();
         String accessToken = buildAccessToken(client, user, scopes, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenantClaims, amr, resource);
+                accessTtlSeconds, tenantClaims, amr, resource);
         // at_hash binds the ID token to the access token issued alongside it
         // (CONF-2.4), so a substituted access token is detectable. It can only
         // be computed once the access token exists, hence the ordering.
         String idToken     = buildIdToken(client, user, nonce, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenantClaims, amr, authTime, accessToken);
+                idTtlSeconds, tenantClaims, amr, authTime, accessToken);
 
         meterRegistry.counter("sso.token.issued", "grant_type", "authorization_code",
                 "tenant", tenant.getSlug()).increment();
-        return new IssuedTokens(accessToken, idToken, tenantTtlSeconds);
+        // expires_in describes the access token, so it carries the resolved
+        // per-client value (B-OIDC-5: the response must not lie).
+        return new IssuedTokens(accessToken, idToken, accessTtlSeconds);
     }
 
     public IssuedTokens issueForClientCredentials(Tenant tenant, OidcClient client, List<String> scopes, String issuer) {
@@ -124,25 +133,17 @@ public class OidcTokenService {
         Instant now = Instant.now();
         meterRegistry.counter("sso.token.issued", "grant_type", "client_credentials",
                 "tenant", tenant.getSlug()).increment();
-        long tenantTtlSeconds = resolveAccessTtlSeconds(tenant);
+        long accessTtlSeconds = accessTokenLifetime.forClient(tenant, client);
         // No end-user authenticated, so no amr: the claim describes how a
         // *person* proved who they are, and this grant has no person in it.
         // No resource: client_credentials does not accept one yet. The grant
         // has no user and no consent step, so an audience would be the
         // client's word alone -- see the refresh grant for the same reasoning.
         String accessToken = buildAccessToken(client, null, scopes, issuer, key.getKid(), privateKey, now,
-                tenantTtlSeconds, tenant.getCustomClaims(), null, null);
+                accessTtlSeconds, tenant.getCustomClaims(), null, null);
         // No ID token in the client_credentials grant; expiresIn carries the
         // *resolved* per-tenant TTL so the response doesn't lie (B-OIDC-5).
-        return new IssuedTokens(accessToken, null, tenantTtlSeconds);
-    }
-
-    /** PRD SSO-03: per-tenant access TTL takes precedence over the OIDC default. */
-    private long resolveAccessTtlSeconds(Tenant tenant) {
-        if (tenant.getAccessTtlMs() != null && tenant.getAccessTtlMs() > 0) {
-            return tenant.getAccessTtlMs() / 1000;
-        }
-        return accessTokenSeconds;
+        return new IssuedTokens(accessToken, null, accessTtlSeconds);
     }
 
     private String buildAccessToken(OidcClient client, User user, List<String> scopes,

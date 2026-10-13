@@ -50,7 +50,7 @@ class OidcClientUpdateTest {
         tenantAccessor = mock(TenantAccessor.class);
         repository = mock(OidcClientRepository.class);
         var auditService = mock(tech.cwvermaak.weldforge.service.audit.AuditService.class);
-        service = new OidcClientService(tenantAccessor, repository, auditService);
+        service = new OidcClientService(tenantAccessor, repository, auditService, new AccessTokenLifetime(3600L));
 
         when(tenantAccessor.requireTenant()).thenReturn(TENANT);
         when(tenantAccessor.requireTenantId()).thenReturn(1L);

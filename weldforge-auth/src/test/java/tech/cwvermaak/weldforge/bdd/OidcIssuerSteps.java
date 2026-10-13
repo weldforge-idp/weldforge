@@ -238,9 +238,11 @@ public class OidcIssuerSteps {
         // collection. These suites assert other claims, so an empty set is fine.
         var roleRepositoryForTest = org.mockito.Mockito.mock(
                 tech.cwvermaak.weldforge.repository.RoleRepository.class);
-        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
+        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest,
+                new tech.cwvermaak.weldforge.service.oidc.AccessTokenLifetime(3600L));
         // Set @Value-injected lifetimes since we constructed the bean by hand.
-        ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
+        // The access-token lifetime is no longer one of them: it moved to the
+        // collaborator above, which the registration path shares.
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
         introspectionService = new OidcIntrospectionService(signingKeyService, revocationRepo);
         revocationService = new OidcRevocationService(signingKeyService, revocationRepo, auditService,
