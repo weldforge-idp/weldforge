@@ -17,7 +17,7 @@ class OidcAuthorizationControllerHandleTest {
 
     private final OidcAuthorizationController controller =
             new OidcAuthorizationController(
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null);
 
     @Test
     @DisplayName("a redirectable error becomes a 302 to redirect_uri carrying error + state")

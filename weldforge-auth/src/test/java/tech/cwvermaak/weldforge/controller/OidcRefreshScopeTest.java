@@ -38,7 +38,7 @@ class OidcRefreshScopeTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         controller = new OidcAuthorizationController(
-                null, null, null, null, null, null, null, null, meterRegistry,
+                null, null, null, null, null, null, null, null, null, meterRegistry,
                 mock(tech.cwvermaak.weldforge.repository.OidcConsentGrantRepository.class));
 
         client = new OidcClient();

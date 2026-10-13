@@ -96,6 +96,13 @@ public final class AuditEventTypes {
     public static final String OIDC_CLIENT_DYNAMIC_UPDATE   = "oidc.client.dynamic_update";
     public static final String OIDC_CLIENT_DYNAMIC_DELETE   = "oidc.client.dynamic_delete";
 
+    // Per-tenant scope registry: the words shown on the consent screen.
+    // Audited because editing them changes what a person is told they are
+    // agreeing to, without changing what the scope actually grants.
+    public static final String OIDC_SCOPE_UPSERT            = "oidc.scope.upsert";
+    public static final String OIDC_SCOPE_DELETE            = "oidc.scope.delete";
+    public static final String OIDC_SCOPE_REPLACE_ALL       = "oidc.scope.replace_all";
+
     // SAML SLO
     public static final String SAML_IDP_LOGOUT_INITIATED = "saml_idp.logout.initiated";
     /** An SP's LogoutRequest ended sessions on our side (CONF-5.2). */
@@ -155,6 +162,7 @@ public final class AuditEventTypes {
     public static final String TARGET_SAML_SP            = "saml_service_provider";
     public static final String TARGET_GROUP_ROLE_MAPPING = "group_role_mapping";
     public static final String TARGET_OIDC_CLIENT        = "oidc_client";
+    public static final String TARGET_OIDC_SCOPE         = "oidc_scope";
     public static final String TARGET_TWILIO_PROVIDER    = "twilio_provider";
     public static final String TARGET_MFA_POLICY         = "mfa_policy";
     public static final String TARGET_SERVICE_ACCOUNT    = "service_account";

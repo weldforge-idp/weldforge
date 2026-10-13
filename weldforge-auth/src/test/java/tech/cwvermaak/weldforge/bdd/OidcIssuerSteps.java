@@ -347,7 +347,8 @@ public class OidcIssuerSteps {
         when(tenantRepo.findBySlug(slug)).thenReturn(Optional.of(
                 "globex".equals(slug) ? globex : acme));
         var controller = new tech.cwvermaak.weldforge.controller.OidcDiscoveryController(
-                tenantRepo, signingKeyService);
+                tenantRepo, signingKeyService,
+                mock(tech.cwvermaak.weldforge.service.oidc.OidcScopeService.class));
 
         var request = new org.springframework.mock.web.MockHttpServletRequest(
                 "GET", "/t/" + slug + "/.well-known/openid-configuration");

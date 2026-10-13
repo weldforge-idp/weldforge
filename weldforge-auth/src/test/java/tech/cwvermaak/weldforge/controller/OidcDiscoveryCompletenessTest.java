@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
+import tech.cwvermaak.weldforge.service.oidc.OidcScopeService;
 import tech.cwvermaak.weldforge.service.oidc.TenantSigningKeyService;
 
 import java.lang.reflect.Method;
@@ -34,6 +35,7 @@ import static org.mockito.Mockito.when;
 class OidcDiscoveryCompletenessTest {
 
     private OidcDiscoveryController controller;
+    private OidcScopeService scopeService;
 
     @BeforeEach
     void setUp() {
@@ -44,7 +46,11 @@ class OidcDiscoveryCompletenessTest {
         TenantRepository tenantRepository = mock(TenantRepository.class);
         when(tenantRepository.findBySlug("leap")).thenReturn(Optional.of(leap));
 
-        controller = new OidcDiscoveryController(tenantRepository, mock(TenantSigningKeyService.class));
+        scopeService = mock(OidcScopeService.class);
+        when(scopeService.registeredNames(1L)).thenReturn(List.of());
+
+        controller = new OidcDiscoveryController(
+                tenantRepository, mock(TenantSigningKeyService.class), scopeService);
     }
 
     @SuppressWarnings("unchecked")
@@ -185,5 +191,21 @@ class OidcDiscoveryCompletenessTest {
     /** Path variables are named differently across controllers; only the shape matters. */
     private static String normalise(String path) {
         return path.replaceAll("\\{[^}]+}", "{}");
+    }
+
+    @Test
+    @DisplayName("a tenant's registered scopes are advertised alongside the standard ones")
+    void registered_scopes_are_advertised() {
+        when(scopeService.registeredNames(1L)).thenReturn(List.of("board.view", "card.decide"));
+
+        @SuppressWarnings("unchecked")
+        List<String> scopes = (List<String>) discovery().get("scopes_supported");
+
+        // Leaving them out is the same untruth the rest of this document was
+        // fixed for: a conformant client validates its request against this
+        // list and refuses to ask for a scope that is not in it.
+        assertThat(scopes).contains("board.view", "card.decide");
+        assertThat(scopes).as("the standard scopes do not go away").contains("openid");
+        assertThat(scopes).doesNotHaveDuplicates();
     }
 }

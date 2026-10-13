@@ -37,6 +37,7 @@ public class OidcDiscoveryController {
 
     private final TenantRepository tenantRepository;
     private final TenantSigningKeyService signingKeyService;
+    private final tech.cwvermaak.weldforge.service.oidc.OidcScopeService scopeService;
 
     /**
      * The three URLs an OAuth client may build from a path-bearing issuer.
@@ -120,7 +121,18 @@ public class OidcDiscoveryController {
         // offline_access is the one that bites. It is how an RP asks for a
         // refresh token in OIDC, and omitting it here sent at least one
         // integrator looking for a server-side switch that does not exist.
-        doc.put("scopes_supported", OidcAuthorizationService.standardScopes());
+        // The standard OIDC scopes plus whatever this tenant has registered.
+        // Advertising only the standard six was the same untruth the rest of
+        // this document was fixed for: a conformant client validates the scope
+        // it wants against this list and refuses to ask for one that is
+        // missing, so a tenant's own scopes were unreachable through any
+        // library that checks.
+        java.util.List<String> scopes = new java.util.ArrayList<>(
+                OidcAuthorizationService.standardScopes());
+        for (String registered : scopeService.registeredNames(tenant.getId())) {
+            if (!scopes.contains(registered)) scopes.add(registered);
+        }
+        doc.put("scopes_supported", scopes);
         doc.put("code_challenge_methods_supported", List.of("S256"));
         // Claims the issuer actually mints, rather than a subset of them.
         // auth_time has been minted since CONF-2.2 (Sprint 4) and was never
