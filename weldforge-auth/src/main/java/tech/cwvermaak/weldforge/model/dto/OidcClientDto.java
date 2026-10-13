@@ -61,6 +61,14 @@ public class OidcClientDto {
     private Integer refreshTokenTtlSeconds;
 
     /**
+     * Access-token lifetime for this client in seconds; {@code null} inherits
+     * the tenant override and then the application default. Must not exceed
+     * the tenant's effective access TTL -- a client may shorten its access
+     * tokens, never lengthen them.
+     */
+    private Integer accessTokenTtlSeconds;
+
+    /**
      * Login-screen branding for this client, overlaying the tenant's key by
      * key. Null leaves it unchanged on update; an empty object clears it.
      */

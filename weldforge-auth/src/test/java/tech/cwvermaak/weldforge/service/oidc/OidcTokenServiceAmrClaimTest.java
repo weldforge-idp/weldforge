@@ -57,8 +57,8 @@ class OidcTokenServiceAmrClaimTest {
         // collection. These suites assert other claims, so an empty set is fine.
         var roleRepositoryForTest = org.mockito.Mockito.mock(
                 tech.cwvermaak.weldforge.repository.RoleRepository.class);
-        service = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
-        ReflectionTestUtils.setField(service, "accessTokenSeconds", 3600L);
+        service = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest,
+                new AccessTokenLifetime(3600L));
         ReflectionTestUtils.setField(service, "idTokenSeconds", 3600L);
 
         tenant = Tenant.builder()

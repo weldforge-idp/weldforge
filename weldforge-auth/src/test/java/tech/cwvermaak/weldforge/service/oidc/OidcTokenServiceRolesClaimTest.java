@@ -63,8 +63,8 @@ class OidcTokenServiceRolesClaimTest {
         // Any suite asserting on the roles claim must stub this, or every
         // assertion silently becomes a test of the empty case.
         roleRepositoryForTest = mock(tech.cwvermaak.weldforge.repository.RoleRepository.class);
-        service = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
-        ReflectionTestUtils.setField(service, "accessTokenSeconds", 3600L);
+        service = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest,
+                new AccessTokenLifetime(3600L));
         ReflectionTestUtils.setField(service, "idTokenSeconds", 3600L);
 
         tenant = Tenant.builder()

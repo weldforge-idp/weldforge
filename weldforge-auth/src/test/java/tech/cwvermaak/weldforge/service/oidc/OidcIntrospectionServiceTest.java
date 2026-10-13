@@ -35,6 +35,8 @@ class OidcIntrospectionServiceTest {
     private TenantSigningKeyRepository signingKeyRepo;
     private RevokedOidcTokenRepository revocationRepo;
     private TenantSigningKeyService signingKeyService;
+    /** Held so one test can shorten the lifetime after the service is built. */
+    private AccessTokenLifetime accessTokenLifetime;
     private OidcTokenService tokenService;
     private OidcIntrospectionService introspectionService;
 
@@ -81,8 +83,9 @@ class OidcIntrospectionServiceTest {
         // collection. These suites assert other claims, so an empty set is fine.
         var roleRepositoryForTest = org.mockito.Mockito.mock(
                 tech.cwvermaak.weldforge.repository.RoleRepository.class);
-        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest);
-        ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", 3600L);
+        accessTokenLifetime = new AccessTokenLifetime(3600L);
+        tokenService = new OidcTokenService(signingKeyService, new SimpleMeterRegistry(), roleRepositoryForTest,
+                accessTokenLifetime);
         ReflectionTestUtils.setField(tokenService, "idTokenSeconds", 3600L);
         introspectionService = new OidcIntrospectionService(signingKeyService, revocationRepo);
 
@@ -185,7 +188,7 @@ class OidcIntrospectionServiceTest {
     @DisplayName("an expired token introspects as inactive")
     void expiredToken_isInactive() {
         // Drop the lifetime to a negative number so the token is born expired.
-        ReflectionTestUtils.setField(tokenService, "accessTokenSeconds", -1L);
+        ReflectionTestUtils.setField(accessTokenLifetime, "instanceDefaultSeconds", -1L);
         IssuedTokens tokens = tokenService.issueForCodeExchange(
                 acme, client, alice, List.of("openid"), null,
                 "https://weldforge.test/t/acme");
