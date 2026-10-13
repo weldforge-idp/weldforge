@@ -42,7 +42,6 @@ public class ServiceAccount {
     @Column(name = "token_hash", nullable = false, length = 128)
     private String tokenHash;
 
-    @Enumerated(EnumType.STRING)
     /**
      * Optional. Lets this account assign tenant roles whose names start with
      * this prefix, case-insensitively, and nothing else anywhere.
@@ -62,6 +61,7 @@ public class ServiceAccount {
     @Column(name = "role_grant_prefix", length = 64)
     private String roleGrantPrefix;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "admin_role", nullable = false, length = 32)
     @Builder.Default
     private AdminRole adminRole = AdminRole.NONE;
