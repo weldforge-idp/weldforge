@@ -155,7 +155,18 @@ public final class AuditEventTypes {
 
     // Target types
     public static final String TARGET_USER               = "user";
+    public static final String TARGET_ROLE               = "role";
     public static final String TARGET_TENANT             = "tenant";
+
+    /**
+     * Scoped role grants: a service account assigning roles under one name
+     * prefix. The refusal is recorded as well as the success -- a request that
+     * writes nothing leaves no other trace, and a downstream asking for a name
+     * outside its namespace is the event worth seeing.
+     */
+    public static final String ROLE_GRANT_REPLACED       = "user.role_grant.replaced";
+    public static final String ROLE_GRANT_ROLE_CREATED   = "user.role_grant.role_created";
+    public static final String ROLE_GRANT_REFUSED        = "user.role_grant.refused";
     public static final String TARGET_MFA_FACTOR         = "mfa_factor";
     public static final String TARGET_SOCIAL_PROVIDER    = "social_provider";
     public static final String TARGET_SAML_PROVIDER      = "saml_provider";

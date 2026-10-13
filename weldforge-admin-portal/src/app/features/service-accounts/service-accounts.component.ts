@@ -109,6 +109,13 @@ import { apiErrorMessage } from '../../core/api-error';
               }
             </mat-select>
           </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Role grant prefix</mat-label>
+            <input matInput [(ngModel)]="draft.roleGrantPrefix"
+                   placeholder="clepsydra:">
+            <mat-hint>Optional. Lets this account assign roles whose names
+              start with this, and nothing else. Leave blank for none.</mat-hint>
+          </mat-form-field>
         </div>
         <div class="wf-actions">
           <span class="spacer"></span>
@@ -163,6 +170,12 @@ import { apiErrorMessage } from '../../core/api-error';
                             [class.role-read]="s.adminRole === 'READ_ONLY'">
                     {{ s.adminRole }}
                   </mat-chip>
+                  @if (s.roleGrantPrefix) {
+                    <mat-chip class="role-grant"
+                              matTooltip="May assign roles named {{ s.roleGrantPrefix }}* and nothing else">
+                      grants {{ s.roleGrantPrefix }}*
+                    </mat-chip>
+                  }
                 </td>
               </ng-container>
 
@@ -357,12 +370,24 @@ export class ServiceAccountsComponent {
    */
   protected static readonly DEFAULT_EXPIRY_DAYS = 90;
 
-  protected draft: CreateServiceAccountDto = {
-    name: '',
-    description: '',
-    adminRole: 'TENANT_ADMIN',
-    expiresInDays: ServiceAccountsComponent.DEFAULT_EXPIRY_DAYS,
-  };
+  protected draft: CreateServiceAccountDto = ServiceAccountsComponent.freshDraft();
+
+  /**
+   * The create form as it is on first load.
+   *
+   * <p>One factory rather than the object written out at each reset: the
+   * reset after a successful create used to be a second copy, which is how
+   * the OIDC client form in #151 came to leave fields behind.
+   */
+  private static freshDraft(): CreateServiceAccountDto {
+    return {
+      name: '',
+      description: '',
+      adminRole: 'TENANT_ADMIN',
+      roleGrantPrefix: '',
+      expiresInDays: ServiceAccountsComponent.DEFAULT_EXPIRY_DAYS,
+    };
+  }
 
   /** SUPER_ADMIN is gated server-side; mirror that in the UI so a non-super
    *  admin doesn't pick a role only to get a 403 back. */
@@ -433,8 +458,7 @@ export class ServiceAccountsComponent {
     mutationFn: (dto: CreateServiceAccountDto) => firstValueFrom(this.api.create(dto)),
     onSuccess: (sa) => {
       this.revealed.set(sa);
-      this.draft = { name: '', description: '', adminRole: 'TENANT_ADMIN',
-                     expiresInDays: ServiceAccountsComponent.DEFAULT_EXPIRY_DAYS };
+      this.draft = ServiceAccountsComponent.freshDraft();
       this.queryClient.invalidateQueries({ queryKey: ['service-accounts'] });
     },
     onError: (err: any) => this.toast(apiErrorMessage(err, 'Failed to create service account')),
@@ -446,6 +470,10 @@ export class ServiceAccountsComponent {
       name: this.draft.name.trim(),
       description: this.draft.description?.trim() || undefined,
       adminRole: this.draft.adminRole,
+      // Omitted when blank rather than sent as '': on create the two mean the
+      // same thing, but sending the field only when it has a value keeps the
+      // payload honest about what the operator actually asked for.
+      roleGrantPrefix: this.draft.roleGrantPrefix?.trim() || undefined,
       // Always sent, including 0. Omitting it would mean "unchanged", which
       // on create silently means indefinite -- the very default this screen
       // exists to stop being invisible.

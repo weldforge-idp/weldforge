@@ -42,6 +42,25 @@ public class ServiceAccount {
     @Column(name = "token_hash", nullable = false, length = 128)
     private String tokenHash;
 
+    /**
+     * Optional. Lets this account assign tenant roles whose names start with
+     * this prefix, case-insensitively, and nothing else anywhere.
+     *
+     * <p>A capability in its own right, not a rung on the {@code adminRole}
+     * ladder: an account carrying one is expected to have {@code NONE} and
+     * reaches exactly two endpoints. It exists so a downstream application can
+     * manage its own namespace of roles without being handed
+     * {@code TENANT_ADMIN}, which can also delete users, reset MFA and edit
+     * OIDC clients across the whole tenant.
+     *
+     * <p>Null or blank -- which is every account created before V68 -- means
+     * no role-grant capability at all.
+     *
+     * <p>See {@code docs/product/scoped-role-grants.md}.
+     */
+    @Column(name = "role_grant_prefix", length = 64)
+    private String roleGrantPrefix;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "admin_role", nullable = false, length = 32)
     @Builder.Default
