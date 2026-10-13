@@ -206,7 +206,7 @@ public class SecurityBaselineSteps {
         // must still win, or OAuth clients would be handed a problem document.
         MvcResult result = MockMvcBuilders.standaloneSetup(new tech.cwvermaak.weldforge.controller
                         .OidcAuthorizationController(tenants, null, null, authz, null,
-                        new PublicHostProperties(), null, null, null, null))
+                        new PublicHostProperties(), null, null, null, null, null))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(JSON_FIRST)
                 .build()

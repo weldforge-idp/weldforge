@@ -63,6 +63,7 @@ public class OidcAuthorizationController {
     private final PublicHostProperties publicHost;
     private final tech.cwvermaak.weldforge.service.JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final tech.cwvermaak.weldforge.service.oidc.OidcScopeService scopeService;
     /** Meters the CONF-1.1 legacy-scope fallback so it can be retired on evidence. */
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
     private final tech.cwvermaak.weldforge.repository.OidcConsentGrantRepository consentGrantRepository;
@@ -244,7 +245,9 @@ public class OidcAuthorizationController {
         // decide endpoint requires it back and checks the binding, so a
         // cross-site auto-submit of the consent form is rejected.
         String csrfToken = jwtService.generateConsentCsrfToken(email, tenant.getId(), slug);
-        String html = renderConsent(slug, user, client, redirectUri, scope, state, nonce,
+        String html = renderConsent(slug, user, client, redirectUri, scope,
+                scopeService.describe(tenant, scope, request.getHeader("Accept-Language")),
+                state, nonce,
                 codeChallenge, codeChallengeMethod, maxAge, resource, csrfToken,
                 tech.cwvermaak.weldforge.config.security.ContentSecurityPolicy.nonce(request));
         return ResponseEntity.ok()
@@ -753,14 +756,29 @@ public class OidcAuthorizationController {
      *                 {@code <script>} without it does not run
      */
     static String renderConsent(String slug, User user, OidcClient client, String redirectUri,
-                                String scope, String state, String nonce,
+                                String scope, java.util.Map<String, String> scopeWords,
+                                String state, String nonce,
                                 String codeChallenge, String codeChallengeMethod,
                                 Integer maxAge, String resource, String csrfToken, String cspNonce) {
         String appName = client.getName() != null && !client.getName().isBlank()
                 ? client.getName() : client.getClientId();
+        // A scope the tenant has described is shown in words, with the name
+        // kept beside it rather than replaced: the person reads what they are
+        // agreeing to, and a developer reading over their shoulder can still
+        // see which scope it is. An undescribed scope renders exactly as it
+        // always did, so nothing regresses for a tenant that registers none.
+        java.util.Map<String, String> words =
+                scopeWords == null ? java.util.Map.of() : scopeWords;
         String scopesHtml = Arrays.stream(scope.split("\\s+"))
                 .filter(s -> !s.isBlank())
-                .map(s -> "<li>" + escape(s) + "</li>")
+                .map(s -> {
+                    String described = words.get(s);
+                    if (described == null || described.isBlank()) {
+                        return "<li>" + escape(s) + "</li>";
+                    }
+                    return "<li>" + escape(described)
+                            + " <span class=\"scope-name\">" + escape(s) + "</span></li>";
+                })
                 .reduce("", String::concat);
 
         return "<!doctype html><html><head><meta charset=\"UTF-8\">"
@@ -775,6 +793,8 @@ public class OidcAuthorizationController {
                 + ".scopes{background:#070B17;border:1px solid #1C2646;border-radius:3px;padding:14px 18px;margin:0 0 24px;}"
                 + ".scopes h3{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#8899CC;margin:0 0 8px;}"
                 + ".scopes ul{margin:0;padding-left:18px;font-size:13px;}"
+                + ".scopes li{margin-bottom:4px;}"
+                + ".scope-name{font-family:'Space Mono',monospace;font-size:11px;color:#8899CC;}"
                 + ".actions{display:flex;gap:10px;}"
                 + "button{flex:1;padding:12px;border-radius:3px;border:none;font-family:'Syne',sans-serif;font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:12px;cursor:pointer;}"
                 + ".allow{background:#4A8FF5;color:#fff;}"

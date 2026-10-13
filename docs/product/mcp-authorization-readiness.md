@@ -1,7 +1,8 @@
 # What an MCP client needs from WeldForge
 
-**Status:** research and design, nothing below is built unless the Built column says so.
-**Written:** 2026-10-12.
+**Status:** research and design. The Built column is kept current as items ship; items
+1, 2 and 3 of the order in §8 are now in production.
+**Written:** 2026-10-12. **Last updated:** 2026-10-13.
 **Sources read:** the Model Context Protocol specification revision **2026-07-28**
 (`basic/authorization`, `.../authorization-server-discovery`, `.../client-registration`),
 RFC 8414, RFC 8693, RFC 8707, RFC 9207, RFC 9728, and the
@@ -44,14 +45,14 @@ own connector must do, not from a requirement on us.
 |---|---|---|
 | OAuth 2.1 core (PKCE S256, exact redirect match, rotation) | MUST | **Yes** |
 | A discovery document per tenant | MUST (one of two) | **Yes**, OIDC Discovery |
-| Discovery reachable at the URLs a client tries | implied by the MUST | **No — §3** |
+| Discovery reachable at the URLs a client tries | implied by the MUST | **Yes** — PR #148, `sha-04ef2dd` |
 | RFC 9207 `iss` + advertisement | SHOULD | **Yes**, already |
 | `code_challenge_methods_supported: ["S256"]` | — | **Yes** |
-| Resource indicators (RFC 8707) | not on us, but see §4 | **No** |
+| Resource indicators (RFC 8707) | not on us, but see §4 | **Yes**, opt-in — PR #149, `sha-f64102c` |
 | Client ID Metadata Documents | SHOULD | **No** |
 | Dynamic Client Registration | MAY, deprecated | Built, off, instance-wide |
 | Token exchange (RFC 8693) | not on us, but see §5 | **No** |
-| Scope descriptions | not in the spec at all | **No** |
+| Scope descriptions | not in the spec at all | **Yes** — PR #150 |
 
 ---
 
@@ -188,6 +189,35 @@ Design: a registered scope per tenant with a description per language (English a
 asked for), shown on the consent screen, and listed in `scopes_supported`. First scope
 needed: `board.view`.
 
+**Shipped** in PR #150 (`V66`). As built:
+
+- `oidc_scopes` is **per tenant, not per client**. A scope means one thing inside a
+  tenant, and a tenant routinely hosts several clients; registering the meaning once is
+  what stops two clients explaining the same permission two different ways.
+- Descriptions are a JSONB map of language tag to text. Resolution tries the full tag,
+  then its primary subtag, then English, then nothing — so `de-AT` finds a `de`
+  description and a tenant writes one German description, not one per region. The
+  language comes from the browser's `Accept-Language`, first tag listed, q-values
+  ignored.
+- The consent screen shows the words **with the scope name still beside them**, so the
+  person reads what they are agreeing to and a developer can still tell which scope it
+  is. A scope with no registered description renders exactly as it did before, so
+  registering a description for one scope does not change how the others are presented.
+- `scopes_supported` unions the tenant's registered names with the standard six.
+  Leaving them out would be the same untruth the rest of that document was fixed for: a
+  conformant library validates its request against the list and refuses to ask for a
+  scope that is missing from it.
+- The registry **explains** scopes, it does not grant them. What a client may ask for is
+  still the client's own registered scope list; a row here only supplies the words.
+- Admin surface at `/api/admin/oidc/scopes`: `GET` list, `POST` upsert one, `PUT`
+  replace the whole registry, `DELETE ?name=`. The name travels in the body or the query
+  string rather than as a path segment, because an RFC 6749 scope token may legally
+  contain a slash. Every write demands a tenant admin and is audited — editing these
+  words changes what a person is told they are agreeing to.
+- **Not built:** a portal screen. The API is the whole of it today, the same as the
+  `resources` list from #149. Worth doing before a tenant other than counter.shot needs
+  it.
+
 Note the interaction with the spec: `scopes_supported` on the **resource** is the MCP
 server's document, not ours, and the spec tells resource servers to keep it minimal and
 to drive the rest through `WWW-Authenticate` scope challenges. Ours stays the
@@ -228,9 +258,9 @@ would let anyone on the internet create clients in any tenant.
 
 | # | Item | Why here | Size |
 |---|---|---|---|
-| 1 | Discovery at the path-inserted URLs (§3) | Blocks every client. Standards-stable. Needs the infra repo too | Small |
-| 2 | Resource indicators (§4) | Everything about audiences depends on it. Opt-in, so no blast radius | Medium |
-| 3 | Scope descriptions (§6) | Consent quality, ours anyway, prerequisite for honest WF5 consent | Medium |
+| 1 | ~~Discovery at the path-inserted URLs (§3)~~ **done, #148** | Blocks every client. Standards-stable. Needs the infra repo too | Small |
+| 2 | ~~Resource indicators (§4)~~ **done, #149** | Everything about audiences depends on it. Opt-in, so no blast radius | Medium |
+| 3 | ~~Scope descriptions (§6)~~ **done, #150** | Consent quality, ours anyway, prerequisite for honest WF5 consent | Medium |
 | 4 | Per-grant access-token lifetime (§5) | Prerequisite of WF5, useful alone | Small–medium |
 | 5 | Client ID Metadata Documents (§7) | SHOULD, draft-00, SSRF surface | Medium |
 | 6 | Token exchange (§5) | The large one. Security review before switch-on | Large |

@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.User;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -26,10 +28,14 @@ class ConsentFormRoundTripTest {
     private static final String RESOURCE = "https://shot.cwvermaak.tech/mcp/counteract-studios";
 
     private String consent(Integer maxAge, String resource) {
+        return consent(maxAge, resource, Map.of());
+    }
+
+    private String consent(Integer maxAge, String resource, Map<String, String> words) {
         return OidcAuthorizationController.renderConsent("acme",
                 User.builder().email("alice@acme.test").build(),
                 OidcClient.builder().clientId("wf_client_1").name("Acme App").build(),
-                "https://app.acme.test/cb", "openid email", "st", "no",
+                "https://app.acme.test/cb", "openid email", words, "st", "no",
                 "challenge", "S256", maxAge, resource, "csrf-token", "nonce-1");
     }
 
@@ -89,5 +95,41 @@ class ConsentFormRoundTripTest {
         assertThat(html)
                 .as("the resource is attacker-supplied and reaches the page as an attribute")
                 .doesNotContain("<script>alert(1)</script>");
+    }
+
+    @Test
+    @DisplayName("a described scope is shown in words, with its name still beside it")
+    void described_scope_shows_words_and_name() {
+        String html = consent(null, null, Map.of("email", "See the address you signed up with"));
+
+        assertThat(html)
+                .as("the words are the whole reason the registry exists")
+                .contains("See the address you signed up with");
+        assertThat(html)
+                .as("the name stays visible so a developer can still tell which scope it is")
+                .contains("<span class=\"scope-name\">email</span>");
+    }
+
+    @Test
+    @DisplayName("an undescribed scope renders exactly as it did before the registry")
+    void undescribed_scope_is_unchanged() {
+        // The tenant described one of the two requested scopes. The other has
+        // to keep working, or registering a description for one scope would
+        // quietly change how every other scope is presented.
+        String html = consent(null, null, Map.of("email", "See your address"));
+
+        assertThat(html).contains("<li>openid</li>");
+    }
+
+    @Test
+    @DisplayName("a description is escaped, not injected")
+    void description_is_escaped() {
+        // Descriptions are tenant-supplied and land in the page unquoted, so
+        // this is the one spot where a tenant admin could script the consent
+        // screen their own users are reading.
+        String html = consent(null, null,
+                Map.of("email", "<script>alert(1)</script>"));
+
+        assertThat(html).doesNotContain("<script>alert(1)</script>");
     }
 }
