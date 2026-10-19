@@ -1,6 +1,6 @@
 # Scoped role grants
 
-**Status:** built in PR #153 (`V68`). **Written:** 2026-10-13.
+**Status:** built in PR #153 (`V70`). **Written:** 2026-10-13.
 **Prompted by:** the Clepsydra session's handover of 2026-10-13, at the owner's
 request. Clepsydra's side of the plan is
 `C:\dev\CWVermaak\Tech\clepsydra\docs\design\Clepsydra-Feature-Role-Assignment.md`

@@ -53,7 +53,7 @@ public class ServiceAccount {
      * {@code TENANT_ADMIN}, which can also delete users, reset MFA and edit
      * OIDC clients across the whole tenant.
      *
-     * <p>Null or blank -- which is every account created before V68 -- means
+     * <p>Null or blank -- which is every account created before V70 -- means
      * no role-grant capability at all.
      *
      * <p>See {@code docs/product/scoped-role-grants.md}.
