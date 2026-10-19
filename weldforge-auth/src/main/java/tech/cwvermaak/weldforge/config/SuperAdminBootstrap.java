@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership;
 import tech.cwvermaak.weldforge.model.AdminRole;
 import tech.cwvermaak.weldforge.model.User;
@@ -42,7 +43,16 @@ public class SuperAdminBootstrap implements ApplicationRunner {
     private final UserRepository userRepository;
     private final GlobalSuperAdminMembership globalMembership;
 
+    /**
+     * One transaction for the lookup, the promotion and the membership. Without
+     * it the user came back detached, and the promotion's log line, reading the
+     * lazy tenant, threw LazyInitializationException after the promotion had
+     * been saved: startup failed, the global membership was never granted, and
+     * production went down for a minute on 2026-10-19 until the restart found
+     * the user already promoted.
+     */
     @Override
+    @Transactional
     public void run(ApplicationArguments args) {
         if (bootstrapEmail == null || bootstrapEmail.isBlank()) return;
 
