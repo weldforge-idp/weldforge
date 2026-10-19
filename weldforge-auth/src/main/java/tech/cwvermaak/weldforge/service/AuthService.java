@@ -115,6 +115,11 @@ public class AuthService {
         User user = User.builder()
                 .tenant(tenant)
                 .username(request.getName())
+                // The form asks for a name, and the name is what relying parties
+                // are sent (the name claim, userinfo). Kept only as the username,
+                // every self-registered account reached them nameless.
+                .name(request.getName() == null || request.getName().isBlank()
+                        ? null : request.getName().trim())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .provider(AuthProvider.LOCAL)
