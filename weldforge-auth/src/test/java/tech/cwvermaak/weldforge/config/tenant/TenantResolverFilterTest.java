@@ -42,6 +42,27 @@ class TenantResolverFilterTest {
         assertThat(seen.get()).isEqualTo("headerslug");
     }
 
+    /**
+     * A thread reused from an earlier request, job or test can still hold a
+     * full context. TenantAccessor trusts the tenant id over the slug, so a
+     * leftover id silently became this request's tenant: a dynamic client
+     * registration created its client in another tenant and then answered 500.
+     */
+    @Test
+    @DisplayName("a request starts with no tenant id, role or actor left on the thread")
+    void startsFromACleanContext() throws Exception {
+        TenantContext.set("stale-tenant", 99L, tech.cwvermaak.weldforge.model.AdminRole.SUPER_ADMIN);
+        TenantContext.setActorUser(7L);
+        HttpServletRequest req = request("/t/path-slug/oauth2/register", "sso.weldforge.org");
+
+        AtomicReference<Object[]> seen = new AtomicReference<>();
+        filter.doFilter(req, mock(HttpServletResponse.class), (r, s) -> seen.set(new Object[] {
+                TenantContext.get(), TenantContext.getTenantId(), TenantContext.isSuperAdmin(),
+                TenantContext.getActorUserId()}));
+
+        assertThat(seen.get()).containsExactly("path-slug", null, false, null);
+    }
+
     @Test
     @DisplayName("/t/{slug}/ path prefix beats host subdomain")
     void pathBeatsHost() throws Exception {

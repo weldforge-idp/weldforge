@@ -59,7 +59,7 @@ public class OidcClientService {
     @Transactional
     public OidcClientDto create(OidcClientDto dto) {
         tenantAccessor.requireTenantAdmin();
-        return createInternal(dto);
+        return createInternal(tenantAccessor.requireTenant(), dto);
     }
 
     /**
@@ -74,14 +74,19 @@ public class OidcClientService {
      *
      * <p>Every validation the admin path runs still runs. A client that
      * registers itself is no less able to register itself unusably.
+     *
+     * <p>The tenant is the one the registration URL names, passed in rather
+     * than read from the request context. The caller issues the registration
+     * access token against that same tenant; reading the context here let a
+     * tenant id left on a reused thread put the client in a different tenant,
+     * and the token lookup then answered 500 "Client vanished".
      */
     @Transactional
-    public OidcClientDto createForDynamicRegistration(OidcClientDto dto) {
-        return createInternal(dto);
+    public OidcClientDto createForDynamicRegistration(Tenant tenant, OidcClientDto dto) {
+        return createInternal(tenant, dto);
     }
 
-    private OidcClientDto createInternal(OidcClientDto dto) {
-        Tenant tenant = tenantAccessor.requireTenant();
+    private OidcClientDto createInternal(Tenant tenant, OidcClientDto dto) {
         require(dto.getRedirectUris(), "redirectUris");
         require(dto.getScopes(),       "scopes");
         require(dto.getGrantTypes(),   "grantTypes");

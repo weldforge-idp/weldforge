@@ -136,13 +136,11 @@ public class OidcRegistrationController {
                 .tokenEndpointAuthMethod(tokenEndpointAuthMethod)
                 .build();
 
-        // Delegate to the existing create method (sets tenant context via slug)
-        // We need to use the service directly, which requires tenant context.
-        // The OidcClientService uses TenantAccessor, so the tenant resolver
-        // filter should have already set the slug context from the URL.
+        // Created in the tenant the URL names, the same one the registration
+        // access token is issued against below; never the request context's.
         // Not create(): that requires a tenant admin, which is why this
         // endpoint answered 403 to every caller it exists for.
-        OidcClientDto created = oidcClientService.createForDynamicRegistration(dto);
+        OidcClientDto created = oidcClientService.createForDynamicRegistration(tenant, dto);
 
         // Build RFC 7591 response
         String baseUrl = baseUrl(request);

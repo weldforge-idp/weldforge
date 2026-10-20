@@ -2,6 +2,7 @@ package tech.cwvermaak.weldforge.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,10 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tech.cwvermaak.weldforge.config.tenant.TenantContext;
+import tech.cwvermaak.weldforge.model.AdminRole;
 import tech.cwvermaak.weldforge.model.Tenant;
+import tech.cwvermaak.weldforge.repository.OidcClientRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 
 import java.util.UUID;
@@ -71,6 +75,7 @@ class DynamicClientUpdateIntegrationTest {
 
     @Autowired MockMvc mvc;
     @Autowired TenantRepository tenants;
+    @Autowired OidcClientRepository clients;
 
     private Tenant tenant;
     private String clientId;
@@ -205,5 +210,44 @@ class DynamicClientUpdateIntegrationTest {
             }
             """.formatted(clientId));
         assertThat(res.getResponse().getStatus()).isEqualTo(400);
+    }
+
+    @AfterEach
+    void clearContext() {
+        TenantContext.clear();
+    }
+
+    /**
+     * CI, 2026-10-19: one registration in this suite answered 500 "Client
+     * vanished between creation and token issue". MockMvc runs every request on
+     * the test thread, and an earlier test had left another tenant's id in
+     * TenantContext. The client was created in that tenant; the token lookup,
+     * by the URL's tenant, found nothing. A pooled server thread is the same
+     * shape.
+     */
+    @Test
+    @DisplayName("a tenant left on the thread does not decide where a registered client goes")
+    void registersInTheUrlTenantDespiteALeftoverContext() throws Exception {
+        String tag = UUID.randomUUID().toString().substring(0, 8);
+        Tenant other = tenants.saveAndFlush(Tenant.builder()
+                .slug("other-" + tag).name("other-" + tag).displayName("other-" + tag).build());
+        TenantContext.set(other.getSlug(), other.getId(), AdminRole.NONE);
+
+        MvcResult res = mvc.perform(post("/t/" + tenant.getSlug() + "/oauth2/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "client_name": "Second RP",
+                      "redirect_uris": ["https://rp2.example.com/cb"],
+                      "grant_types": ["authorization_code"],
+                      "scope": "openid",
+                      "token_endpoint_auth_method": "client_secret_basic"
+                    }
+                    """)).andReturn();
+
+        assertThat(res.getResponse().getStatus()).isIn(200, 201);
+        String created = JSON.readTree(res.getResponse().getContentAsString()).get("client_id").asText();
+        assertThat(clients.findByTenantIdAndClientId(tenant.getId(), created)).isPresent();
+        assertThat(clients.findByTenantIdAndClientId(other.getId(), created)).isEmpty();
     }
 }

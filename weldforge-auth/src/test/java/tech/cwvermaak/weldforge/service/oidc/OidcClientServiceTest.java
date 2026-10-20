@@ -122,6 +122,10 @@ class OidcClientServiceTest {
     @DisplayName("accessTokenTtlSeconds")
     class AccessTokenTtl {
 
+        private Tenant acme() {
+            return Tenant.builder().id(1L).slug("acme").name("Acme").build();
+        }
+
         private OidcClientDto dtoWithTtl(Integer seconds) {
             return OidcClientDto.builder()
                     .name("app")
@@ -179,7 +183,7 @@ class OidcClientServiceTest {
         @Test
         @DisplayName("a self-registering client cannot grant itself a long-lived token")
         void dynamicRegistrationIsCappedToo() {
-            assertThatThrownBy(() -> service.createForDynamicRegistration(dtoWithTtl(2_592_000)))
+            assertThatThrownBy(() -> service.createForDynamicRegistration(acme(), dtoWithTtl(2_592_000)))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("shorten");
             verify(repository, never()).save(any());
@@ -188,7 +192,7 @@ class OidcClientServiceTest {
         @Test
         @DisplayName("a self-registering client may still shorten its own tokens")
         void dynamicRegistrationMayShorten() {
-            assertThat(service.createForDynamicRegistration(dtoWithTtl(300)).getAccessTokenTtlSeconds())
+            assertThat(service.createForDynamicRegistration(acme(), dtoWithTtl(300)).getAccessTokenTtlSeconds())
                     .isEqualTo(300);
         }
 
