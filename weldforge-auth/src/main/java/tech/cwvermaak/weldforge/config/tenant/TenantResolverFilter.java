@@ -109,6 +109,13 @@ public class TenantResolverFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
         try {
+            // Start from nothing. set(slug) leaves the tenant id, admin role
+            // and actor alone, and TenantAccessor trusts a tenant id over the
+            // slug -- so anything a reused thread still carried was read as
+            // this request's tenant. This filter runs before every filter that
+            // sets the full context, so there is nothing of this request's to
+            // lose.
+            TenantContext.clear();
             String slug = resolve(request);
             TenantContext.set(slug);
             request.setAttribute(REQUESTED_TENANT_ATTRIBUTE, slug);
