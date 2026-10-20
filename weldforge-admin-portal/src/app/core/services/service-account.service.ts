@@ -17,6 +17,13 @@ export interface ServiceAccount {
   token?: string;
   tokenPrefix: string;
   adminRole: AdminRole;
+  /**
+   * Optional role-grant prefix. Lets this account assign tenant roles whose
+   * names start with it, and nothing else anywhere. A capability in its own
+   * right rather than a rung on the adminRole ladder -- an account carrying
+   * one is expected to be NONE. See docs/product/scoped-role-grants.md.
+   */
+  roleGrantPrefix?: string;
   enabled: boolean;
   expiresAt?: string;
   createdAt?: string;
@@ -36,12 +43,16 @@ export interface CreateServiceAccountDto extends TokenLifetime {
   name: string;
   description?: string;
   adminRole: AdminRole;
+  /** Blank or omitted means no role-grant capability. */
+  roleGrantPrefix?: string;
   enabled?: boolean;
   expiresAt?: string;
 }
 
 export interface UpdateServiceAccountDto extends TokenLifetime {
   description?: string;
+  /** An empty string clears the capability; omitting it leaves it alone. */
+  roleGrantPrefix?: string;
   enabled?: boolean;
   adminRole?: AdminRole;
   expiresAt?: string;

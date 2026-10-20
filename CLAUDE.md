@@ -409,10 +409,27 @@ null/undefined on first paint.
   `deploy-gcp.yml`. [merge state: confirm with `gh pr view 48`.]
 
 ### Resume here: run the NFT suite locally (was blocked on Docker)
-- **Blocker:** Docker Desktop is installed but its daemon won't start — **WSL2
-  is not installed** (`wsl --status` → not installed). Fix: admin PowerShell
-  `wsl --install`, **reboot**, start Docker Desktop, wait for "Engine running".
-  (Or switch Docker Desktop to the Hyper-V backend.)
+- ~~**Blocker:** Docker Desktop's daemon won't start, WSL2 is not
+  installed.~~ **Fixed — verified 2026-10-13:** `docker info` reports server
+  **29.8.2**. Docker works on this machine.
+
+  **This matters beyond the NFT suite, and the stale note cost a CI round
+  trip on PR #153.** Because Docker looked unavailable, `./mvnw -o test` was
+  treated as the local gate — but that skips the ~105 Testcontainers tests,
+  and they are the only ones that boot Spring with a real JPA
+  `EntityManagerFactory`. A field inserted between `@Enumerated` and its
+  `@Column` on `ServiceAccount` passed 1134 local unit tests and failed CI
+  instantly with `AnnotationException`.
+
+  **Before pushing anything that touches an entity, a migration or Spring
+  wiring, run what CI runs:**
+
+  ```sh
+  cd weldforge-auth && ./mvnw -B -ntp -o verify -Dtests.integration=true
+  ```
+
+  1441 tests, 0 skipped, ~6 minutes. `./mvnw -o test` alone cannot see this
+  class of defect.
 - **Then:** `cd weldforge-auth && docker compose up -d --build` → app on
   `:8076`, Postgres on `:5437`. App boots on all-defaults (the dev
   `app.crypto.secret` + baked `JWT_SECRET` defaults; social OAuth2 is commented
