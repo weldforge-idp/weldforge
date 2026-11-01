@@ -821,10 +821,15 @@ public class AuthService {
 
     private static String clientIp(HttpServletRequest request) {
         if (request == null) return null;
-        // B-AUTH-1: trust only the RemoteIpValve-resolved address
-        // (server.forward-headers-strategy=native), never the spoofable raw
+        // B-AUTH-1: the RemoteIpValve-resolved address
+        // (server.forward-headers-strategy=native), never the raw
         // X-Forwarded-For leftmost token — this IP is stored on refresh-token
         // records, so a spoofed value would poison the session audit trail.
+        //
+        // Trustworthy only to the extent that
+        // server.tomcat.remoteip.internal-proxies is narrow — see that
+        // property's comment. It was `.*`, which made this call and the raw
+        // leftmost token the same value.
         return request.getRemoteAddr();
     }
 

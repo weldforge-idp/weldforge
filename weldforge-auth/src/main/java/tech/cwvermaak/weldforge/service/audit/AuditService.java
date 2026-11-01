@@ -241,10 +241,16 @@ public class AuditService {
     }
 
     private static String clientIp(HttpServletRequest request) {
-        // B-AUTH-1: trust only the RemoteIpValve-resolved address
-        // (server.forward-headers-strategy=native), never the spoofable raw
+        // B-AUTH-1: the RemoteIpValve-resolved address
+        // (server.forward-headers-strategy=native), never the raw
         // X-Forwarded-For leftmost token — otherwise audit rows record an
         // attacker-chosen client IP.
+        //
+        // This is only as trustworthy as server.tomcat.remoteip.internal-proxies
+        // is narrow: the valve stops its right-to-left walk at the first entry
+        // that is not a trusted proxy, so a boundary of `.*` hands back the
+        // leftmost — client-supplied — entry instead. See the comment on that
+        // property; do not restate the guarantee here without reading it.
         return request.getRemoteAddr();
     }
 

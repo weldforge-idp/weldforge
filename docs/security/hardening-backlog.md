@@ -83,6 +83,8 @@ single-use**, and (3) **governance documentation**.
 | F55 | **Refresh bound to its tenant; one refresh cookie per tenant (B-TEN-7)** — the base-domain `refresh_token` served every tenant, so the last sign-in anywhere overwrote the rest and an apex refresh rotated another tenant's session (observed 2026-09-11). Sign-in now sets `wf_refresh_<slug>` plus the legacy cookie (kept: the Safe Space proxy reads it by name, and it follows a refresh only when it holds the same session); refresh acts for the tenant the request names, prefers that tenant's cookie, and refuses — without consuming — a family from another tenant (`auth.refresh.tenant_mismatch`). Login, register, forgot-password and resend-verification use the requested tenant, not a leftover session cookie's. Portal refreshes name their session's tenant. | `service/AuthService.java`, `service/security/RefreshTokenService.java`, `config/tenant/TenantResolverFilter.java`, portal `core/session-refresh.ts` |
 | F56 | **Request validation enforced; no 500 for a bad body (B-API-2)** — `spring-boot-starter-validation` added, so `@Valid` finally runs (register, public orders, payment gateways); validation failures list every field (`errors`). Missing-field NPEs in email verification, password reset and MFA activation, an unknown WebAuthn challenge, and a failed security-key verification are 400s; hand-built error bodies on `/api/auth/*` are problem documents; a database integrity violation is a 400/409 that names no column. `MalformedInputIntegrationTest` feeds 16 bad-body shapes to 19 endpoints and fails on any 5xx. | `config/GlobalExceptionHandler.java`, `controller/AuthController.java`, `controller/MfaController.java`, `model/dto/RegisterRequestDto.java` |
 | F57 | **Self-serve orders and payment webhooks were refused in production** — `SecurityConfig` permits `/api/public/orders/**` and `/api/webhooks/**`, but `AppAuthorizationFilter` still demanded an `x-app-authorization` key neither a browser nor a payment gateway can hold, so every order (silently falling back to an email enquiry) and every gateway webhook got a 403. Both are exempt now; webhooks stay authenticated by their signatures, and orders get their own per-IP rate limit. Found by the F56 suite. | `config/AppAuthorizationFilter.java`, `config/security/RateLimitingFilter.java`, `service/security/RateLimitingService.java` |
+| F58 | **HMAC key ring for the shared platform secret (B-JWT-2, CONF-7.4)** — one key signs, N retired keys may still verify (`app.jwt.previous-secrets`); every signed token carries a `kid` derived from the key, so a consumer computes the same id with nothing to coordinate. A retired key verifies and never signs, and every ring entry is held to the 64-byte floor and the known-insecure-default check — a weak verification key is a forgery oracle, so it fails the boot. WeldForge's half only: the three consumers still hold one secret each, so the consumer flip is still synchronised with the signing switch. | `config/security/HmacKeyRing.java`, `service/JwtService.java`, `config/security/SecretHygieneValidator.java` |
+| F59 | **The trusted-proxy boundary trusted every hop (B-AUTH-1)** — `internal-proxies: ".*"` made `RemoteIpValve` walk the whole `X-Forwarded-For` chain and return the leftmost, caller-chosen entry, so the earlier fix that switched from parsing the header to `getRemoteAddr()` resolved to the same value and three call-site comments said otherwise. Narrowed to the private ranges, overridable via `APP_TRUSTED_PROXIES`. Not exploitable in production — Traefik strips inbound `X-Forwarded-*` by default, measured on staging — but the app no longer depends on that. | `src/main/resources/application.yml`, `config/security/RateLimitingFilter.java`, `service/audit/AuditService.java`, `service/AuthService.java` |
 
 ---
 
@@ -140,13 +142,56 @@ replaying a challenge token now fails on both the spent-jti and the spent-TOTP-s
 time — deferred (IP/UA binding risks false rejects on mobile network changes; revisit if
 session-fixation hardening is prioritized).
 
-**B-AUTH-1 · Medium · Rate-limit / lockout key on a spoofable `X-Forwarded-For`.**
-`config/security/RateLimitingFilter.java`, `service/AuthService.java`. The first XFF token
-is trusted without a trusted-proxy boundary, so an attacker spoofing XFF gets a fresh
-per-IP bucket (per-user lockout is the backstop). Also in-memory, so it doesn't hold
-across GKE replicas. Fix: configure `server.forward-headers-strategy` / a trusted-proxy
-hop and derive client IP only from the ingress-set value; move buckets to the
-bucket4j-Redis store the code already anticipates.
+**B-AUTH-1 · Medium · Rate-limit / lockout key on a spoofable `X-Forwarded-For`.
+⚠️ The header half is FIXED (F59); the shared-bucket half is deliberately still open.**
+`config/security/RateLimitingFilter.java`, `service/AuthService.java`,
+`service/audit/AuditService.java`, `controller/OidcAuthorizationController.java`.
+
+**The first attempt at this did not work, and said it had.** `78713e7` stopped parsing the
+header in application code and read `request.getRemoteAddr()` instead, commenting that
+`getRemoteAddr()` "is never client-spoofable". But `getRemoteAddr()` returns whatever
+Tomcat's `RemoteIpValve` put there, and `application.yml` configured the valve with
+`internal-proxies: ".*"` — trust every hop. The valve walks `X-Forwarded-For`
+right-to-left and stops at the first entry that is *not* a trusted proxy; when every entry
+matches, the walk consumes the whole chain and returns the **leftmost** entry. So the new
+code and the code it replaced resolved to the same attacker-chosen value. Three of the four
+call sites carried a comment asserting otherwise.
+
+**It was not exploitable in production, for a reason outside the application.** Measured
+against staging on 2026-11-01: two failed logins, one carrying
+`X-Forwarded-For: 203.0.113.77`, both recorded the real client address in
+`audit_events.ip_address`. Traefik runs with neither `forwardedHeaders.trustedIPs` nor
+`forwardedHeaders.insecure`, and in that state it deletes inbound `X-Forwarded-*` from an
+untrusted peer before setting its own. The same probe shows `sso.weldforge.org` is not
+behind Cloudflare's proxy today.
+
+**Fixed by narrowing the boundary**, so the app no longer depends on that edge default:
+`internal-proxies` is now the private ranges a proxy peer can legitimately occupy,
+overridable via `APP_TRUSTED_PROXIES`. A public address in the chain is treated as the
+client and the walk stops there, so a forged prefix is ignored in the app whatever the edge
+does. This matters because three unrelated operational changes would otherwise reopen it,
+none of them looking like a security change: putting Cloudflare's proxy in front (the zones
+are already there, and the natural follow-up is to set Traefik's
+`forwardedHeaders.trustedIPs`, which starts trusting inbound chains), adding any second
+proxy hop, or exposing the Service directly. Proven by `TrustedProxyBoundaryTest` and
+`trusted_proxy_boundary.feature`, which run a real Tomcat with the real valve and the
+shipped regex — MockMvc never runs a valve, so the whole suite passed with the boundary
+wide open.
+
+**Residual, accepted:** the valve trusts the private ranges, so a peer *inside* the cluster
+can still forge a single-entry chain. That needs a pod foothold, and narrowing further
+means pinning Traefik's pod IP, which changes on every restart. Noted rather than closed.
+
+**Still open — the shared bucket store.** Buckets are in-memory and therefore
+per-instance; the original entry asks for the bucket4j-Redis store "the code already
+anticipates", and `redis-0` does exist in the cluster. Not done:
+`apps/weldforge/base/api-deployment.yaml` pins `replicas: 1` deliberately and names these
+buckets as one of the reasons (and the infrastructure repo's `docs/scaling.md` §"The in-app
+rate limiter counts per instance" carries the full analysis and the pre-scale checklist), so
+at one replica a shared store changes no behaviour, and
+putting Redis on the auth request path to fix nothing today is the wrong trade. **This must
+land before replicas are raised, not after** — N replicas otherwise means N times every
+configured limit.
 
 **B-AUTH-2 · Medium · No bcrypt upgrade-on-login. ✅ FIXED (F17).**
 `AuthService.maybeUpgradePassword` runs on a verified login: when

@@ -138,7 +138,7 @@ wildcard certificate.
 
 | STRIDE | Threat | Control / status |
 |--------|--------|------------------|
-| **S** | Spoofed `X-Forwarded-For` to evade IP rate-limit / poison audit IP | Tomcat `remoteip` configured; **open:** no trusted-proxy boundary, first XFF hop trusted (`B-AUTH-1`) |
+| **S** | Spoofed `X-Forwarded-For` to evade IP rate-limit / poison audit IP | Tomcat `remoteip` with a **narrow** trusted-proxy boundary, so a forged prefix is ignored and the rightmost non-proxy entry wins (`B-AUTH-1`, F59). Was `.*`, which trusted every hop and so returned the leftmost, caller-chosen entry. Residual: a peer inside the private ranges can still forge a single-entry chain |
 | **S** | Spoofed `Host` to resolve a different tenant | `TenantResolverFilter` validates subdomain against slug regex + base-domain suffix; JWT binding still gates auth |
 | **E** | `X-WF-Tenant` / `X-Tenant-Slug` to cross tenants | One selector: `CrossTenantSelectorFilter` on authenticated `/api/admin/**` (`X-Tenant-Slug` a legacy alias). Requires an effective role in the target via `admin_membership` (a super-admin's global row, kept equal to the flags by `GlobalSuperAdminMembership`/V57); success audited `admin.cross_tenant.access`, refusal `admin.cross_tenant.denied` |
 | **T** | Admin write silently lands in the wrong tenant (2026-09-11) | A selector that cannot be honoured is refused (404/403/400), never run in the home tenant; responses carry `X-WF-Acting-Tenant` and the portal rejects a mismatch as 409; row-scoped admin screens name their tenant per call (F54). **Residual:** a request that sends *no* selector acts at home by design — only the portal's per-call tenant and the echo check catch that |
@@ -335,9 +335,13 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   documented consumer-side bug is resolved). Enumeration-resistant: unknown
   user, inactive user, locked account, and bad password all return an identical
   generic error (`AuthService.login`). BCrypt cost 12.
-- **Residual risk.** IP buckets key on a spoofable first `X-Forwarded-For` hop
-  and are in-memory, so they do not span replicas and N replicas multiply
-  every configured limit (`B-AUTH-1`, and see `docs/scaling.md`). Weaker legacy
+- **Residual risk.** IP buckets are in-memory, so they do not span replicas and N
+  replicas multiply every configured limit (`B-AUTH-1`'s open half, and see the
+  infrastructure repo's `docs/scaling.md`); `replicas: 1` is pinned deliberately
+  because of it. The bucket key itself is no longer caller-choosable: the
+  trusted-proxy boundary is narrow as of F59, so a forged `X-Forwarded-For` prefix
+  is ignored. A peer inside the cluster's private ranges can still forge a
+  single-entry chain. Weaker legacy
   password hashes are now upgraded to the current BCrypt cost on successful
   login (`B-AUTH-2`, F17). Per-user lockout is the backstop against the
   XFF-spoof bypass.
@@ -446,7 +450,7 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 |------|---------|----------|
 | Shared-HMAC: per-consumer audiences + key-ring (WeldForge-side `aud` now enforced, F15) | **B-JWT-1** (consumer side), **B-JWT-2** | High |
 | SAML: no `InResponseTo`/replay correlation (sig verify + XXE parse now done) | **B-SAML-1**(c) | Medium |
-| `X-Forwarded-For` trusted from first hop (rate-limit / audit) | **B-AUTH-1** | Medium |
+| IP rate-limit buckets are in-memory, so N replicas multiply every limit (the header half closed by F59) | **B-AUTH-1** (partial) | Medium |
 | OIDC scope enforcement unconditional (needs client scope backfill) | **B-OIDC-4** (partial) | Medium |
 | SAML KeyInfo/metadata/issuer mismatch (`B-SAML-3`); legacy CBC+OAEP-SHA1 encryption (`B-SAML-2`, outward-facing — per-SP opt-in) | **B-SAML-3**, **B-SAML-2** | Medium |
 | Tamper-evident audit log (HMAC chain) | **B-TEN-5** | Low |
@@ -473,10 +477,18 @@ external consumer repos (Safe Space / Krusty / Commons), not just this repo.
 **Assumptions (must hold for the controls above to be valid):**
 
 1. Traefik is the **only** network path to the backend and correctly sets
-   `X-Forwarded-*`; the backend is not directly reachable. (If violated,
-   `B-AUTH-1` becomes trivially exploitable.) Note this is now an assumption
-   about a cluster we operate rather than a managed edge: a second Service or a
-   careless `hostPort` on `tech01` would break it silently.
+   `X-Forwarded-*`; the backend is not directly reachable. Note this is now an
+   assumption about a cluster we operate rather than a managed edge: a second
+   Service or a careless `hostPort` on `tech01` would break it silently.
+   **This assumption is load-bearing but no longer the only control.** Measured
+   2026-11-01: Traefik runs with no `forwardedHeaders.trustedIPs`, so it deletes
+   inbound `X-Forwarded-*` from an untrusted peer. Since F59 the app also refuses
+   to believe a forged prefix on its own account, so breaking the assumption
+   degrades the control instead of removing it — a peer inside the private ranges
+   can forge a single-entry chain, but an internet client still cannot. Setting
+   `forwardedHeaders.trustedIPs` (the natural step when putting Cloudflare's proxy
+   in front) is the change to review against `APP_TRUSTED_PROXIES`; see the
+   infrastructure repo's `docs/weldforge-hosting.md`.
 2. `app.jwt.secret` and `app.crypto.secret` are high-entropy, supplied from the
    SOPS/age-encrypted overlay secret, and `APP_REQUIRE_SECURE_SECRETS=true` on
    every cluster deploy. The age private key is now a **top-tier asset**: it
