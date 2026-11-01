@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -57,6 +58,16 @@ public class SecretHygieneValidator {
     @Value("${app.jwt.secret:}")
     private String jwtSecret;
 
+    /**
+     * Retired secrets still accepted for verification during a rotation overlap
+     * (see {@link HmacKeyRing}). Held to exactly the same standard as the
+     * signing key, because for the purpose that matters they are equally
+     * powerful: anyone holding one can mint a token this server will accept. A
+     * weak entry here would be a forgery oracle rather than untidiness.
+     */
+    @Value("${app.jwt.previous-secrets:}")
+    private String jwtPreviousSecrets;
+
     @Value("${app.crypto.secret:}")
     private String cryptoSecret;
 
@@ -72,6 +83,23 @@ public class SecretHygieneValidator {
                 "app.jwt.secret must be at least " + MIN_JWT_SECRET_BYTES
                 + " bytes (got " + jwtBytes + "). Set the JWT_SECRET env var to a strong random value.");
         }
+        // Every retired key held for the overlap window, to the same floor.
+        // This also catches the one mistake the comma-separated format invites:
+        // a secret containing a comma is split into fragments, and every
+        // fragment is far short of 64 bytes -- so a mis-split fails the boot
+        // instead of leaving a server that trusts nonsense.
+        List<String> previous = HmacKeyRing.parse(jwtPreviousSecrets);
+        for (int i = 0; i < previous.size(); i++) {
+            String value = previous.get(i);
+            int bytes = value.getBytes(StandardCharsets.UTF_8).length;
+            if (bytes < MIN_JWT_SECRET_BYTES) {
+                throw new IllegalStateException(
+                    "app.jwt.previous-secrets[" + i + "] must be at least " + MIN_JWT_SECRET_BYTES
+                    + " bytes (got " + bytes + "). A verification key can mint tokens this server "
+                    + "accepts, so it is held to the same standard as the signing key. If this list "
+                    + "holds one secret that contains a comma, that is the cause: the value was split.");
+            }
+        }
         if (cryptoSecret == null || cryptoSecret.length() < MIN_CRYPTO_SECRET_CHARS) {
             throw new IllegalStateException(
                 "app.crypto.secret must be at least " + MIN_CRYPTO_SECRET_CHARS
@@ -84,6 +112,14 @@ public class SecretHygieneValidator {
                 throw new IllegalStateException(
                     "app.jwt.secret is a known insecure default but app.security.require-secure-secrets=true. "
                     + "The JWT_SECRET env var (GCP Secret Manager `wf-jwt-secret`) was not injected. Refusing to start.");
+            }
+            for (String value : HmacKeyRing.parse(jwtPreviousSecrets)) {
+                if (KNOWN_INSECURE_DEFAULTS.contains(value)) {
+                    throw new IllegalStateException(
+                        "app.jwt.previous-secrets contains a known insecure default but "
+                        + "app.security.require-secure-secrets=true. A retired key still verifies, so a "
+                        + "dev default here would accept forged tokens in production. Refusing to start.");
+                }
             }
             if (KNOWN_INSECURE_DEFAULTS.contains(cryptoSecret)) {
                 throw new IllegalStateException(

@@ -1120,10 +1120,41 @@ in the same release.
 across WeldForge and the three Tech Metropolis consumers (Safe Space, Krusty,
 Commons).
 
-**Not scheduled.** WeldForge's half is small; the value only arrives once the
-consumer repositories accept N-key verification too, which is coordination work
-outside this repository. Schedule when that conversation happens. Longer term,
-migrate consumers to JWKS/RS256 and retire the symmetric secret entirely.
+**WeldForge's half delivered 2026-11-01 (#158).** `HmacKeyRing`: one key signs
+(`app.jwt.secret`), N retired keys may still verify (`app.jwt.previous-secrets`),
+and every signed token carries a `kid` derived from the key itself so a consumer
+can compute the same id with nothing to keep in step. A retired key verifies and
+never signs; every entry is held to the same 64-byte floor and
+known-insecure-default check as the signing key, because a verification key can
+mint tokens this server accepts.
+
+**The story is not closed, and the reason is worth stating precisely.** The ring
+is on our side only. Each consumer holds a single `WELDFORGE_JWT_SECRET`, so the
+moment WeldForge *signs* with the new key, a consumer still on the old one
+rejects those tokens — the consumer flip is still synchronised with the signing
+switch. Delivered: tokens in flight survive the switch, rollback is no longer a
+second hard cutover, and `weldforge.jwt.verified{key="retired"}` makes "is it
+safe to drop the old key yet?" an observation rather than a guess.
+
+**Remaining:** N-key verification in Safe Space, Krusty and Commons, which is
+coordination work outside this repository. Longer term, migrate them to
+JWKS/RS256 and retire the symmetric secret entirely.
+
+**Acceptance criteria** — `epic_e_tokens.feature`
+
+```gherkin
+Scenario: After rotation, a token signed under the old secret still verifies
+  Given the platform signing secret is "SECRET-A" with no retired keys
+  And a platform token is signed and kept
+  When the platform signing secret rotates to "SECRET-B" retaining "SECRET-A"
+  Then the kept platform token still verifies
+
+Scenario: A retired key never signs
+  Given the platform signing secret is "SECRET-B" with retired key "SECRET-A"
+  When a platform token is signed
+  Then the platform token verifies against signing secret "SECRET-B" alone
+  And the platform token is refused by signing secret "SECRET-A" alone
+```
 
 ---
 
