@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
+import tech.cwvermaak.weldforge.config.oauth.SocialRegistrationId;
 import tech.cwvermaak.weldforge.model.AuthProvider;
+import tech.cwvermaak.weldforge.model.TenantSocialProvider;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.model.dto.AuthResponseDto;
@@ -24,6 +26,7 @@ import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 import tech.cwvermaak.weldforge.model.MfaFactorType;
 import tech.cwvermaak.weldforge.service.mfa.MfaService;
+import tech.cwvermaak.weldforge.service.security.AssertedAmrPolicy;
 import tech.cwvermaak.weldforge.service.security.AuthenticationMethods;
 import tech.cwvermaak.weldforge.service.security.AccountLockedException;
 import tech.cwvermaak.weldforge.service.security.AccountLockoutService;
@@ -38,6 +41,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class AuthService {
 
     /**
@@ -79,6 +83,12 @@ public class AuthService {
     private final PublicHostProperties publicHost;
     private final FailedLoginRecorder failedLoginRecorder;
     private final TenantSeatService seatService;
+    /**
+     * Read only on the federated path, to find what (if anything) a tenant has
+     * chosen to assert about an upstream provider. Last in the list so adding
+     * it did not renumber every existing constructor argument.
+     */
+    private final tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository socialProviderRepository;
 
     @Transactional
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
@@ -563,13 +573,27 @@ public class AuthService {
      * what makes that impossible rather than unlikely: no lazy association
      * can escape it, including ones added later.
      *
-     * <p>The {@code amr} is deliberately EMPTY. RFC 8176 has no value for
-     * "someone else authenticated them", and we are told nothing about how
-     * they did it — asserting {@code pwd} would be a claim about a password
-     * that was never presented to us. A relying party that requires a
-     * phishing-resistant factor will therefore refuse a federated session,
-     * which is the correct answer rather than an oversight.
+     * <p>The {@code amr} is EMPTY by default, and that default is unchanged.
+     * RFC 8176 has no value for "someone else authenticated them", and we are
+     * told nothing about how they did it — asserting {@code pwd} would be a
+     * claim about a password that was never presented to us. A relying party
+     * that requires a phishing-resistant factor therefore refuses a federated
+     * session, which is the correct answer rather than an oversight.
      *
+     * <p>Since V71 a tenant may <em>assert</em> methods for a specific provider
+     * ({@code tenant_social_providers.asserted_amr}). That is a trust decision
+     * about an upstream, not an observation: Google returns no {@code amr}
+     * claim at all, so nothing here can verify what it says. The assertion is
+     * per provider, off unless configured, recorded in the audit entry so a
+     * session carrying an asserted factor is afterwards distinguishable from
+     * one that verified it, and refused at issue time if the row does not also
+     * carry the hosted-domain gate that makes it mean anything — see
+     * {@link AssertedAmrPolicy}.
+     *
+     * @param hostedDomain the provider's {@code hd} claim, or null. Recorded in
+     *                     the audit entry; the enforcement of a required value
+     *                     happens earlier, in {@code CustomOAuth2UserService},
+     *                     before a seat is consumed.
      * @return empty when that tenant holds no user with that address, which
      *         means provisioning did not run or refused. The caller turns it
      *         into a 401; it must not be read as a session.
@@ -577,6 +601,7 @@ public class AuthService {
     @Transactional
     public Optional<AuthResponseDto> issueFederatedSession(String tenantSlug, String email,
                                                            String providerKey,
+                                                           String hostedDomain,
                                                            HttpServletRequest httpRequest,
                                                            HttpServletResponse response) {
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenantSlug, email).orElse(null);
@@ -584,18 +609,70 @@ public class AuthService {
             return Optional.empty();
         }
 
-        AuthResponseDto session = issueTokens(user, httpRequest, response, List.of());
+        var providerRow = SocialRegistrationId.parse(tenantSlug + "-" + providerKey)
+                .flatMap(parsed -> socialProviderRepository
+                        .findByTenant_SlugAndProviderAndEnabledTrue(tenantSlug, parsed.provider()));
+        List<String> amr = assertedAmrFor(providerRow.orElse(null), tenantSlug, providerKey);
+
+        AuthResponseDto session = issueTokens(user, httpRequest, response, amr,
+                tenantSlug + "-" + providerKey);
 
         auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_SUCCESS, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
                 AuditService.meta("tenant", tenantSlug, "provider", providerKey,
-                        "federated", true));
+                        "federated", true,
+                        // Named assertedAmr, never amr: an operator reading the
+                        // audit log must be able to tell an asserted factor
+                        // from a verified one. Dropped by meta() when null.
+                        "assertedAmr", AuthenticationMethods.toStorage(amr),
+                        "hd", hostedDomain));
 
         return Optional.of(session);
     }
 
+    /**
+     * What this provider's row permits us to assert, or nothing.
+     *
+     * <p>Re-validates the stored row rather than trusting it. The API refuses
+     * to store a phishing-resistant assertion without a hosted-domain gate,
+     * but a row can also arrive by hand — a migration, a restore, a {@code
+     * psql} session — and the one thing this feature must never do is assert
+     * phishing resistance for an upstream that is not gated. So the rule is
+     * enforced at write time for a good error message and again here for
+     * effect: an invalid row asserts nothing and says so loudly.
+     */
+    private List<String> assertedAmrFor(TenantSocialProvider row, String tenantSlug, String providerKey) {
+        if (row == null || row.getAssertedAmr() == null || row.getAssertedAmr().isBlank()) {
+            return List.of();
+        }
+        try {
+            AssertedAmrPolicy.validate(row.getAssertedAmr(), row.getRequiredHd());
+        } catch (IllegalArgumentException e) {
+            log.error("Refusing to assert amr for {}-{}: the stored row is invalid ({}). "
+                            + "The session is being issued with no amr, as if nothing were configured.",
+                    tenantSlug, providerKey, e.getMessage());
+            return List.of();
+        }
+        return AssertedAmrPolicy.parse(row.getAssertedAmr());
+    }
+
     private AuthResponseDto issueTokens(User user, HttpServletRequest httpRequest,
                                         HttpServletResponse response, List<String> amr) {
+        return issueTokens(user, httpRequest, response, amr, null);
+    }
+
+    /**
+     * As above, also naming the upstream that produced the session.
+     *
+     * @param idp the social registration id ({@code {slug}-{provider}}), or
+     *            null for a login this server performed itself. Unconditional
+     *            and truthful whether or not anything is asserted: it costs
+     *            nothing and it lets a relying party make its own decision
+     *            about an upstream instead of trusting ours.
+     */
+    private AuthResponseDto issueTokens(User user, HttpServletRequest httpRequest,
+                                        HttpServletResponse response, List<String> amr,
+                                        String idp) {
         Tenant tenant = user.getTenant();
 
         // The refresh family is minted first because it IS the session: the
@@ -618,7 +695,8 @@ public class AuthService {
                 adminRoleName,
                 tenantIssuer(tenant),
                 amr,
-                refresh.row().getFamilyId().toString());
+                refresh.row().getFamilyId().toString(),
+                idp);
 
         // Both cookies at sign-in: the per-tenant one browsers refresh with,
         // and the legacy one server-side proxies read by name.

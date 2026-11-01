@@ -145,4 +145,60 @@ class EmailDomainPolicyTest {
             assertThat(permits(many, "c@third.net", null)).isFalse();
         }
     }
+
+    @Nested
+    @DisplayName("satisfiesRequiredHostedDomain: absence is a refusal")
+    class RequiredHostedDomain {
+
+        private static final List<String> REQUIRED = parse("example.com");
+
+        @Test
+        @DisplayName("no requirement admits anything, including no hd at all")
+        void noRequirement() {
+            assertThat(satisfiesRequiredHostedDomain(List.of(), null)).isTrue();
+            assertThat(satisfiesRequiredHostedDomain(List.of(), "anything.test")).isTrue();
+            assertThat(satisfiesRequiredHostedDomain(null, null)).isTrue();
+        }
+
+        @Test
+        @DisplayName("a matching hd satisfies it")
+        void matching() {
+            assertThat(satisfiesRequiredHostedDomain(REQUIRED, "example.com")).isTrue();
+            assertThat(satisfiesRequiredHostedDomain(REQUIRED, "EXAMPLE.COM")).isTrue();
+            assertThat(satisfiesRequiredHostedDomain(REQUIRED, "eu.example.com")).isTrue();
+        }
+
+        @Test
+        @DisplayName("a lookalike does not — the dot is the boundary")
+        void lookalike() {
+            assertThat(satisfiesRequiredHostedDomain(REQUIRED, "notexample.com")).isFalse();
+        }
+
+        @Test
+        @DisplayName("THE POINT: a missing hd is refused, unlike permits()")
+        void absentHdIsRefused() {
+            // This is the whole reason the method exists. permits() treats an
+            // absent hd as acceptable, which is right for an email allow-list
+            // and necessary for providers that never send one. A consumer
+            // Google account can be registered on any address, including one
+            // in a corporate domain; it carries no hd, belongs to no
+            // organisation, and is subject to no organisation's 2FA policy.
+            // Where a tenant is asserting an authentication strength on the
+            // strength of a Workspace policy, that account must not pass.
+            assertThat(satisfiesRequiredHostedDomain(REQUIRED, null)).isFalse();
+            assertThat(satisfiesRequiredHostedDomain(REQUIRED, "   ")).isFalse();
+
+            // Same inputs, the other method, opposite answer -- on purpose.
+            assertThat(permits(REQUIRED, "alice@example.com", null)).isTrue();
+        }
+
+        @Test
+        @DisplayName("several required domains all work")
+        void several() {
+            List<String> many = parse("example.com other.org");
+            assertThat(satisfiesRequiredHostedDomain(many, "example.com")).isTrue();
+            assertThat(satisfiesRequiredHostedDomain(many, "other.org")).isTrue();
+            assertThat(satisfiesRequiredHostedDomain(many, "third.net")).isFalse();
+        }
+    }
 }

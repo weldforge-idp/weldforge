@@ -76,6 +76,8 @@ class FederatedSessionIntegrationTest {
     @Autowired private AuthService authService;
     @Autowired private TenantRepository tenantRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository providerRepository;
+    @Autowired private tech.cwvermaak.weldforge.service.JwtService jwtService;
 
     private Tenant tenant;
 
@@ -111,7 +113,7 @@ class FederatedSessionIntegrationTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         Optional<AuthResponseDto> session = authService.issueFederatedSession(
-                "default", "federated@test.com", "google", request, response);
+                "default", "federated@test.com", "google", null, request, response);
 
         assertThat(session).isPresent();
         assertThat(session.get().getToken()).isNotBlank();
@@ -127,7 +129,7 @@ class FederatedSessionIntegrationTest {
     @DisplayName("an address with no user row is empty, not an exception and not a session")
     void unknownAddressIsEmpty() {
         Optional<AuthResponseDto> session = authService.issueFederatedSession(
-                "default", "nobody-here@test.com", "google", new MockHttpServletRequest(),
+                "default", "nobody-here@test.com", "google", null, new MockHttpServletRequest(),
                 new MockHttpServletResponse());
 
         assertThat(session).isEmpty();
@@ -137,9 +139,118 @@ class FederatedSessionIntegrationTest {
     @DisplayName("case does not matter: the provider may return a differently cased address")
     void addressIsMatchedCaseInsensitively() {
         Optional<AuthResponseDto> session = authService.issueFederatedSession(
-                "default", "Federated@Test.com", "google", new MockHttpServletRequest(),
+                "default", "Federated@Test.com", "google", null, new MockHttpServletRequest(),
                 new MockHttpServletResponse());
 
         assertThat(session).isPresent();
+    }
+
+    // ---- V71: an asserted amr, and the gate that makes it mean anything ----
+
+    /**
+     * Put a GOOGLE row on the tenant with the given assertion. Written through
+     * the repository rather than the admin API on purpose: these tests are
+     * about what the TOKEN carries, and the API's refusals are covered as unit
+     * tests in AssertedAmrPolicyTest. The last case below is the one that can
+     * only be reached this way.
+     */
+    private void providerRow(String assertedAmr, String requiredHd) {
+        var existing = providerRepository.findByTenantIdAndProvider(
+                tenant.getId(), tech.cwvermaak.weldforge.model.SocialProviderType.GOOGLE);
+        var row = existing.orElseGet(() ->
+                tech.cwvermaak.weldforge.model.TenantSocialProvider.builder()
+                        .tenant(tenant)
+                        .provider(tech.cwvermaak.weldforge.model.SocialProviderType.GOOGLE)
+                        .clientId("test-client-id")
+                        .clientSecret("test-client-secret")
+                        .enabled(true)
+                        .build());
+        row.setAssertedAmr(assertedAmr);
+        row.setRequiredHd(requiredHd);
+        providerRepository.saveAndFlush(row);
+    }
+
+    private io.jsonwebtoken.Claims claimsOf(String token) {
+        return jwtService.parse(token);
+    }
+
+    private String sessionToken(String hd) {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        Optional<AuthResponseDto> session = authService.issueFederatedSession(
+                "default", "federated@test.com", "google", hd,
+                new MockHttpServletRequest(), response);
+        assertThat(session).isPresent();
+        return session.get().getToken();
+    }
+
+    @Test
+    @DisplayName("no provider row: the session carries no amr claim, exactly as before V71")
+    void noProviderRowAssertsNothing() {
+        providerRepository.findByTenantIdAndProvider(
+                        tenant.getId(), tech.cwvermaak.weldforge.model.SocialProviderType.GOOGLE)
+                .ifPresent(providerRepository::delete);
+
+        var claims = claimsOf(sessionToken(null));
+
+        // The default-off regression guard. If this goes red, the feature has
+        // leaked into tenants that did not ask for it.
+        assertThat(claims.get("amr")).isNull();
+    }
+
+    @Test
+    @DisplayName("a row with no assertion carries no amr claim")
+    void rowWithoutAssertionAssertsNothing() {
+        providerRow(null, null);
+
+        assertThat(claimsOf(sessionToken(null)).get("amr")).isNull();
+    }
+
+    @Test
+    @DisplayName("an asserted hwk reaches the token, and idp names the provider")
+    @SuppressWarnings("unchecked")
+    void assertedHwkReachesTheToken() {
+        providerRow("hwk mfa", "test.example");
+
+        var claims = claimsOf(sessionToken("test.example"));
+
+        assertThat((List<String>) claims.get("amr")).containsExactlyInAnyOrder("hwk", "mfa");
+        // Truthful whether or not anything is asserted: it lets a relying party
+        // make its own decision instead of trusting ours.
+        assertThat(claims.get("idp")).isEqualTo("default-google");
+    }
+
+    @Test
+    @DisplayName("an assertion with no phishing-resistant factor needs no gate")
+    @SuppressWarnings("unchecked")
+    void otpNeedsNoGate() {
+        providerRow("otp mfa", null);
+
+        assertThat((List<String>) claimsOf(sessionToken(null)).get("amr"))
+                .containsExactlyInAnyOrder("otp", "mfa");
+    }
+
+    @Test
+    @DisplayName("a stored hwk with no hosted-domain gate asserts NOTHING, however it got there")
+    void ungatedStoredAssertionIsRefusedAtIssueTime() {
+        // The API refuses to store this (AssertedAmrPolicyTest covers that),
+        // but a row can also arrive by hand -- a restore, a psql session, a
+        // migration written in a hurry. Validating only at write time would
+        // make the gate a property of one code path rather than of the
+        // feature, and the one thing this must never do is assert phishing
+        // resistance for an upstream that is not gated. So it is enforced
+        // again here, and fails closed: no amr at all.
+        providerRow("hwk", null);
+
+        assertThat(claimsOf(sessionToken(null)).get("amr"))
+                .as("an invalid row asserts nothing rather than asserting hwk")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("idp is present on a federated session even when nothing is asserted")
+    void idpIsUnconditional() {
+        providerRow(null, null);
+
+        assertThat(claimsOf(sessionToken(null)).get("idp")).isEqualTo("default-google");
     }
 }

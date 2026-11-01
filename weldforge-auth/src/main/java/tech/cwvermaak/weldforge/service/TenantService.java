@@ -296,6 +296,23 @@ public class TenantService {
                 .findByTenantIdAndProvider(tenantId, dto.getProvider())
                 .orElse(null);
 
+        // What this provider may ASSERT about an upstream's authentication,
+        // validated on the MERGED result rather than on the payload.
+        //
+        // This is an upsert where an omitted field means "leave it alone", so
+        // the payload on its own cannot be judged: a request setting
+        // assertedAmr=hwk and omitting requiredHd would be refused even though
+        // the row already carries the gate, and -- far worse -- a request
+        // clearing requiredHd while omitting assertedAmr would pass validation
+        // of the payload and leave a stored hwk assertion with nothing backing
+        // it. Both are decided correctly only against the values that will
+        // actually be in the row. See AssertedAmrPolicy for each rule.
+        String mergedAmr = merged(dto.getAssertedAmr(),
+                existing == null ? null : existing.getAssertedAmr());
+        String mergedHd = merged(dto.getRequiredHd(),
+                existing == null ? null : existing.getRequiredHd());
+        tech.cwvermaak.weldforge.service.security.AssertedAmrPolicy.validate(mergedAmr, mergedHd);
+
         if (existing == null) {
             if (dto.getClientSecret() == null || dto.getClientSecret().isBlank()) {
                 throw new IllegalArgumentException("clientSecret is required for a new provider");
@@ -307,6 +324,8 @@ public class TenantService {
                     .clientId(dto.getClientId())
                     .clientSecret(dto.getClientSecret())
                     .scopes(dto.getScopes())
+                    .assertedAmr(mergedAmr)
+                    .requiredHd(mergedHd)
                     .enabled(dto.getEnabled() == null ? true : dto.getEnabled())
                     .build();
             TenantSocialProvider saved = providerRepository.save(fresh);
@@ -322,6 +341,13 @@ public class TenantService {
         }
         if (dto.getDisplayName() != null) existing.setDisplayName(dto.getDisplayName());
         if (dto.getScopes() != null) existing.setScopes(dto.getScopes());
+        // Already merged and validated together above. A blank clears, rather
+        // than being ignored like the other optional fields: withdrawing an
+        // assertion has to be possible through the same form that made it, and
+        // "send nothing to turn it off" is not a rule an administrator could
+        // discover.
+        existing.setAssertedAmr(mergedAmr);
+        existing.setRequiredHd(mergedHd);
         if (dto.getEnabled() != null) existing.setEnabled(dto.getEnabled());
         auditService.recordAdmin(AuditEventTypes.SOCIAL_PROVIDER_UPSERT, currentActor(),
                 AuditEventTypes.TARGET_SOCIAL_PROVIDER, String.valueOf(existing.getId()),
@@ -421,6 +447,14 @@ public class TenantService {
                     SocialProviderDto d = toDto(p, t.getSlug());
                     d.setClientId(null);
                     d.setClientSecret(null);
+                    // A login page has no business knowing what the server will
+                    // assert about an upstream, nor which organisation is
+                    // required to get in: the first is an internal trust
+                    // decision and the second names a customer. This endpoint
+                    // is public and unauthenticated -- it runs before anyone
+                    // has proved anything.
+                    d.setAssertedAmr(null);
+                    d.setRequiredHd(null);
                     return d;
                 })
                 .toList();
@@ -466,6 +500,18 @@ public class TenantService {
         return ms;
     }
 
+    /**
+     * Upsert semantics for one field: null in the payload means "leave it",
+     * a blank means "clear it", anything else replaces.
+     */
+    private static String merged(String incoming, String current) {
+        return incoming == null ? blankToNull(current) : blankToNull(incoming);
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
     private static SocialProviderDto toDto(TenantSocialProvider p, String tenantSlug) {
         return SocialProviderDto.builder()
                 .id(p.getId())
@@ -474,6 +520,8 @@ public class TenantService {
                 .displayName(p.getDisplayName())
                 .clientId(p.getClientId())
                 .scopes(p.getScopes())
+                .assertedAmr(p.getAssertedAmr())
+                .requiredHd(p.getRequiredHd())
                 .enabled(p.getEnabled())
                 .registrationId(tenantSlug + "-" + p.getProvider().name().toLowerCase())
                 .build();

@@ -54,3 +54,48 @@ Feature: Federation rules engine — matching + claim transforms (PRD FED-02, FE
     When the federation engine transforms claims for "fedco":
       | raw | {"upn":"skip@fedco.test","active":false} |
     Then the transformed claim "email" is absent
+
+  # ----------------------------------------------------------------------
+  # Trusted social sign-in: an asserted amr (V71)
+  #
+  # Google returns no `amr` claim at all, so WeldForge cannot verify that an
+  # upstream performed MFA -- it can only be configured to assert it. These
+  # scenarios pin what a tenant is allowed to assert, and the one condition
+  # that makes the assertion worth anything.
+  # ----------------------------------------------------------------------
+
+  Scenario: Asserting nothing is valid, and is every provider configured so far
+    When the asserted amr "" with required hosted domain "" is validated
+    Then the asserted amr configuration is accepted
+
+  Scenario: A password may not be asserted — none was presented to this server
+    When the asserted amr "pwd" with required hosted domain "" is validated
+    Then the asserted amr configuration is refused because of "pwd"
+
+  Scenario: An unregistered value is refused rather than stored and never matched
+    When the asserted amr "federated" with required hosted domain "example.com" is validated
+    Then the asserted amr configuration is refused because of "not assertable"
+
+  Scenario: A phishing-resistant assertion without a hosted-domain gate is refused
+    When the asserted amr "hwk" with required hosted domain "" is validated
+    Then the asserted amr configuration is refused because of "requiredHd"
+
+  Scenario: A phishing-resistant assertion with a hosted-domain gate is accepted
+    When the asserted amr "hwk mfa" with required hosted domain "acme.test" is validated
+    Then the asserted amr configuration is accepted
+
+  Scenario: A one-time-password assertion needs no hosted-domain gate
+    When the asserted amr "otp mfa" with required hosted domain "" is validated
+    Then the asserted amr configuration is accepted
+
+  Scenario: A Workspace account in the required domain satisfies the gate
+    When a sign-in with hosted domain "acme.test" is checked against required "acme.test"
+    Then the hosted-domain gate is satisfied
+
+  Scenario: An account from another organisation does not satisfy the gate
+    When a sign-in with hosted domain "someone-else.test" is checked against required "acme.test"
+    Then the hosted-domain gate is not satisfied
+
+  Scenario: A personal account — no hosted domain at all — does not satisfy the gate
+    When a sign-in with no hosted domain is checked against required "acme.test"
+    Then the hosted-domain gate is not satisfied

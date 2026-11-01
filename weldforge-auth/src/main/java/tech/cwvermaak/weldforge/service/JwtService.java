@@ -25,6 +25,18 @@ public class JwtService {
     public static final String CLAIM_AMR          = "amr";
     /** The login session (refresh-token family) this token was minted from. */
     public static final String CLAIM_SESSION_ID   = "sid";
+    /**
+     * The upstream identity provider that produced this session, as the social
+     * registration id {@code {tenantSlug}-{provider}}; absent for a login this
+     * server performed itself.
+     *
+     * <p>Truthful and unconditional, unlike {@link #CLAIM_AMR} on a federated
+     * session, which since V71 may be <em>asserted</em> by a tenant's
+     * configuration rather than observed. A relying party that would rather not
+     * take our word for an upstream's authentication strength can read this and
+     * decide for itself.
+     */
+    public static final String CLAIM_IDP          = "idp";
     public static final String PURPOSE_MFA_CHALLENGE = "mfa_challenge";
     public static final String PURPOSE_ACCESS       = "access";
     public static final String PURPOSE_CONSENT_CSRF = "consent_csrf";
@@ -73,7 +85,7 @@ public class JwtService {
                                       Long tenantTtlMs, Map<String, Object> customClaims,
                                       String adminRole, String issuer) {
         return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
-                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, null, null);
+                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, null, null, null);
     }
 
     /**
@@ -88,7 +100,7 @@ public class JwtService {
                                       Long tenantTtlMs, Map<String, Object> customClaims,
                                       String adminRole, String issuer, List<String> amr) {
         return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
-                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, amr, null);
+                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, amr, null, null);
     }
 
     /**
@@ -105,7 +117,24 @@ public class JwtService {
                                       String adminRole, String issuer, List<String> amr,
                                       String sessionId) {
         return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
-                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, amr, sessionId);
+                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, amr, sessionId, null);
+    }
+
+    /**
+     * As above, also naming the upstream provider that produced the session.
+     *
+     * @param idp the social registration id ({@code {tenantSlug}-{provider}}),
+     *            or null when this server authenticated the person itself.
+     *            Only the federated login path can know it, so every other
+     *            overload leaves the claim off rather than guessing.
+     */
+    public String generateAccessToken(String email, Long tenantId, String tenantSlug,
+                                      boolean superAdmin, int tokenVersion,
+                                      Long tenantTtlMs, Map<String, Object> customClaims,
+                                      String adminRole, String issuer, List<String> amr,
+                                      String sessionId, String idp) {
+        return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
+                tokenVersion, tenantTtlMs, customClaims, adminRole, issuer, amr, sessionId, idp);
     }
 
     /**
@@ -135,14 +164,14 @@ public class JwtService {
                                       Long tenantTtlMs, Map<String, Object> customClaims,
                                       String adminRole) {
         return generateAccessTokenInternal(email, tenantId, tenantSlug, superAdmin,
-                tokenVersion, tenantTtlMs, customClaims, adminRole, null, null, null);
+                tokenVersion, tenantTtlMs, customClaims, adminRole, null, null, null, null);
     }
 
     private String generateAccessTokenInternal(String email, Long tenantId, String tenantSlug,
                                                boolean superAdmin, int tokenVersion,
                                                Long tenantTtlMs, Map<String, Object> customClaims,
                                                String adminRole, String issuer, List<String> amr,
-                                               String sessionId) {
+                                               String sessionId, String idp) {
         Map<String, Object> claims = new LinkedHashMap<>();
         // Custom claims go first so reserved claims below always win on collision.
         if (customClaims != null) {
@@ -166,6 +195,12 @@ public class JwtService {
         }
         if (sessionId != null && !sessionId.isBlank()) {
             claims.put(CLAIM_SESSION_ID, sessionId);
+        }
+        // Absent for a login this server performed itself, so a relying party
+        // reading no idp knows the authentication was ours rather than being
+        // left to guess from an empty string.
+        if (idp != null && !idp.isBlank()) {
+            claims.put(CLAIM_IDP, idp);
         }
 
         long ttl = tenantTtlMs != null && tenantTtlMs > 0 ? tenantTtlMs : accessExpirationMs;
@@ -192,7 +227,7 @@ public class JwtService {
             case "sub", "iss", "aud", "exp", "iat", "nbf", "jti",
                  CLAIM_TENANT_ID, CLAIM_TENANT_SLUG, CLAIM_SUPER_ADMIN,
                  CLAIM_ADMIN_ROLE, CLAIM_PURPOSE, CLAIM_TOKEN_VERSION,
-                 CLAIM_AMR, CLAIM_SESSION_ID -> true;
+                 CLAIM_AMR, CLAIM_SESSION_ID, CLAIM_IDP -> true;
             default -> false;
         };
     }

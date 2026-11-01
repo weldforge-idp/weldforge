@@ -140,7 +140,7 @@ public class OidcDiscoveryController {
         // absent -- the CONF-4.2 failure in miniature.
         doc.put("claims_supported", List.of(
                 "sub", "iss", "aud", "exp", "iat", "auth_time", "email", "name", "picture",
-                "nonce", "amr", "roles"));
+                "nonce", "amr", "roles", "idp"));
         // CONF-1.4 / RFC 9207: advertised so a client knows it can rely on the
         // parameter being present, which is what lets it treat a response
         // WITHOUT one as suspicious.

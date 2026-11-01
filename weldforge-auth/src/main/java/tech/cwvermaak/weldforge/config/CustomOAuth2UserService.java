@@ -29,6 +29,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
     private final tech.cwvermaak.weldforge.service.TenantSeatService seatService;
+    private final tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository providerRepository;
 
     @Override
     public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
@@ -87,6 +88,30 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         if (!EmailDomainPolicy.permits(allowedDomains, email, hostedDomain)) {
             throw new OAuth2AuthenticationException(new OAuth2Error("domain_not_allowed"),
                     "This tenant does not accept sign-ins from that email domain");
+        }
+
+        // The provider's own hosted-domain requirement, which is a stricter
+        // thing than the allow-list above: that one permits a sign-in whose hd
+        // is ABSENT, which is right for an email allow-list and necessary for
+        // the providers that never send hd. Here absence is a refusal.
+        //
+        // It exists because of what the row may assert. A tenant asserting a
+        // phishing-resistant factor for this provider is relying on 2FA being
+        // enforced for a Workspace DOMAIN, where the user cannot switch it off
+        // -- not on a setting of an individual Google account, which they can.
+        // A consumer Google account registered on an address in that domain
+        // carries no hd, passes the allow-list, and belongs to no organisation.
+        // Refuse it here, before a seat is consumed and before a session with
+        // an asserted strength could be minted for it.
+        String requiredHd = providerRepository
+                .findByTenant_SlugAndProviderAndEnabledTrue(tenantSlug, parsed.provider())
+                .map(tech.cwvermaak.weldforge.model.TenantSocialProvider::getRequiredHd)
+                .orElse(null);
+        if (!EmailDomainPolicy.satisfiesRequiredHostedDomain(
+                EmailDomainPolicy.parse(requiredHd), hostedDomain)) {
+            throw new OAuth2AuthenticationException(new OAuth2Error("hosted_domain_required"),
+                    "This provider only accepts accounts belonging to an approved "
+                    + "organisation, and this account does not name one");
         }
 
         User existing = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)

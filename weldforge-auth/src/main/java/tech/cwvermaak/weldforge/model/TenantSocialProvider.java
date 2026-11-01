@@ -52,6 +52,34 @@ public class TenantSocialProvider {
     @Builder.Default
     private Boolean enabled = true;
 
+    /**
+     * Space-separated RFC 8176 methods <em>asserted</em> for sessions from this
+     * provider, or null to assert nothing (the default, and every pre-V71 row).
+     *
+     * <p>Asserted, never verified. Google returns no {@code amr} claim, so this
+     * records a trust decision an operator took about an upstream — not an
+     * observation of what the person did. Never contains {@code pwd}: no
+     * password is presented to this server.
+     */
+    @Column(name = "asserted_amr", length = 128)
+    private String assertedAmr;
+
+    /**
+     * Space-separated hosted domains (Google's {@code hd}) required of a
+     * sign-in through this provider, or null for no requirement.
+     *
+     * <p>This is what makes {@link #assertedAmr} worth anything: two-factor is
+     * a property of a Google <em>account</em>, not of the provider, but it can
+     * be enforced for a Workspace <em>domain</em>, where the user cannot switch
+     * it off. Mandatory whenever {@code assertedAmr} claims a
+     * phishing-resistant factor.
+     *
+     * <p>Distinct from {@code Tenant.allowedEmailDomains}, which permits a
+     * sign-in when {@code hd} is absent. This one demands presence.
+     */
+    @Column(name = "required_hd", length = 255)
+    private String requiredHd;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
