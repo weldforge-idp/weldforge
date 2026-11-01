@@ -96,6 +96,20 @@ export interface SocialProvider {
   clientSecret?: string;
   scopes?: string;
   enabled: boolean;
+  /**
+   * Space-separated RFC 8176 methods ASSERTED for sessions from this provider
+   * (V71). Asserted, not verified: Google returns no `amr` claim, so this is a
+   * trust decision about the upstream rather than an observation. Blank means
+   * assert nothing, which is the default and every pre-V71 row.
+   */
+  assertedAmr?: string;
+  /**
+   * Space-separated Google `hd` (hosted domain) values required of a sign-in.
+   * Mandatory whenever assertedAmr claims `hwk` or `swk` -- two-factor is a
+   * property of a Google account, not of the provider, but it can be enforced
+   * for a Workspace domain where the user cannot switch it off.
+   */
+  requiredHd?: string;
   registrationId?: string;
 }
 

@@ -77,6 +77,33 @@ public final class EmailDomainPolicy {
     }
 
     /**
+     * Whether a sign-in satisfies a provider's <em>required</em> hosted domain.
+     *
+     * <p>This is not {@link #permits}, and the difference is the whole point.
+     * {@code permits} is an email allow-list: it checks {@code hd} when the
+     * provider sends one and permits the sign-in when it does not, which is
+     * right for an allow-list and necessary for the providers that never send
+     * {@code hd} at all. Here absence is a refusal.
+     *
+     * <p>That gap is real rather than theoretical. A consumer Google account
+     * can be registered on any address, including one in a corporate domain.
+     * Such an account carries no {@code hd}, so it satisfies an
+     * {@code allowed_email_domains} list naming that domain while belonging to
+     * no organisation and being subject to no organisation's 2FA enforcement.
+     * Where a tenant is asserting an authentication strength on the strength of
+     * a Workspace policy, that account must not pass.
+     *
+     * @param required     the provider's space-separated requirement, already
+     *                     parsed; empty means no requirement and anything passes
+     * @param hostedDomain the {@code hd} claim the provider returned, or null
+     */
+    public static boolean satisfiesRequiredHostedDomain(List<String> required, String hostedDomain) {
+        if (required == null || required.isEmpty()) return true;
+        if (hostedDomain == null || hostedDomain.isBlank()) return false;
+        return matches(required, normalise(hostedDomain));
+    }
+
+    /**
      * Exact match, or a subdomain of an allowed domain.
      *
      * <p>{@code example.com} admits {@code eu.example.com}. It does NOT admit

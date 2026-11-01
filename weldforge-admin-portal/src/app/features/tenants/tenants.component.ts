@@ -158,13 +158,20 @@ interface TenantRow extends Tenant {
 
               <table *ngIf="t.providers && t.providers.length" class="wf-table">
                 <thead>
-                  <tr><th>Provider</th><th>Client ID</th><th>Scopes</th><th>Status</th><th>Registration ID</th><th></th></tr>
+                  <tr><th>Provider</th><th>Client ID</th><th>Scopes</th><th>Asserted amr</th><th>Status</th><th>Registration ID</th><th></th></tr>
                 </thead>
                 <tbody>
                   <tr *ngFor="let p of t.providers">
                     <td>{{ p.provider }}</td>
                     <td class="mono trunc">{{ p.clientId }}</td>
                     <td class="mono">{{ p.scopes || '—' }}</td>
+                    <td class="mono">
+                      @if (p.assertedAmr) {
+                        <span class="wf-asserted" [title]="'Required hd: ' + (p.requiredHd || 'none')">{{ p.assertedAmr }}</span>
+                      } @else {
+                        —
+                      }
+                    </td>
                     <td>
                       <mat-slide-toggle [checked]="p.enabled"
                                         (change)="toggleProvider(t, p, $event.checked)">
@@ -229,6 +236,42 @@ interface TenantRow extends Tenant {
                     <input matInput [(ngModel)]="t.draft!.displayName">
                   </mat-form-field>
                 </div>
+                <!-- Asserted authentication strength. Deliberately below the
+                     fold of the ordinary fields and deliberately wordy: this
+                     is the only control in the portal that makes WeldForge
+                     state something it has not verified. -->
+                <details class="wf-assert">
+                  <summary>Asserted authentication strength (advanced)</summary>
+                  <p class="sub">
+                    Google returns no <code>amr</code> claim, so WeldForge cannot verify how
+                    somebody authenticated upstream — it can only be configured to
+                    <em>assert</em> it. Leave both blank (the default) and a session from this
+                    provider carries no <code>amr</code>, which a relying party gating on a
+                    phishing-resistant factor will correctly refuse.
+                  </p>
+                  <p class="sub">
+                    Two-factor is a property of a Google <strong>account</strong>, not of the
+                    Google provider: asserting <code>hwk</code> asserts it for everyone who
+                    signs in here, including an account with only a password. So asserting
+                    <code>hwk</code> or <code>swk</code> requires a hosted domain, whose 2FA
+                    enforcement you control in Workspace admin. Accounts with no
+                    <code>hd</code> — every personal Gmail — are then refused.
+                  </p>
+                  <div class="wf-grid">
+                    <mat-form-field appearance="outline">
+                      <mat-label>Asserted amr</mat-label>
+                      <input matInput [(ngModel)]="t.draft!.assertedAmr"
+                             placeholder="blank, or e.g. hwk mfa">
+                      <mat-hint>Space-separated. otp, sms, hwk, swk, mfa. Never pwd.</mat-hint>
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Required hosted domain (hd)</mat-label>
+                      <input matInput [(ngModel)]="t.draft!.requiredHd"
+                             placeholder="e.g. cwvermaak.tech">
+                      <mat-hint>Required when asserting hwk or swk.</mat-hint>
+                    </mat-form-field>
+                  </div>
+                </details>
                 <div class="wf-actions">
                   <mat-slide-toggle [(ngModel)]="t.draft!.enabled">Enabled</mat-slide-toggle>
                   <span class="spacer"></span>
@@ -1115,6 +1158,29 @@ interface TenantRow extends Tenant {
       text-align: center;
       border: 1px dashed var(--wf-border);
       margin: 12px 0;
+    }
+
+    // Asserted authentication strength: folded away, and marked when set.
+    // An asserted factor is not a verified one, so it should never look like
+    // an ordinary row of configuration in the table.
+    .wf-assert {
+      margin-top: 12px;
+      summary {
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--wf-text-2, #9aa4bf);
+        user-select: none;
+      }
+      summary:hover { color: var(--wf-text-1, #e6e9f2); }
+      .sub { margin: 8px 0; max-width: 72ch; }
+    }
+
+    .wf-asserted {
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid #C9972A;
+      color: #E8BE5A;
+      background: rgba(201, 151, 42, 0.12);
     }
 
     .wf-add-provider {

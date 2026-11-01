@@ -41,6 +41,17 @@ public final class AuthenticationMethods {
      * which is the property relying parties gate on.
      */
     public static final String HARDWARE_KEY = "hwk";
+    /**
+     * RFC 8176: proof-of-possession of a <em>software</em>-secured key.
+     *
+     * <p>Nothing in this server's own login paths produces it — WebAuthn
+     * assertions are reported as {@link #HARDWARE_KEY}. It exists because
+     * relying parties gate on the phishing-resistant pair {@code {hwk, swk}}
+     * and an upstream provider may legitimately be asserted to have used a
+     * software-secured key. Only the asserted-amr path in
+     * {@link AssertedAmrPolicy} may emit it, and never as an observation.
+     */
+    public static final String SOFTWARE_KEY = "swk";
     /** RFC 8176: multiple-factor authentication was performed. */
     public static final String MULTIPLE_FACTOR = "mfa";
 

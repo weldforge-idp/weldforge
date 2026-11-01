@@ -85,8 +85,14 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         // person, so the row exists by the time we are called. If it does
         // not, something changed underneath us and guessing is worse than
         // failing.
+        // hd is read here only so it can be recorded in the audit entry.
+        // Enforcing a required value already happened in
+        // CustomOAuth2UserService, before a seat was consumed; by the time we
+        // are called the sign-in has been admitted.
+        Object hd = principal.getAttribute("hd");
         boolean issued = authService
-                .issueFederatedSession(slug, email, parsed.providerKey(), request, response)
+                .issueFederatedSession(slug, email, parsed.providerKey(),
+                        hd == null ? null : hd.toString(), request, response)
                 .isPresent();
         if (!issued) {
             log.warn("Social sign-in succeeded but no user row exists: tenant={} email={}", slug, email);

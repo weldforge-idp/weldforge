@@ -56,6 +56,7 @@ class CustomOAuth2UserServiceTest {
     private UserRepository users;
     private TenantRepository tenants;
     private CustomOAuth2UserService service;
+    private tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository providers;
     private Tenant tenant;
 
     @BeforeEach
@@ -63,7 +64,10 @@ class CustomOAuth2UserServiceTest {
         users = mock(UserRepository.class);
         tenants = mock(TenantRepository.class);
         TenantSeatService seats = mock(TenantSeatService.class);
-        service = new CustomOAuth2UserService(users, tenants, seats);
+        providers = mock(tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository.class);
+        when(providers.findByTenant_SlugAndProviderAndEnabledTrue(anyString(), any()))
+                .thenReturn(Optional.empty());
+        service = new CustomOAuth2UserService(users, tenants, seats, providers);
 
         tenant = Tenant.builder().id(1L).slug("acme").name("Acme").build();
         when(tenants.findBySlug("acme")).thenReturn(Optional.of(tenant));
@@ -226,6 +230,91 @@ class CustomOAuth2UserServiceTest {
         void unrestrictedByDefault() {
             assertThatCode(() -> service.provision(REGISTRATION, principal(Map.of(
                     "email", "anyone@anywhere.test", "email_verified", true))))
+                    .doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("the provider's required hosted domain (V71)")
+    class RequiredHostedDomain {
+
+        /** Give the acme-google row a required hd. */
+        private void requireHd(String hd) {
+            when(providers.findByTenant_SlugAndProviderAndEnabledTrue(
+                    "acme", tech.cwvermaak.weldforge.model.SocialProviderType.GOOGLE))
+                    .thenReturn(Optional.of(
+                            tech.cwvermaak.weldforge.model.TenantSocialProvider.builder()
+                                    .requiredHd(hd)
+                                    .build()));
+        }
+
+        @Test
+        @DisplayName("a Workspace account in the required domain gets in")
+        void matchingWorkspaceAccount() {
+            requireHd("acme.test");
+
+            assertThatCode(() -> service.provision(REGISTRATION, principal(Map.of(
+                    "email", "alice@acme.test", "email_verified", true,
+                    "hd", "acme.test"))))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a different organisation is refused")
+        void differentOrganisation() {
+            requireHd("acme.test");
+
+            assertThatThrownBy(() -> service.provision(REGISTRATION, principal(Map.of(
+                    "email", "alice@acme.test", "email_verified", true,
+                    "hd", "someone-else.test"))))
+                    .isInstanceOf(OAuth2AuthenticationException.class);
+        }
+
+        @Test
+        @DisplayName("THE ONE THAT MATTERS: a personal account on a corporate address is refused")
+        void personalAccountOnACorporateAddress() {
+            // A consumer Google account can be registered on any address,
+            // including one in the required domain. It carries no hd, so it
+            // belongs to no organisation and no organisation's 2FA enforcement
+            // applies to it. The tenant's allowed_email_domains list would let
+            // this through -- it treats an absent hd as acceptable, correctly,
+            // for the providers that never send one. Where a strength is being
+            // asserted off the back of a Workspace policy, this account is
+            // exactly what must not get in.
+            requireHd("acme.test");
+
+            assertThatThrownBy(() -> service.provision(REGISTRATION, principal(Map.of(
+                    "email", "alice@acme.test", "email_verified", true))))
+                    .isInstanceOf(OAuth2AuthenticationException.class);
+        }
+
+        @Test
+        @DisplayName("refused before a seat is consumed and before any user is saved")
+        void refusedBeforeProvisioning() {
+            requireHd("acme.test");
+
+            assertThatThrownBy(() -> service.provision(REGISTRATION, principal(Map.of(
+                    "email", "alice@acme.test", "email_verified", true))))
+                    .isInstanceOf(OAuth2AuthenticationException.class);
+
+            verify(users, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("no requirement on the row changes nothing — every pre-V71 row")
+        void noRequirementIsUnrestricted() {
+            requireHd(null);
+
+            assertThatCode(() -> service.provision(REGISTRATION, principal(Map.of(
+                    "email", "alice@anywhere.test", "email_verified", true))))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("no provider row at all changes nothing")
+        void noRowIsUnrestricted() {
+            assertThatCode(() -> service.provision(REGISTRATION, principal(Map.of(
+                    "email", "alice@anywhere.test", "email_verified", true))))
                     .doesNotThrowAnyException();
         }
     }
