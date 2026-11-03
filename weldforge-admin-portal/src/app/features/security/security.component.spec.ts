@@ -98,7 +98,7 @@ describe('SecurityComponent — recovery codes on first enrolment', () => {
 
     c.confirmSelfReset();
 
-    expect(mfa.selfReset).toHaveBeenCalledWith('hunter2!Strong', { type: 'TOTP', code: '123456' });
+    expect(mfa['selfReset']).toHaveBeenCalledWith('hunter2!Strong', { type: 'TOTP', code: '123456' });
   });
 
   it('sends a backup code when the user says the authenticator is gone', () => {
@@ -110,6 +110,6 @@ describe('SecurityComponent — recovery codes on first enrolment', () => {
 
     c.confirmSelfReset();
 
-    expect(mfa.selfReset).toHaveBeenCalledWith('hunter2!Strong', { backupCode: 'ABCD-1234' });
+    expect(mfa['selfReset']).toHaveBeenCalledWith('hunter2!Strong', { backupCode: 'ABCD-1234' });
   });
 });
