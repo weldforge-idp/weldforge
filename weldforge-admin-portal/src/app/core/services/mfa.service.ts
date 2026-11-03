@@ -15,6 +15,17 @@ export interface MfaFactor {
   lastUsedAt?: string;
 }
 
+/**
+ * Proof that the caller still holds a factor, sent alongside the password on
+ * a reset. A backup code is a first-class alternative rather than a fallback:
+ * the reason to reset is usually that the authenticator is gone.
+ */
+export interface MfaResetProof {
+  type?: MfaFactorType;
+  code?: string;
+  backupCode?: string;
+}
+
 export interface TotpEnrollResponse {
   factorId: number;
   secret: string;
@@ -61,8 +72,14 @@ export class MfaService {
     return this.http.get<{ remaining: number }>(`${this.url}/backup-codes`);
   }
 
-  selfReset(password: string): Observable<{ removed: number }> {
-    return this.http.post<{ removed: number }>(`${this.url}/reset`, { password });
+  /**
+   * Wipe every factor and backup code. Needs the password *and* proof that
+   * the caller still holds a factor (B-AUTH-5, F60) — a code from an
+   * authenticator, or one of the backup codes. The server answers a flat 401
+   * whichever half was wrong, so the UI cannot say which.
+   */
+  selfReset(password: string, proof: MfaResetProof): Observable<{ removed: number }> {
+    return this.http.post<{ removed: number }>(`${this.url}/reset`, { password, ...proof });
   }
 
   // ---- WebAuthn registration ceremony ------------------------------

@@ -35,4 +35,7 @@ public class TestWorld {
     public int lastRemoved;
     public final List<AuditEvent> auditLog = new ArrayList<>();
     public final List<User> listedUsers = new ArrayList<>();
+
+    /** The half-finished enrollment used by the F60 enrollment-cancel scenario. */
+    public Long pendingFactorId;
 }

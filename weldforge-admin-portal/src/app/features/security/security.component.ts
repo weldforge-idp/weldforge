@@ -150,7 +150,8 @@ type TotpStep = 'idle' | 'scan' | 'verify';
         <h3 class="section-title">Reset all two-factor authentication</h3>
         <p class="sub">
           Removes every enrolled factor and backup code from this account. You'll need to re-enroll on your next login.
-          For your protection, you must re-enter your password to confirm.
+          To confirm, enter your password <strong>and</strong> a current code &mdash; either from your
+          authenticator or one of your backup codes. Lost both? An administrator can reset it for you.
         </p>
         <div class="reset-row">
           <mat-form-field appearance="outline" class="pwd-field">
@@ -159,10 +160,22 @@ type TotpStep = 'idle' | 'scan' | 'verify';
                    autocomplete="current-password">
             <wf-password-toggle matIconSuffix [for]="pw" />
           </mat-form-field>
-          <button mat-raised-button color="warn" [disabled]="!resetPassword" (click)="confirmSelfReset()">
+          <mat-form-field appearance="outline" class="pwd-field">
+            <mat-label>{{ resetUsingBackupCode ? 'Backup code' : 'Authenticator code' }}</mat-label>
+            <input matInput [(ngModel)]="resetCode" name="resetCode" autocomplete="one-time-code"
+                   [attr.inputmode]="resetUsingBackupCode ? 'text' : 'numeric'">
+          </mat-form-field>
+          <button mat-raised-button color="warn"
+                  [disabled]="!resetPassword || !resetCode" (click)="confirmSelfReset()">
             Reset MFA
           </button>
         </div>
+        <button mat-button type="button" class="proof-toggle"
+                (click)="resetUsingBackupCode = !resetUsingBackupCode; resetCode = ''">
+          {{ resetUsingBackupCode
+              ? 'Use a code from my authenticator instead'
+              : "I've lost my authenticator — use a backup code" }}
+        </button>
       </mat-card>
     </div>
   `,
@@ -311,6 +324,7 @@ type TotpStep = 'idle' | 'scan' | 'verify';
       border: 1px solid rgba(255, 107, 107, 0.3);
     }
     .wf-danger .section-title { color: #FF8A8A; }
+    .proof-toggle { padding: 0; min-width: 0; font-size: 12px; opacity: .8; }
     .reset-row { display: flex; gap: 12px; align-items: flex-start; }
     .pwd-field { flex: 1 1 auto; }
 
@@ -330,6 +344,15 @@ export class SecurityComponent implements OnInit {
 
   otp = '';
   resetPassword = '';
+  /**
+   * The factor proof that now has to accompany the password (B-AUTH-5, F60).
+   * One input with an explicit "this is a backup code" toggle, rather than
+   * guessing from the shape of what was typed: a backup code and a TOTP code
+   * go to different server-side verifiers, and guessing wrong reads to the
+   * user as a rejected-but-correct code.
+   */
+  resetCode = '';
+  resetUsingBackupCode = false;
 
   constructor(private mfa: MfaService,
               private ceremony: WebAuthnCeremony,
@@ -497,7 +520,9 @@ export class SecurityComponent implements OnInit {
         this.ok('Factor removed');
         this.refresh();
       },
-      error: e => this.err('Failed to remove factor', e),
+      // A 409 here is the last-factor guard (F60), not a failure: the server
+      // message names the reset flow, and err() appends it.
+      error: e => this.err(e?.status === 409 ? 'Cannot remove this factor' : 'Failed to remove factor', e),
     });
   }
 
@@ -520,15 +545,23 @@ export class SecurityComponent implements OnInit {
 
   confirmSelfReset() {
     if (!confirm('Remove every MFA factor and backup code from your account? You will need to re-enroll on next login.')) return;
-    this.mfa.selfReset(this.resetPassword).subscribe({
+    const proof = this.resetUsingBackupCode
+      ? { backupCode: this.resetCode.trim() }
+      : { type: 'TOTP' as const, code: this.resetCode.trim() };
+
+    this.mfa.selfReset(this.resetPassword, proof).subscribe({
       next: res => {
         this.ok(`Removed ${res.removed} factor${res.removed === 1 ? '' : 's'}`);
         this.resetPassword = '';
+        this.resetCode = '';
         this.freshBackupCodes.set([]);
         this.refresh();
       },
       error: e => {
-        if (e?.status === 401) this.err('Password re-verification failed', e);
+        // The server deliberately will not say which half was wrong, so
+        // neither do we — saying "password incorrect" would rebuild the
+        // password oracle in the UI copy.
+        if (e?.status === 401) this.err('Password or code incorrect', e);
         else this.err('Reset failed', e);
       },
     });

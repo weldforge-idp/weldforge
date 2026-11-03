@@ -84,6 +84,7 @@ single-use**, and (3) **governance documentation**.
 | F56 | **Request validation enforced; no 500 for a bad body (B-API-2)** — `spring-boot-starter-validation` added, so `@Valid` finally runs (register, public orders, payment gateways); validation failures list every field (`errors`). Missing-field NPEs in email verification, password reset and MFA activation, an unknown WebAuthn challenge, and a failed security-key verification are 400s; hand-built error bodies on `/api/auth/*` are problem documents; a database integrity violation is a 400/409 that names no column. `MalformedInputIntegrationTest` feeds 16 bad-body shapes to 19 endpoints and fails on any 5xx. | `config/GlobalExceptionHandler.java`, `controller/AuthController.java`, `controller/MfaController.java`, `model/dto/RegisterRequestDto.java` |
 | F57 | **Self-serve orders and payment webhooks were refused in production** — `SecurityConfig` permits `/api/public/orders/**` and `/api/webhooks/**`, but `AppAuthorizationFilter` still demanded an `x-app-authorization` key neither a browser nor a payment gateway can hold, so every order (silently falling back to an email enquiry) and every gateway webhook got a 403. Both are exempt now; webhooks stay authenticated by their signatures, and orders get their own per-IP rate limit. Found by the F56 suite. | `config/AppAuthorizationFilter.java`, `config/security/RateLimitingFilter.java`, `service/security/RateLimitingService.java` |
 
+| F60 | **Removing MFA requires proving you still hold it (B-AUTH-5)** — `selfReset` took the password alone, and `DELETE /factors/{id}` took nothing at all, so a stolen access token could strip every factor one row at a time. A reset now needs the password *and* a current factor proof in the same request (TOTP, SMS, WebAuthn, or a backup code — the lost-authenticator path); the delete route refuses the last verified factor and names the reset instead, while still cancelling an unverified enrollment. The password check was also an unthrottled, unaudited oracle: it now records a failure, feeds the per-user lockout, refuses a locked account before reading the password, and sits in the `RECOVERY` bucket. Both refusals return one indistinguishable 401. | `service/mfa/MfaService.java`, `service/mfa/LastFactorProtectedException.java`, `service/security/FailedLoginRecorder.java`, `config/security/RateLimitingFilter.java`, `model/dto/MfaResetRequestDto.java`, portal `features/security/security.component.ts` |
 ---
 
 
@@ -165,9 +166,63 @@ SendGrid-quota / SMS-toll-fraud vectors. Filter routing unit-tested.
 origins (a wrong RP-ID silently loosens origin binding); consider `REQUIRED` UV for a true
 second factor.
 
-**B-AUTH-5 · Low · Self-service MFA reset is password-only, unthrottled.**
-`service/mfa/MfaService.java` (`selfReset`). A token+password attacker can strip all
-factors. Fix: require a current valid second factor to remove the last factor; rate-limit.
+**B-AUTH-5 · Low · Self-service MFA reset was password-only and unthrottled. ✅ FIXED (F60).**
+Removing MFA now requires the password **and** a current factor proof in the same
+request. The invariant, which the tests assert directly: *an account cannot go from
+MFA-protected to unprotected without both arriving together.*
+
+The original note said "a token+password attacker can strip all factors", which
+understated it. `selfReset` was not the cheapest route:
+`DELETE /api/auth/mfa/factors/{id}` took an access token and a path variable and
+asked for **nothing else**, so a token-only attacker deleted the factors one at a
+time and never visited `/reset`. Hardening `/reset` alone would have closed a door
+beside a missing wall, which is why the fix is stated over the account's state
+rather than over one endpoint. Neither route was ever reachable with a password
+alone — `AuthService.login` returns an MFA *challenge* token, not an access token,
+once a factor is active — and that is what keeps this Low.
+
+The third problem was not in the original note at all, and is the one with no
+precondition beyond the stolen token the others already assume: the password
+re-verification was an **unthrottled, unaudited oracle**. `/api/auth/mfa/reset` was
+absent from `RateLimitingFilter.ROUTES`, and a wrong password threw
+`BadCredentialsException` while recording nothing — no audit row, no lockout, no
+metric — so an attacker could guess the account password at full speed and the
+per-user lockout guarding `/api/auth/login` never saw it.
+
+What landed: proof via `verifyChallenge`, so a **backup code counts** (the reason
+`selfReset` exists is the lost-authenticator case, and demanding an authenticator
+would demand the thing just lost; lost everything is `adminReset`, by a human);
+the delete route refuses the last verified **and enabled** factor, which leaves the
+enrollment-cancel path working because a half-finished enrollment is unverified;
+`ensureNotLocked` before the password is read; the `RECOVERY` bucket; and
+`FailedLoginRecorder.badResetPassword`, which feeds the per-user lockout and is the
+control that survives an attacker rotating source addresses. Both refusals return
+one indistinguishable 401, so the endpoint cannot confirm a password independently
+of a factor; the two cases are separate events in the audit log.
+
+*Residual (Low, accepted):* removing a **non-last** verified factor still needs only
+the token, so a stolen token can take a user from three factors to one. It cannot
+take them to zero, which is the transition that matters, and every removal is
+audited as `mfa.factor.remove`. Closing it means requiring proof on every removal,
+which means a `DELETE` with a request body — a worse trade for an attack that
+cannot remove MFA protection. Spec:
+[plans/2026-11-03-mfa-reset-step-up.md](../plans/2026-11-03-mfa-reset-step-up.md).
+
+**B-AUTH-6 · Low · Self-service password change is an unthrottled password oracle.**
+Found while fixing B-AUTH-5; the same defect, two methods away.
+`FailedLoginRecorder.badCurrentPassword` audits `auth.password.change_failed` and
+then returns — it never calls `lockoutService.recordFailure` — and
+`/api/auth/change-password` is not in `RateLimitingFilter.ROUTES` either. So a
+caller holding a stolen access token can test password guesses against it at full
+speed, and the only trace is an audit row nothing alerts on.
+
+Deliberately **not** fixed alongside F60. The change is one line, but it alters the
+behaviour of an endpoint every signed-in user touches, and getting it wrong locks
+people out of working accounts — a blast radius that deserves its own decision
+rather than riding along on another item's. *Fix:* give it the same treatment as
+F60 gave the reset path (`recordFailure` + a `RECOVERY` bucket entry), and decide
+explicitly whether a failed change should be able to lock the account, given the
+caller is already authenticated.
 
 ### OAuth2 / OIDC
 

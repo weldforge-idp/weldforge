@@ -39,6 +39,13 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             "/api/auth/reset-password",       Bucket4jEndpoint.RECOVERY,
             "/api/auth/resend-verification",  Bucket4jEndpoint.RECOVERY,
             "/api/auth/mfa/sms/send",         Bucket4jEndpoint.RECOVERY,
+            // B-AUTH-5 (F60): /mfa/reset re-verifies the password, so left
+            // unthrottled it answered password guesses at full speed. Same
+            // bucket as the other rare, sensitive operations; LOGIN would have
+            // let a reset attempt and a sign-in starve each other behind one
+            // office NAT. The per-user lockout in MfaService.selfReset is the
+            // control that survives an attacker rotating source addresses.
+            "/api/auth/mfa/reset",            Bucket4jEndpoint.RECOVERY,
             // Anonymous: one pending order + one gateway checkout per call.
             "/api/public/orders",             Bucket4jEndpoint.PUBLIC_ORDER
     );

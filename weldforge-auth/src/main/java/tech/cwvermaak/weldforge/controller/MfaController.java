@@ -140,13 +140,21 @@ public class MfaController {
 
     // Self-service reset -----------------------------------------------
 
+    /**
+     * Wipe every factor and backup code. Needs the password <em>and</em> a
+     * current factor proof in the same request (B-AUTH-5, F60) — a code from an
+     * authenticator, a WebAuthn assertion, or a backup code.
+     *
+     * <p>A refusal is a flat 401 whichever half was wrong, so the endpoint
+     * cannot be used to test a password against a known account.
+     */
     @PostMapping("/reset")
     public ResponseEntity<Map<String, Object>> selfReset(
             @AuthenticationPrincipal String email,
-            @RequestBody Map<String, String> body) {
+            @RequestBody(required = false) MfaResetRequestDto body) {
         User user = requireUser(email);
-        String password = body != null ? body.get("password") : null;
-        int removed = mfaService.selfReset(user, password);
+        MfaResetRequestDto req = body != null ? body : new MfaResetRequestDto();
+        int removed = mfaService.selfReset(user, req.getPassword(), req.toProof());
         return ResponseEntity.ok(Map.of("removed", removed));
     }
 

@@ -25,6 +25,12 @@ public final class AuditEventTypes {
     public static final String MFA_CHALLENGE_BLOCKED  = "mfa.challenge.blocked";
     public static final String MFA_SELF_RESET         = "mfa.self_reset";
     public static final String MFA_ADMIN_RESET        = "mfa.admin_reset";
+    // B-AUTH-5 (F60): a self-service reset that was refused. Two names because
+    // the two refusals are different events: a wrong password is a password
+    // guess and feeds the account lockout, a wrong code is a failed factor
+    // proof. The caller cannot tell them apart; the audit log can.
+    public static final String MFA_SELF_RESET_DENIED  = "mfa.self_reset.denied";
+    public static final String AUTH_MFA_RESET_DENIED  = "auth.mfa_reset.denied";
     /**
      * A WebAuthn assertion whose signature counter went backwards (CONF-3.3).
      * The spec's cloning signal: two authenticators holding the same credential
