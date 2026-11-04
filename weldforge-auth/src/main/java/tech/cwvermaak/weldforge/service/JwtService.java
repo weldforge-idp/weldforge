@@ -1,18 +1,20 @@
 package tech.cwvermaak.weldforge.service;
 
 import io.jsonwebtoken.*;
-import io.jsonwebtoken.security.Keys;
+import io.micrometer.core.instrument.MeterRegistry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import tech.cwvermaak.weldforge.config.security.HmacKeyRing;
 
 import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 @Service
+@Slf4j
 public class JwtService {
 
     public static final String CLAIM_TENANT_ID    = "tid";
@@ -49,6 +51,50 @@ public class JwtService {
     private String secret;
 
     /**
+     * Retired secrets still accepted for verification during a rotation overlap
+     * (B-JWT-2), comma-separated, newest first. Normally empty.
+     *
+     * <p>Env: {@code APP_JWT_PREVIOUS_SECRETS}. Every entry is held to the same
+     * 64-byte floor as the signing key by {@code SecretHygieneValidator}.
+     */
+    @Value("${app.jwt.previous-secrets:}")
+    private String previousSecrets;
+
+    /**
+     * Optional on purpose: the unit tests construct this service directly, and
+     * a counter is not worth making them all stand up a registry.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MeterRegistry meterRegistry;
+
+    /**
+     * Built from the two fields above and rebuilt when they change.
+     *
+     * <p>Cached rather than rebuilt per call because deriving it costs a SHA-256
+     * and a key construction per entry, and {@code parse} is on every
+     * authenticated request. Keyed on the configured values rather than built
+     * once, because the tests set {@code secret} by reflection after
+     * construction and a once-only ring would silently keep the old key.
+     */
+    private volatile HmacKeyRing keyRing;
+
+    /**
+     * The key ring: one key signs, several may verify.
+     *
+     * <p>Kept in {@link HmacKeyRing} rather than inline so the guarantee that
+     * matters — a retired key verifies and never signs — lives in one named,
+     * documented place instead of being a property of this method.
+     */
+    private HmacKeyRing keyRing() {
+        HmacKeyRing current = keyRing;
+        if (current == null || !current.wasBuiltFrom(secret, previousSecrets)) {
+            current = HmacKeyRing.of(secret, previousSecrets);
+            keyRing = current;
+        }
+        return current;
+    }
+
+    /**
      * Platform audience stamped on access tokens and required by
      * {@link tech.cwvermaak.weldforge.config.JwtAuthenticationFilter} (B-JWT-1).
      * Scopes WeldForge's API to tokens explicitly minted for it — the shared
@@ -65,8 +111,7 @@ public class JwtService {
     private long refreshExpirationMs;
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        return Keys.hmacShaKeyFor(keyBytes);
+        return keyRing().signingKey();
     }
 
     public String generateAccessToken(String email, Long tenantId, String tenantSlug,
@@ -219,7 +264,10 @@ public class JwtService {
         if (issuer != null && !issuer.isBlank()) {
             b.issuer(issuer);
         }
-        return b.signWith(getSigningKey()).compact();
+        // kid so a multi-key verifier can pick directly instead of trying
+        // every key it holds. See HmacKeyRing.
+        return b.header().keyId(keyRing().signingKeyId()).and()
+                .signWith(getSigningKey()).compact();
     }
 
     private static boolean isReservedClaim(String name) {
@@ -258,6 +306,7 @@ public class JwtService {
         claims.put(CLAIM_TENANT_SLUG, tenantSlug == null ? "" : tenantSlug);
         claims.put(CLAIM_PURPOSE, PURPOSE_MFA_CHALLENGE);
         return Jwts.builder()
+                .header().keyId(keyRing().signingKeyId()).and()
                 .id(java.util.UUID.randomUUID().toString())   // jti — enables single-use (B-MFA-2)
                 .subject(String.valueOf(userId))
                 .claims(claims)
@@ -288,6 +337,7 @@ public class JwtService {
         claims.put(CLAIM_TENANT_SLUG, tenantSlug == null ? "" : tenantSlug);
         claims.put(CLAIM_PURPOSE, PURPOSE_CONSENT_CSRF);
         return Jwts.builder()
+                .header().keyId(keyRing().signingKeyId()).and()
                 .subject(email)
                 .claims(claims)
                 .issuedAt(new Date())
@@ -301,13 +351,121 @@ public class JwtService {
         return PURPOSE_CONSENT_CSRF.equals(p == null ? null : p.toString());
     }
 
+    /**
+     * Verify against the key ring (B-JWT-2).
+     *
+     * <p>The signing key is tried first, so the overwhelmingly common case — a
+     * token this server minted minutes ago — costs exactly what it did before
+     * the ring existed. A retired key is reached only by a token that genuinely
+     * needs one, which is the whole point of the overlap window.
+     *
+     * <p>When a retired key is what verifies, that is recorded: the counter is
+     * the only way an operator can answer "has everything moved off the old
+     * secret yet?" before deciding to drop it. Without it the decision is a
+     * guess, and guessing early logs everyone out — which is the failure this
+     * change exists to prevent.
+     *
+     * <p><b>Only a signature mismatch advances to the next key.</b> Everything
+     * else — expired, malformed, unsupported — propagates as the real JJWT
+     * exception. That distinction matters more than it looks: JJWT reports
+     * expiry only <em>after</em> the signature has verified, so an
+     * {@code ExpiredJwtException} already tells us the right key was found and
+     * trying the rest is pointless. An earlier draft of this method swallowed
+     * every exception while walking the ring, which turned every ordinary
+     * expiry — far and away the most common legitimate failure — into
+     * "signature does not match", hiding the cause from the logs and from
+     * callers that distinguish the two.
+     */
     public Claims parse(String token) {
+        // kid is a hint, not a requirement: a token minted by a build from
+        // before this change carries none, and must keep working.
+        String kid = peekKeyId(token);
+        if (kid != null) {
+            SecretKey hinted = keyRing().keyById(kid).orElse(null);
+            if (hinted != null) {
+                // Authoritative: the token names a key we hold, so its failure
+                // is the answer. No fallback -- a kid we recognise whose
+                // signature does not check out is a forgery, not a reason to go
+                // looking for a key that would accept it.
+                Claims claims = verifyWith(token, hinted);
+                recordKeyUse(kid);
+                return claims;
+            }
+            // An unknown kid falls through to the ring rather than being
+            // refused outright: a consumer may label tokens with a scheme of
+            // its own, and the signature is what decides either way.
+        }
+
+        List<Map.Entry<String, SecretKey>> keys = keyRing().verificationKeys();
+        for (int i = 0; i < keys.size(); i++) {
+            boolean last = i == keys.size() - 1;
+            try {
+                Claims claims = verifyWith(token, keys.get(i).getValue());
+                recordKeyUse(keys.get(i).getKey());
+                return claims;
+            } catch (io.jsonwebtoken.security.SignatureException e) {
+                // Wrong key for this token. Try the next, unless that was the
+                // last -- then this is the genuine answer.
+                if (last) {
+                    throw e;
+                }
+            }
+        }
+        // Unreachable: the ring always holds at least the signing key, so the
+        // loop either returns or throws.
+        throw new JwtException("No verification key available");
+    }
+
+    private Claims verifyWith(String token, SecretKey key) {
         return Jwts.parser()
-                .verifyWith(getSigningKey())
+                .verifyWith(key)
                 .clockSkewSeconds(60)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    /**
+     * The {@code kid} from the header without verifying anything.
+     *
+     * <p>Unverified input, so it is used only to look up a key we already hold
+     * — never trusted for a decision. An attacker-chosen kid at worst selects a
+     * key whose signature then fails.
+     */
+    private String peekKeyId(String token) {
+        try {
+            int firstDot = token.indexOf('.');
+            if (firstDot <= 0) return null;
+            String json = new String(java.util.Base64.getUrlDecoder()
+                    .decode(token.substring(0, firstDot)), java.nio.charset.StandardCharsets.UTF_8);
+            // Deliberately not a JSON parse: this runs on every request with
+            // unverified bytes, and the value wanted is one short string.
+            int at = json.indexOf("\"kid\"");
+            if (at < 0) return null;
+            int colon = json.indexOf(':', at);
+            int open = json.indexOf('"', colon + 1);
+            int close = json.indexOf('"', open + 1);
+            if (colon < 0 || open < 0 || close < 0) return null;
+            return json.substring(open + 1, close);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private void recordKeyUse(String kid) {
+        if (meterRegistry == null || !keyRing().rotationInProgress()) {
+            return;
+        }
+        boolean retired = !kid.equals(keyRing().signingKeyId());
+        meterRegistry.counter("weldforge.jwt.verified",
+                "kid", kid,
+                "key", retired ? "retired" : "signing").increment();
+        if (retired) {
+            // Debug, not warn: during an overlap this is expected and routine,
+            // and at access-token volume a warn per request would bury the log.
+            // The counter is the signal; this is for when someone is looking.
+            log.debug("Token verified under retired key kid={} -- overlap window still in use", kid);
+        }
     }
 
     public String extractEmail(String token) { return parse(token).getSubject(); }

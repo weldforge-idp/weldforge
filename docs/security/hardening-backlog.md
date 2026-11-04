@@ -219,10 +219,26 @@ a coordinated change in the consumer repos (Safe Space / Krusty / Commons), not 
 (b) `iss` validation is still not enforced on inbound HMAC tokens (per-tenant `iss` is only
 set on the OIDC mint path).
 
-**B-JWT-2 · High · No key-ring for the shared HMAC.** Rotation is an all-or-nothing
-cutover across WeldForge + 3 consumers. Fix: accept N verification keys (newest signs) so
-keys can roll with overlap; longer term, migrate consumers to JWKS/RS256 to retire the
-shared symmetric secret. See [runbooks/key-rotation.md](../runbooks/key-rotation.md).
+**B-JWT-2 · High · No key-ring for the shared HMAC. ⚠️ PARTIALLY FIXED (F58) — WeldForge's
+half shipped, the consumers' half has not.** `JwtService` now verifies against an
+`HmacKeyRing`: one key signs (`app.jwt.secret`), N retired keys may still verify
+(`app.jwt.previous-secrets`), and every signed token carries a `kid` derived from the key
+so a consumer can compute the same id with nothing to coordinate. A retired key verifies
+and **never** signs, and every entry is held to the same 64-byte floor and
+known-insecure-default check as the signing key — a weak verification key is a forgery
+oracle, so it fails the boot.
+
+**Do not read this as "rotation is now safe".** The ring is on our side only. Safe Space,
+Krusty and Commons each hold a single `WELDFORGE_JWT_SECRET`, so the instant WeldForge
+*signs* with the new key, a consumer still on the old one rejects those tokens: the
+consumer flip is still synchronised with the signing switch. What is fixed is that tokens
+already in flight survive, rollback is no longer a second hard cutover, and
+`weldforge.jwt.verified{key="retired"}` tells an operator when the overlap can be closed
+instead of leaving it a guess. Closing it early is what logs people out.
+
+Remaining: N-key verification in the three consumer repositories (coordination work
+outside this repo), then migrate them to JWKS/RS256 and retire the symmetric secret
+entirely. See [runbooks/key-rotation.md](../runbooks/key-rotation.md) §1.
 
 **B-JWT-3 · Medium · RP-initiated logout parses `id_token_hint` against only the active
 key. ✅ FIXED (F24).** `parseTenantJwt` now resolves the verification key by the token's

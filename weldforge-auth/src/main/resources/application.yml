@@ -167,9 +167,24 @@ app:
     # out of the box; SecretHygieneValidator refuses to start the app with
     # this value (or anything shorter than 64 bytes) outside the dev/test
     # profiles. NOTE: this secret is shared with external token consumers
-    # (Safe Space / Krusty / Commons) — rotating it requires a coordinated
-    # roll. See docs/runbooks/key-rotation.md.
+    # (Safe Space / Krusty / Commons). Since the key ring below, rotating it no
+    # longer requires all four systems to flip at the same instant.
+    # See docs/runbooks/key-rotation.md.
     secret: ${JWT_SECRET:dev-only-insecure-jwt-secret-do-not-use-in-production-change-me-now-0123456789}
+    # Retired secrets still accepted for VERIFICATION during a rotation overlap
+    # (B-JWT-2 / CONF-7.4). Comma-separated, newest first. Normally EMPTY --
+    # populate it only for the length of a rotation, then clear it.
+    #
+    # These keys verify and never sign, so no configuration here can cause a
+    # token to be minted under a retired secret. But a verification key still
+    # mints tokens this server will ACCEPT, so each entry is held to the same
+    # 64-byte floor and the same known-insecure-default check as the signing
+    # key; a weak value here is a forgery oracle, and the app refuses to boot.
+    #
+    # A secret containing a comma would be split into fragments. Every fragment
+    # would fail the length floor, so that mistake is a hard boot failure rather
+    # than a server that trusts nonsense.
+    previous-secrets: ${APP_JWT_PREVIOUS_SECRETS:}
     # Platform audience stamped on access tokens and required by
     # JwtAuthenticationFilter (B-JWT-1). Scopes WeldForge's API to tokens minted
     # for it; adding the claim is transparent to external token consumers.

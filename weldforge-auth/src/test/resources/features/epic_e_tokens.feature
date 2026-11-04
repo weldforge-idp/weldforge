@@ -64,3 +64,52 @@ Feature: Token model rebuild — hashed keys, scopes, service accounts (PRD TOK-
     Given admin has created service account "etl-bot-d" with role "TENANT_ADMIN" that expired yesterday
     When a request to "/api/admin/users" arrives with that service account token
     Then the auth filter denies the request with 403
+
+  # ----------------------------------------------------------------------
+  # Platform HMAC key ring (B-JWT-2 / CONF-7.4)
+  #
+  # app.jwt.secret is shared verbatim with three external consumers, so with a
+  # single key, rotating it was an all-or-nothing cutover: the instant it
+  # changed, every token signed under the old one failed verification in
+  # WeldForge and in all three consumers at the same moment. The ring lets the
+  # new key sign while the old one still verifies, so the systems move one at a
+  # time.
+  # ----------------------------------------------------------------------
+
+  Scenario: Before rotation, a token verifies under the only key
+    Given the platform signing secret is "SECRET-A" with no retired keys
+    When a platform token is signed
+    Then the platform token verifies
+
+  Scenario: After rotation, a token signed under the old secret still verifies
+    Given the platform signing secret is "SECRET-A" with no retired keys
+    And a platform token is signed and kept
+    When the platform signing secret rotates to "SECRET-B" retaining "SECRET-A"
+    Then the kept platform token still verifies
+
+  Scenario: Once the overlap window is closed, the old token is refused
+    Given the platform signing secret is "SECRET-A" with no retired keys
+    And a platform token is signed and kept
+    When the platform signing secret rotates to "SECRET-B" retaining nothing
+    Then the kept platform token is refused
+
+  Scenario: A retired key never signs
+    Given the platform signing secret is "SECRET-B" with retired key "SECRET-A"
+    When a platform token is signed
+    Then the platform token verifies against signing secret "SECRET-B" alone
+    And the platform token is refused by signing secret "SECRET-A" alone
+
+  Scenario: A token labelled with a known key id but signed by another key is refused
+    Given the platform signing secret is "SECRET-B" with retired key "SECRET-A"
+    When a platform token is forged naming the active key id
+    Then the platform token is refused
+
+  Scenario: A token carrying no key id still verifies
+    Given the platform signing secret is "SECRET-B" with retired key "SECRET-A"
+    When a platform token is signed without a key id under "SECRET-B"
+    Then the platform token verifies
+
+  Scenario: An expired token reports expiry, not a signature failure
+    Given the platform signing secret is "SECRET-B" with retired key "SECRET-A"
+    When an expired platform token is signed under "SECRET-A"
+    Then verifying the platform token reports that it expired

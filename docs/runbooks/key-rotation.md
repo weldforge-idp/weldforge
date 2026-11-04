@@ -107,7 +107,7 @@ instance. See `CLAUDE.md` → *Tenant consumers* before rotating it.
 
 | Secret | GCP Secret Manager name | Backs | Blast radius | Grace / overlap mechanism | Suggested cadence |
 |---|---|---|---|---|---|
-| Platform HMAC `app.jwt.secret` | `wf-jwt-secret` | HS512 platform tokens (legacy `/api/auth/*`) | **All 4 systems**: weldforge-auth + Safe Space + Krusty + Commons | **None** — hard cutover, invalidates every live token simultaneously | Annual or on compromise (coordinated) |
+| Platform HMAC `app.jwt.secret` | `wf-jwt-secret` | HS512 platform tokens (legacy `/api/auth/*`) | **All 4 systems**: weldforge-auth + Safe Space + Krusty + Commons | **Partial** — `app.jwt.previous-secrets` key ring on WeldForge's side: tokens in flight survive and rollback is non-destructive. Consumers still hold one key each, so the consumer flip remains synchronised with the signing switch (§1) | Annual or on compromise (coordinated) |
 | At-rest key `app.crypto.secret` | `wf-app-crypto-secret` | AES-GCM encryption of tenant RSA private keys, OAuth2 client secrets, Stripe/Twilio/CRM/LDAP creds | All encrypted DB columns become undecryptable on a naive swap | **None built-in** — requires a custom re-encryption migration | Rarely / on compromise (with re-encryption job) |
 | Per-tenant OIDC/SAML signing keys | `tenant_signing_keys` table (in DB, encrypted by `app.crypto.secret`) | RS256 OIDC token signing + SAML assertion signing | One tenant's RP/SP relying parties | **Yes** — overlapping `kid`s, old key stays in JWKS; `KeyRotationScheduler` (prod-enabled, 90d) | 90 days (automatic) |
 | Internal PKI CA | `tenant_certificate_authorities` table (key encrypted by `app.crypto.secret`) | Per-tenant client-auth / S/MIME certs | One tenant's issued client certs | CRL-based revocation; cert renewal notifier | 10-year CA; rotate on compromise |
@@ -116,117 +116,169 @@ instance. See `CLAUDE.md` → *Tenant consumers* before rotating it.
 
 ---
 
-## 1. Platform HMAC `app.jwt.secret` (`wf-jwt-secret`) — CRITICAL, coordinated
+## 1. Platform HMAC `app.jwt.secret` (`wf-jwt-secret`) — CRITICAL
 
-### Why this is the dangerous one
+### What the key ring changed, and what it did not
 
-`JwtService` signs the legacy platform access tokens with a single HMAC secret
-(`Keys.hmacShaKeyFor(secret)`, see `weldforge-auth/.../service/JwtService.java`).
-That same secret is **shared verbatim** with three external consumers — Safe
-Space, Krusty, and the Commons microservice — each of which verifies tokens with
-its own `WELDFORGE_JWT_SECRET` env, mirrored from `wf-jwt-secret` (see
-`CLAUDE.md` → Tech Metropolis trio).
+Since **weldforge #158** `JwtService` verifies against a **key ring**: one key
+signs (`app.jwt.secret`), and any number of retired keys may still verify
+(`app.jwt.previous-secrets`, env `APP_JWT_PREVIOUS_SECRETS`, comma-separated,
+newest first). Every token this server signs now carries a `kid` derived from
+the key itself, so a holder of the same secret can compute the same id with
+nothing to keep in step.
 
-There is **no key-id / key-ring / grace mechanism** today: `JwtService` has one
-secret in, one secret out. The moment the secret changes, every token signed
-under the old secret fails verification — in weldforge-auth **and** in all three
-consumers — *simultaneously*. This is a hard cutover. You cannot stage it.
+**Read this next part before planning a rotation, because the obvious
+conclusion from the above is wrong.**
 
-Bounded impact: access-token TTL is **5 minutes**, so worst case any logged-in
-user across the four systems gets one failed request and must re-authenticate
-(or the consumer silently re-fetches). Refresh tokens are 7 days but are stored
-server-side and re-minted, so the practical user-visible window is minutes, not
-days — provided all four systems flip together.
+The ring is on **WeldForge's** side only. Safe Space, Krusty and Commons each
+hold a single `WELDFORGE_JWT_SECRET` and verify with it. So the moment WeldForge
+starts *signing* with the new secret, a consumer still holding only the old one
+rejects those fresh tokens. **The consumer flip is still synchronised with the
+signing switch.** The ring does not change that, and will not until the
+consumers accept N keys too — which is the other half of CONF-7.4 and lives in
+their repositories.
 
-> Cross-reference: the planned **HMAC key-ring** (publish a `kid`, accept both
-> old and new keys during an overlap window) removes this lockstep requirement.
-> It is tracked in `docs/security/hardening-backlog.md` (create/append there if
-> it does not yet exist). Until that ships, follow the coordinated procedure.
+What the ring genuinely buys today, which is worth having:
+
+1. **Tokens already in flight survive the switch.** WeldForge keeps accepting
+   the old key for the overlap, so nobody signed in to WeldForge itself or to
+   the admin portal is thrown out mid-request.
+2. **Rollback stops being destructive.** You can revert signing to the old
+   secret while keeping the new one in the ring, so tokens minted during the
+   window still verify. Before, rollback was a second hard cutover with the
+   same blast radius as the first.
+3. **You can tell when it is safe to finish.** The counter
+   `weldforge.jwt.verified{key="retired"}` increments whenever a token verifies
+   under a retired key. Dropping the old secret while that counter is still
+   moving is what logs people out; now it is an observation rather than a guess.
+4. **It is the prerequisite.** Once a consumer accepts two keys, that consumer
+   can be moved on its own day, and the lockstep is gone for real.
+
+Bounded impact either way: the access-token TTL is **5 minutes**, so the
+worst case for a consumer still on the old secret is a few minutes of failed
+requests, not days. Refresh tokens are 7 days but server-side and re-minted.
 
 ### Pre-checks
 
 ```bash
-# Confirm current secret length is sane (must be >= 64 bytes for HS512 / hygiene)
-gcloud secrets versions access latest --secret=wf-jwt-secret | tr -d '\n' | wc -c
+ssh tech01
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+NS=weldforge-production
 
-# Confirm the pods are currently healthy before you change anything
-kubectl --context=$KCTX -n sso get pods -l app=sso-api
-kubectl --context=$KCTX -n sso exec deploy/sso-api -c sso-api -- \
-    curl -s http://localhost:8076/actuator/health
+# Current secret is sane (>= 64 bytes for HS512). Prints a length, not the value.
+kubectl -n $NS get secret weldforge-secrets -o jsonpath='{.data.JWT_SECRET}'   | base64 -d | tr -d '
+' | wc -c
+
+# Which kid is currently signing (visible in the startup log, no secret exposed)
+kubectl -n $NS logs deploy/weldforge-auth | grep -i 'HMAC key ring'
 ```
 
-### Procedure (coordinated maintenance window)
+Generate the new secret. Keep it out of your shell history and out of any file
+that is not the SOPS one:
 
-1. **Notify the three consumer owners** (Safe Space, Krusty, Commons). All four
-   systems must redeploy inside the same window. Do not start until owners have
-   confirmed they can deploy on your signal.
-2. **Schedule a window.** Off-peak. Expect a few minutes of forced
-   re-authentication.
-3. **Generate a new secret** (64+ bytes of base64 entropy):
+```bash
+openssl rand -base64 64 | tr -d '
+'
+```
 
-   ```bash
-   NEW_JWT=$(openssl rand -base64 64 | tr -d '\n')
-   ```
+### Procedure
 
-4. **Add it as a new GSM version** (do NOT disable the old version yet — keep it
-   as rollback):
+Phases 1 and 2 are WeldForge-only and safe to run at any time. Phase 3 is the
+one with consumer blast radius; it is still the moment to coordinate.
 
-   ```bash
-   printf '%s' "$NEW_JWT" | gcloud secrets versions add wf-jwt-secret --data-file=-
-   ```
+**Phase 1 — teach WeldForge the new key, without signing with it.**
 
-5. **Distribute to the three consumers.** Each consumer reads its
-   `WELDFORGE_JWT_SECRET` from its own GSM mirror of `wf-jwt-secret`. Update the
-   value in each consumer's secret store to the same `$NEW_JWT`. Have each owner
-   stage (but not yet apply) their redeploy.
-6. **Cut over together.** On the signal, redeploy **all four simultaneously**:
-   - weldforge-auth — re-run the deploy so pods pick up the new GSM version:
+Edit `apps/weldforge/overlays/production/secret.sops.yaml` in the
+infrastructure repo (sops 3.7.3 has no `edit` subcommand — it is
+`sops <file>`, and `code --wait` hangs, so use `notepad`):
 
-     ```bash
-     # Preferred: trigger the GHA deploy (no-op commit to main or re-run the
-     # latest deploy-gcp.yml run). Or manually:
-     helm upgrade --install weldforge infrastructure/helm/weldforge \
-       --namespace sso \
-       -f infrastructure/helm/weldforge/values-prod.yaml \
-       --set-string api.secrets.JWT_SECRET="$(gcloud secrets versions access latest --secret=wf-jwt-secret)" \
-       --set api.image.tag=$CURRENT_TAG --set frontend.image.tag=$CURRENT_TAG
-     # then force a fresh rollout so all replicas restart with the new env:
-     kubectl --context=$KCTX -n sso rollout restart deploy/sso-api
-     ```
-   - Safe Space / Krusty / Commons — each owner redeploys with the new env.
+```
+JWT_SECRET: <unchanged, the OLD secret>
+APP_JWT_PREVIOUS_SECRETS: <the NEW secret>
+```
+
+Push; Flux reconciles. WeldForge now **accepts** both and still **signs** with
+the old one, so nothing changes for any consumer. Confirm from the startup log
+that the ring holds two keys.
+
+This phase exists so that the signing switch in phase 3 is a one-line change to
+an already-deployed configuration rather than a swap of two values at once.
+
+**Phase 2 — verify the new key really is accepted.**
+
+```bash
+# A fresh login still works (signed under the OLD key, as expected)
+curl -s -X POST https://sso.weldforge.org/api/auth/login   -H 'Content-Type: application/json' -H 'X-Tenant-Slug: leap'   -d '{"identifier":"<test-user>","password":"<pw>"}' | jq -r '.token'   | cut -d. -f1 | base64 -d; echo
+# ^ the kid in that header is still the OLD key's id.
+```
+
+**Phase 3 — swap which key signs, with the consumers.**
+
+Swap the two values so the new secret signs and the old one is retained:
+
+```
+JWT_SECRET: <the NEW secret>
+APP_JWT_PREVIOUS_SECRETS: <the OLD secret>
+```
+
+Push, let Flux reconcile, confirm the rollout, then have each consumer owner
+move `WELDFORGE_JWT_SECRET` to the new value and redeploy:
+
+- Safe Space, Krusty, Commons — each owner redeploys with the new env.
+
+Until a consumer has moved, it rejects tokens minted after this phase. That is
+the residual lockstep described above; keep the window short and tell the owners
+before you push, not after.
+
+**Phase 4 — close the overlap.**
+
+Wait until `weldforge.jwt.verified{key="retired"}` has stopped increasing — at
+minimum one access-token TTL (5 minutes) after the last consumer moved, and
+longer if anything mints long-lived platform tokens. Then clear the list:
+
+```
+APP_JWT_PREVIOUS_SECRETS: ""
+```
+
+The startup log should report one key again. Leaving a retired secret in place
+indefinitely is not harmless: it remains able to mint tokens this server
+accepts, which is exactly why the boot-time hygiene check holds it to the same
+64-byte floor and the same known-insecure-default check as the signing key.
 
 ### Verification
 
 ```bash
 # 1. Pods rolled out cleanly
-kubectl --context=$KCTX -n sso rollout status deploy/sso-api
+kubectl -n $NS rollout status deploy/weldforge-auth
 
-# 2. A fresh login mints a token that verifies (login against a live tenant)
-TOKEN=$(curl -s -X POST https://sso.weldforge.org/api/auth/login \
-  -H 'Content-Type: application/json' -H 'X-Tenant-Slug: leap' \
-  -d '{"identifier":"<test-user>","password":"<pw>"}' | jq -r .accessToken)
-echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null   # eyeball the claims
+# 2. The ring is in the state you intended
+kubectl -n $NS logs deploy/weldforge-auth | grep -i 'HMAC key ring'
 
-# 3. Each consumer owner confirms their service accepts a freshly-issued token
-#    and that old tokens are now rejected (expected).
+# 3. A fresh login mints a token whose kid is the NEW key's id
+TOKEN=$(curl -s -X POST https://sso.weldforge.org/api/auth/login   -H 'Content-Type: application/json' -H 'X-Tenant-Slug: leap'   -d '{"identifier":"<test-user>","password":"<pw>"}' | jq -r '.token')
+echo "$TOKEN" | cut -d. -f1 | base64 -d; echo   # header: alg, kid
+echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null; echo   # claims
+
+# 4. Is anything still arriving on the retired key?
+#    (Scraped by Prometheus; /actuator is not publicly readable.)
+kubectl -n $NS exec deploy/weldforge-auth -c api --   curl -s localhost:8080/actuator/metrics/weldforge.jwt.verified
 ```
 
 ### Rollback
 
-The old GSM version is still present. Re-point all four systems back to it and
-redeploy:
+Unlike every earlier version of this runbook, rollback is **not** a second hard
+cutover. Revert `JWT_SECRET` to the old value while keeping the new one in
+`APP_JWT_PREVIOUS_SECRETS`:
 
-```bash
-# Find the previous version number, then redeploy reading that specific version,
-# or disable the new version so `latest` resolves to the old one:
-gcloud secrets versions list wf-jwt-secret
-gcloud secrets versions disable <NEW_VERSION> --secret=wf-jwt-secret
-kubectl --context=$KCTX -n sso rollout restart deploy/sso-api
-# Consumers revert their WELDFORGE_JWT_SECRET to the old value and redeploy.
+```
+JWT_SECRET: <the OLD secret>
+APP_JWT_PREVIOUS_SECRETS: <the NEW secret>
 ```
 
-Rollback is itself a coordinated flip — all four together — because the same
-lockstep applies in reverse.
+WeldForge then signs with the old key again and still verifies anything minted
+under the new one during the window, so no token issued in that period is
+orphaned. Consumers that had already moved must move back — that part is still
+coordinated, for the same reason phase 3 is.
 
 ---
 
