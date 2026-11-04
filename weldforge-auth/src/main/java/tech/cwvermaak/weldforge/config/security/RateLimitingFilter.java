@@ -16,10 +16,22 @@ import java.io.IOException;
 import java.util.Map;
 
 /**
- * Applies rate limits to the sensitive auth endpoints. Buckets are keyed
- * by the caller's IP (honoring {@code X-Forwarded-For}), so an attacker
- * running a credential stuffing run from one host hits the cap quickly
- * without affecting other traffic.
+ * Applies rate limits to the sensitive auth endpoints. Buckets are keyed by
+ * the caller's IP as resolved by Tomcat's {@code RemoteIpValve}, so an
+ * attacker running a credential stuffing run from one host hits the cap
+ * quickly without affecting other traffic.
+ *
+ * <p>The key is only meaningful while
+ * {@code server.tomcat.remoteip.internal-proxies} names a narrow trust
+ * boundary (B-AUTH-1). Widen it to {@code .*} and the valve walks the whole
+ * {@code X-Forwarded-For} chain and hands back the leftmost entry, which a
+ * client sets freely — a fresh bucket per request, and no rate limit at all.
+ *
+ * <p>Buckets are in-memory and therefore per-instance. That is sound at
+ * {@code replicas: 1} (which {@code apps/weldforge/base/api-deployment.yaml}
+ * pins deliberately) and must move to the shared bucket4j store BEFORE
+ * replicas are raised, not after — N replicas otherwise means N times the
+ * configured limit.
  *
  * Rejections return HTTP 429 with {@code Retry-After} so clients can back
  * off politely.
@@ -83,7 +95,17 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         // client. Parsing the raw header here and taking the LEFTMOST token
         // trusted an attacker-supplied value — a spoofed `X-Forwarded-For:
         // <random>` minted a fresh per-IP bucket on every request, defeating the
-        // rate limiter. getRemoteAddr() is never client-spoofable.
+        // rate limiter.
+        //
+        // getRemoteAddr() is NOT inherently unspoofable, which an earlier
+        // version of this comment claimed. It returns whatever the valve put
+        // there, and the valve's answer depends entirely on
+        // server.tomcat.remoteip.internal-proxies. That property was `.*`, so
+        // every chain entry counted as a trusted proxy, the walk consumed the
+        // lot, and the valve returned the leftmost entry: this call and the
+        // raw header's leftmost token were the same value, and this fix fixed
+        // nothing. The boundary is now narrow. Read that property's comment
+        // before trusting this one.
         return request.getRemoteAddr();
     }
 }

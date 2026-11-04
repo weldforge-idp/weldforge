@@ -1,10 +1,10 @@
 server:
   port: 8076
   shutdown: graceful
-  # Honour X-Forwarded-* from the GCP HTTPS load balancer (and any other
-  # TLS-terminating proxy) so generated absolute URLs — OIDC issuer,
-  # authorize/token endpoints, redirect URIs — carry the original https
-  # scheme and host instead of the LB-internal http://podname.
+  # Honour X-Forwarded-* from the TLS-terminating proxy (Traefik, on this
+  # cluster) so generated absolute URLs — OIDC issuer, authorize/token
+  # endpoints, redirect URIs — carry the original https scheme and host
+  # instead of the cluster-internal http://podname.
   # `native` configures Tomcat's RemoteIpValve, which mutates
   # request.getScheme() at the connector level so request.getScheme()
   # returns "https" everywhere (Spring's `framework` filter wraps later
@@ -14,9 +14,38 @@ server:
     remoteip:
       remote-ip-header: X-Forwarded-For
       protocol-header: X-Forwarded-Proto
-      # Trust every upstream — the GKE Ingress chain hops through Google's
-      # GFE then a NEG before hitting us, and the source IP is internal RFC1918.
-      internal-proxies: ".*"
+      # B-AUTH-1. This single value decides whether request.getRemoteAddr() is
+      # trustworthy, and therefore whether rate limiting, account lockout, the
+      # audit trail and refresh-token provenance mean anything.
+      #
+      # RemoteIpValve walks X-Forwarded-For RIGHT-TO-LEFT and stops at the
+      # first entry that is NOT a trusted proxy — that entry becomes the remote
+      # address. This was `.*` ("trust every upstream", justified by a GKE
+      # Ingress chain through Google's GFE and a NEG, an environment this
+      # cluster left behind). Under `.*` EVERY entry matches, so the walk
+      # consumes the whole chain and lands on the LEFTMOST entry — the one
+      # value a client can set freely. Application code that reads
+      # getRemoteAddr() to avoid parsing the raw header therefore got the raw
+      # header's leftmost token anyway, and a spoofed `X-Forwarded-For:
+      # <random>` minted a fresh rate-limit bucket per request.
+      #
+      # Narrowed to the private ranges a proxy peer can legitimately occupy.
+      # Traefik's pod is in 10.42.0.0/24 here, so it stays trusted and the
+      # scheme rewriting the OIDC issuer depends on is unaffected; a public
+      # address in the chain is now treated as the client and the walk stops
+      # there, so a spoofed prefix is ignored.
+      #
+      # Three unrelated operational changes would reopen this if the boundary
+      # were left wide, and none of them would look like a security change:
+      # putting Cloudflare's proxy in front (the zones are already there, and
+      # the natural follow-up is to set Traefik's forwardedHeaders.trustedIPs,
+      # which starts trusting inbound chains); adding any second proxy hop; or
+      # exposing the Service directly, where no edge strips anything.
+      #
+      # Widen deliberately via APP_TRUSTED_PROXIES, never back to `.*`. Adding
+      # a hop means adding THAT hop's range: each entry you trust is one more
+      # place a client-supplied value can enter from.
+      internal-proxies: '${APP_TRUSTED_PROXIES:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0:0:0:0:0:0:0:1|::1}'
 
 spring:
   application:

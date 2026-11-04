@@ -135,4 +135,30 @@ class RateLimitingFilterTest {
         // Bucket key is getRemoteAddr() (RemoteIpValve-resolved), not the XFF token.
         verify(service).tryConsume(eq(Bucket4jEndpoint.RECOVERY), eq("203.0.113.7"));
     }
+
+    @Test
+    @DisplayName("B-AUTH-1: rotating the forged header gives ONE bucket, not one per request")
+    void rotatingSpoofedHeaderDoesNotMintFreshBuckets() throws Exception {
+        // The precise claim in the backlog entry: "an attacker spoofing XFF
+        // gets a fresh per-IP bucket". One request proving the key equals the
+        // resolved address does not refute that -- a rotating header does.
+        when(service.tryConsume(any(), any())).thenReturn(ConsumptionProbe.consumed(4L, 0L));
+        FilterChain chain = mock(FilterChain.class);
+
+        for (String forged : new String[]{"6.6.6.6", "7.7.7.7", "8.8.8.8", "9.9.9.9"}) {
+            HttpServletRequest r = req("/api/auth/login");
+            lenient().when(r.getHeader("X-Forwarded-For")).thenReturn(forged);
+            filter.doFilterInternal(r, mock(HttpServletResponse.class), chain);
+        }
+
+        // Four requests, four header values, one bucket.
+        verify(service, times(4)).tryConsume(eq(Bucket4jEndpoint.LOGIN), eq("203.0.113.7"));
+        verifyNoMoreInteractions(service);
+    }
+
+    // The filter's half of B-AUTH-1 ends here: it reads getRemoteAddr() and
+    // nothing else. Whether THAT value can be trusted is decided by
+    // server.tomcat.remoteip.internal-proxies, which no mocked request can
+    // exercise -- see TrustedProxyBoundaryTest, which runs a real Tomcat with
+    // the real valve and the shipped regex.
 }

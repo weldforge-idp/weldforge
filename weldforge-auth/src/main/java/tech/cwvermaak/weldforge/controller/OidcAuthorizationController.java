@@ -629,7 +629,8 @@ public class OidcAuthorizationController {
     // Same rules as AuthService: the RemoteIpValve-resolved address only
     // (server.forward-headers-strategy=native), never a raw X-Forwarded-For,
     // because these values are stored on refresh-token records and a spoofed
-    // one would poison the session audit trail.
+    // one would poison the session audit trail. Trustworthy only to the extent
+    // that server.tomcat.remoteip.internal-proxies is narrow (B-AUTH-1).
     private static String clientIp(HttpServletRequest request) {
         return request == null ? null : request.getRemoteAddr();
     }
