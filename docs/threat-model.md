@@ -476,7 +476,7 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 | SAML KeyInfo/metadata/issuer mismatch (`B-SAML-3`); legacy CBC+OAEP-SHA1 encryption (`B-SAML-2`, outward-facing — per-SP opt-in) | **B-SAML-3**, **B-SAML-2** | Medium |
 | Tamper-evident audit log (HMAC chain) | **B-TEN-5** | Low |
 | A 401 carries the same error code whether the session expired or the credential just supplied was wrong, so a client can only tell them apart by path. F61 allowlisted the two password-re-verifying endpoints; the list is stale-prone and nothing fails if the next one is forgotten | **B-AUTH-7** | Low |
-| `sso.auth.login` is registered twice with different tag sets, so Micrometer refuses one and login metrics are silently dropped. Observed on `sha-b8aa10b`; predates F58-F60. Left alone by F61 because the fix is a metrics-contract decision, not a security one | **B-OBS-1** | Low |
+| `sso.auth.login` has never counted a login: two unused eager beans hold the name with `[outcome]`, so the three real call sites using `[outcome, tenant]` are refused and the metric reads a flat zero. Any alert on failed-login rate has been reading zero rather than no data. Visibility only — lockout and the audit trail are unaffected | **B-OBS-1** | Medium |
 | Actuator / Swagger gated only by ingress/app-key, not role | **L1/L2** / **B-LEGACY-4** | Low |
 
 Recently **closed** (now counted as mitigations above, not open): failed-login

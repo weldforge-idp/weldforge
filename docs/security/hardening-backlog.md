@@ -343,20 +343,43 @@ chance of surfacing unrelated failures. *Fix:* lift the image to
 class so it cannot drift per-file again, and run the full gate; treat anything it
 surfaces as the point of the exercise rather than as a blocker.
 
-**B-OBS-1 · Low · `sso.auth.login` fails to register, so login metrics are dropped.**
-Observed in the production log on `sha-b8aa10b`, and it predates F58/F59/F60:
-`FailedLoginRecorder.bumpFailureCounter` registers `sso.auth.login` with tags
-`[outcome, tenant]` while something else registers the same name with `[outcome]`
-alone. Micrometer refuses the second registration — *"Prometheus requires that all
-meters with the same name have the same set of tag keys"* — so whichever side loses
-the race silently stops counting, and the only evidence is a WARN at startup
-followed by DEBUG.
+**B-OBS-1 · Medium · `sso.auth.login` has never counted a single login.**
+First seen as a WARN in the production log on `sha-b8aa10b` and traced during F61.
+It is not "some metrics dropped" — the metric is inert, and has been:
 
-Deliberately untouched by F61 even though it edits that class, because the fix is a
-metrics-contract decision and not a security one: whether `tenant` belongs on that
-meter at all, given it multiplies cardinality by tenant count and the dashboards
-may already aggregate without it. *Fix:* pick one tag set, register it in one
-place, and check the Grafana queries before changing which labels exist.
+1. `config/metrics/SsoMetricsConfig` registers **two eager `@Bean` Counters** named
+   `sso.auth.login`, tagged `[outcome]` only (`success` and `failure`), at startup.
+2. Those two beans are **injected nowhere**. Nothing ever increments them.
+3. The three real call sites — `AuthService` lines ~267 and ~320 for success,
+   `FailedLoginRecorder.bumpFailureCounter` for failure — ask for
+   `sso.auth.login` with `[outcome, tenant]`.
+4. The name is already taken with a different tag-key set, so Micrometer refuses
+   them: *"Prometheus requires that all meters with the same name have the same set
+   of tag keys"*, logged once at WARN and thereafter at DEBUG.
+
+So `/actuator/prometheus` has always carried `sso_auth_login` reading **0**, for
+both outcomes, while every real sign-in and every real failure incremented
+nothing. The eager beans won because they registered first, and they are the ones
+nobody uses.
+
+**Why this is Medium and not Low** (it was filed Low on the strength of the log
+line alone, before the cause was traced): the failed-login rate is exactly the
+signal you would alert on for an identity provider, and any dashboard or alert
+built on it has been reading a flat zero rather than reporting no data. A silent
+monitoring gap on authentication failures is worth more than the cosmetic
+"duplicate meter" the warning suggests. The per-user lockout and the audit trail
+are unaffected — this is visibility, not enforcement — which is what keeps it off
+High.
+
+Deliberately untouched by F61 even though that work edits `FailedLoginRecorder`,
+and the restraint is the same as for B-AUTH-6 itself: the fix needs a decision
+about the tag set, not just a delete. Dropping the unused beans makes the
+`[outcome, tenant]` sites start working and multiplies series by tenant count;
+dropping `tenant` from the call sites keeps cardinality flat but loses per-tenant
+breakdown on a shared estate where one tenant holds nine of twelve users. *Fix:*
+choose the tag set, register it in exactly one place, delete the beans nobody
+injects, and check the Grafana queries before changing which labels exist —
+whatever they currently plot has been plotting zero.
 
 ### OAuth2 / OIDC
 
