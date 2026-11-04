@@ -48,11 +48,15 @@ class RateLimitingFilterTest {
 
         for (String uri : new String[]{
                 "/api/auth/forgot-password", "/api/auth/reset-password",
-                "/api/auth/resend-verification", "/api/auth/mfa/sms/send"}) {
+                "/api/auth/resend-verification", "/api/auth/mfa/sms/send",
+                // B-AUTH-5 (F60): /mfa/reset re-verifies the password, so left
+                // off this list it answered password guesses at full speed with
+                // nothing recorded.
+                "/api/auth/mfa/reset"}) {
             filter.doFilterInternal(req(uri), mock(HttpServletResponse.class), chain);
         }
 
-        verify(service, times(4)).tryConsume(eq(Bucket4jEndpoint.RECOVERY), any());
+        verify(service, times(5)).tryConsume(eq(Bucket4jEndpoint.RECOVERY), any());
     }
 
     @Test

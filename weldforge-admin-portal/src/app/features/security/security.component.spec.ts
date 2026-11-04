@@ -29,6 +29,7 @@ describe('SecurityComponent — recovery codes on first enrolment', () => {
       activateTotp: vi.fn().mockReturnValue(of({ id: 2, type: 'TOTP' })),
       enrollTotp: vi.fn().mockReturnValue(of({ factorId: 2, otpauthUrl: 'otpauth://x', secret: 's' })),
       deleteFactor: vi.fn().mockReturnValue(of(void 0)),
+      selfReset: vi.fn().mockReturnValue(of({ removed: 1 })),
     };
     ceremony = {
       available: () => true,
@@ -49,6 +50,8 @@ describe('SecurityComponent — recovery codes on first enrolment', () => {
     fixture.detectChanges();
     return fixture.componentInstance as SecurityComponent & {
       addSecurityKey(): void; freshBackupCodes(): string[]; backupRemaining(): number;
+      confirmSelfReset(): void; resetPassword: string; resetCode: string;
+      resetUsingBackupCode: boolean;
     };
   }
 
@@ -82,5 +85,31 @@ describe('SecurityComponent — recovery codes on first enrolment', () => {
 
     c.activateTotp();
     await vi.waitFor(() => expect(mfa['regenerateBackupCodes']).toHaveBeenCalled());
+  });
+
+  // B-AUTH-5 (F60): the reset now carries a factor proof as well as the
+  // password, and which verifier it goes to is explicit rather than guessed
+  // from the shape of what was typed.
+  it('sends a TOTP proof alongside the password on reset', () => {
+    const c = create(3);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    c.resetPassword = 'hunter2!Strong';
+    c.resetCode = '123456';
+
+    c.confirmSelfReset();
+
+    expect(mfa['selfReset']).toHaveBeenCalledWith('hunter2!Strong', { type: 'TOTP', code: '123456' });
+  });
+
+  it('sends a backup code when the user says the authenticator is gone', () => {
+    const c = create(3);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    c.resetPassword = 'hunter2!Strong';
+    c.resetUsingBackupCode = true;
+    c.resetCode = 'ABCD-1234';
+
+    c.confirmSelfReset();
+
+    expect(mfa['selfReset']).toHaveBeenCalledWith('hunter2!Strong', { backupCode: 'ABCD-1234' });
   });
 });

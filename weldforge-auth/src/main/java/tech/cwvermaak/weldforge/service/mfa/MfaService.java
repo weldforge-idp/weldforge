@@ -52,6 +52,10 @@ public class MfaService {
     private final AuditService auditService;
     private final TwilioService twilioService;
     private final tech.cwvermaak.weldforge.repository.ConsumedMfaChallengeRepository consumedMfaChallengeRepository;
+    // B-AUTH-5 (F60): a failed password re-verification on the reset path is a
+    // password guess, so it feeds the same per-user lockout as a failed login.
+    private final tech.cwvermaak.weldforge.service.security.AccountLockoutService lockoutService;
+    private final tech.cwvermaak.weldforge.service.security.FailedLoginRecorder failedLoginRecorder;
 
     private static final SecureRandom SMS_CODE_RNG = new SecureRandom();
     private static final long SMS_CODE_TTL_SECONDS = 300;
@@ -223,34 +227,120 @@ public class MfaService {
                 AuditService.meta("phone", maskPhone(factor.getPhoneNumber())));
     }
 
+    /**
+     * Remove one factor.
+     *
+     * <p>Refuses when the target is the caller's last verified, enabled factor
+     * (B-AUTH-5, F60). This route takes a path variable and an access token and
+     * asks for nothing else, so without the guard it is a cheaper way to strip
+     * MFA than {@link #selfReset} — which is the endpoint built to demand
+     * proof. Turning MFA off is allowed; doing it without proving you still
+     * hold a factor is not, so the caller is sent to the reset instead.
+     *
+     * <p>The guard keys on verified <em>and</em> enabled factors, which is what
+     * keeps the enrollment-cancel path working: a half-finished TOTP enrollment
+     * is unverified, so abandoning it is unaffected. Keying on "the last row"
+     * would have left a user unable to back out of a setup they mistyped.
+     *
+     * <p>Removing a non-last factor still needs only the token. That cannot
+     * take the account to zero factors, every removal is audited, and the
+     * alternative is a DELETE with a request body. Accepted residual, recorded
+     * in the backlog.
+     */
     @Transactional
     public void deleteFactor(User user, Long factorId) {
         MfaFactor factor = mfaFactorRepository.findByIdAndUserId(factorId, user.getId())
                 .orElseThrow(() -> new EntityNotFoundException("Factor " + factorId + " not found"));
+        if (isLastVerifiedFactor(user, factor)) {
+            auditService.recordUserAction(AuditEventTypes.MFA_SELF_RESET_DENIED, user,
+                    AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factorId),
+                    AuditService.meta("reason", "last_verified_factor", "route", "delete_factor"));
+            throw new LastFactorProtectedException();
+        }
         mfaFactorRepository.delete(factor);
         auditService.recordUserAction(AuditEventTypes.MFA_FACTOR_REMOVE, user,
                 AuditEventTypes.TARGET_MFA_FACTOR, String.valueOf(factorId),
                 AuditService.meta("type", factor.getType().name(), "label", factor.getLabel()));
     }
 
+    /** Response to any refused reset. Deliberately says which of the two it was not. */
+    private static final String RESET_REFUSED = "Password or verification code incorrect";
+
     /**
-     * Self-service MFA reset. The caller must re-verify their password —
-     * this blocks session-hijack scenarios where a stolen access token
-     * could otherwise strip the rightful owner's second factor. All
-     * factors and unused backup codes are wiped; re-enrollment is required
-     * on the next login.
+     * Self-service MFA reset. Wipes every factor and unused backup code;
+     * re-enrollment is required on the next login.
+     *
+     * <p><strong>Requires the password and a current factor proof together</strong>
+     * (B-AUTH-5, F60). The password alone used to be enough, which made this a
+     * downgrade to no-MFA available to anyone holding a stolen access token and
+     * the password — and the password is exactly what MFA exists to survive.
+     *
+     * <p>The proof goes through {@link #verifyChallenge}, so a TOTP code, an SMS
+     * code, a WebAuthn assertion or a <em>backup code</em> all satisfy it.
+     * Backup codes counting is the point rather than a concession: this endpoint
+     * exists for the lost-authenticator case, and demanding an authenticator
+     * proof would mean demanding the thing the user has just lost. Lost
+     * everything is {@link #adminReset}, out of band, by a human.
+     *
+     * <p>An account with <em>no</em> verified factor resets on the password
+     * alone. There is nothing to protect and no proof it could supply, and
+     * requiring one would strand precisely the accounts that are not at risk.
+     * The invariant still holds: such an account is already unprotected, so the
+     * transition this guard forbids cannot happen.
+     *
+     * <p>Both refusals return one indistinguishable 401, so the endpoint cannot
+     * confirm a password independently of a factor. They are separate events in
+     * the audit log, and they feed different counters on purpose: a wrong
+     * password is the same event as a wrong password at {@code /api/auth/login}
+     * and feeds the account lockout; a wrong code is the same event as a wrong
+     * code at {@code /api/auth/mfa/verify}.
      */
     @Transactional
-    public int selfReset(User user, String password) {
+    public int selfReset(User user, String password, MfaVerifyRequestDto proof) {
+        // Before the password is read, as at login: otherwise lockout stops
+        // guessing at the front door while this endpoint keeps answering.
+        lockoutService.ensureNotLocked(user);
+
         if (user.getPassword() == null || password == null
                 || !passwordEncoder.matches(password, user.getPassword())) {
-            throw new BadCredentialsException("Password re-verification failed");
+            failedLoginRecorder.badResetPassword(user);
+            throw new BadCredentialsException(RESET_REFUSED);
         }
+
+        List<MfaFactor> protectedBy =
+                mfaFactorRepository.findByUserIdAndEnabledTrueAndVerifiedTrue(user.getId());
+        if (!protectedBy.isEmpty()) {
+            if (proof == null || !verifyChallenge(user, proof)) {
+                MfaFactorType attempted = proof != null ? proof.getType() : null;
+                recordChallengeFailure(user, attempted);
+                auditService.recordUserAction(AuditEventTypes.MFA_SELF_RESET_DENIED, user,
+                        AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                        AuditService.meta("reason", "factor_proof_failed",
+                                "factors_held", protectedBy.size()));
+                throw new BadCredentialsException(RESET_REFUSED);
+            }
+        }
+
         int removed = wipeFactors(user);
         auditService.recordUserAction(AuditEventTypes.MFA_SELF_RESET, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
-                AuditService.meta("removed", removed));
+                AuditService.meta("removed", removed,
+                        "proof", protectedBy.isEmpty() ? "none_held" : "verified"));
         return removed;
+    }
+
+    /**
+     * True when this factor is the only thing standing between the account and
+     * no MFA at all. Uses the same predicate as {@link #hasVerifiedFactor}, so
+     * the two cannot drift apart.
+     */
+    private boolean isLastVerifiedFactor(User user, MfaFactor factor) {
+        if (!Boolean.TRUE.equals(factor.getEnabled()) || !Boolean.TRUE.equals(factor.getVerified())) {
+            return false;
+        }
+        List<MfaFactor> verified =
+                mfaFactorRepository.findByUserIdAndEnabledTrueAndVerifiedTrue(user.getId());
+        return verified.size() <= 1;
     }
 
     /**

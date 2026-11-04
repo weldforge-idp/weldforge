@@ -310,7 +310,9 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
 
 ### S7 — MFA bypass / replay
 - **Threat.** Replay a captured TOTP within its window, or reuse a leaked MFA
-  challenge token; strip factors via self-service.
+  challenge token; strip factors via self-service — either through the reset
+  endpoint, or by deleting them one at a time over the factor route, which until
+  F60 asked for no password at all.
 - **Mitigation.** Backup codes are BCrypt-hashed, single-use, atomically marked
   consumed (`BackupCodeService`). Tenant policy can force enrollment/step-up;
   OIDC step-up enforces `max_age`/`require_mfa` freshness
@@ -321,10 +323,27 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   step `<=` the last accepted is rejected. Challenge-token reuse is closed
   (F9/`B-MFA-2`): tokens carry a `jti` recorded in `consumed_mfa_challenge` on
   first successful use, so the token is one-shot.
+- **Mitigation added (2026-11, F60/`B-AUTH-5`).** Taking MFA off now requires the
+  password **and** a current factor proof in the same request, so a stolen access
+  token plus a known password is no longer enough — which matters because the
+  password is precisely what MFA exists to survive. A backup code counts as proof,
+  keeping the lost-authenticator path self-service. The factor-delete route refuses
+  the last verified factor rather than accepting a body, so it is no longer the
+  cheap way around the reset, and an unverified enrollment can still be cancelled.
+  The password re-verification was also unthrottled and recorded nothing at all: it
+  now refuses a locked account before reading the password, records a failure that
+  feeds the per-user lockout, and sits in the `RECOVERY` rate-limit bucket. Both
+  refusals return one indistinguishable 401, so the endpoint cannot confirm a
+  password independently of a factor.
 - **Residual risk.** Low. The challenge token is still not IP/UA-bound
-  (deferred — `B-MFA-2` note); self-service MFA reset is password-only and
-  unthrottled (`B-AUTH-5`); a clock-behind device can have a current code
-  rejected after a prior future-skewed acceptance (benign, `B-MFA-1` note).
+  (deferred — `B-MFA-2` note); a stolen token can still remove a **non-last**
+  verified factor, taking a user from three factors to one but never to zero
+  (accepted, `B-AUTH-5` residual); a clock-behind device can have a current code
+  rejected after a prior future-skewed acceptance (benign, `B-MFA-1` note). The
+  self-service **password change** remains an unthrottled password oracle for a
+  caller who already holds a token (`B-AUTH-6`, filed by the F60 work and left for
+  its own decision — adding lockout there can lock people out of working
+  accounts).
 
 ### S8 — Credential stuffing
 - **Threat.** Automated login attempts with breached credential lists.
@@ -454,6 +473,7 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 | OIDC scope enforcement unconditional (needs client scope backfill) | **B-OIDC-4** (partial) | Medium |
 | SAML KeyInfo/metadata/issuer mismatch (`B-SAML-3`); legacy CBC+OAEP-SHA1 encryption (`B-SAML-2`, outward-facing — per-SP opt-in) | **B-SAML-3**, **B-SAML-2** | Medium |
 | Tamper-evident audit log (HMAC chain) | **B-TEN-5** | Low |
+| Self-service password change is an unthrottled password oracle for a caller holding a token (found by the F60 work; lockout there can lock people out of working accounts, so it is its own decision) | **B-AUTH-6** | Low |
 | Actuator / Swagger gated only by ingress/app-key, not role | **L1/L2** / **B-LEGACY-4** | Low |
 
 Recently **closed** (now counted as mitigations above, not open): failed-login

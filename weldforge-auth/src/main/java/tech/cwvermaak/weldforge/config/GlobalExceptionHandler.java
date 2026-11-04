@@ -190,6 +190,18 @@ public class GlobalExceptionHandler {
                 Map.of("reasons", ex.getReasons()));
     }
 
+    /**
+     * B-AUTH-5 (F60): refusing to remove the last verified factor over a route
+     * that asks for no proof. 409 rather than 403 — the caller is allowed to
+     * turn their own MFA off, just not without proving they still hold it.
+     */
+    @ExceptionHandler(tech.cwvermaak.weldforge.service.mfa.LastFactorProtectedException.class)
+    public ResponseEntity<Map<String, Object>> handleLastFactorProtected(
+            tech.cwvermaak.weldforge.service.mfa.LastFactorProtectedException ex,
+            HttpServletRequest request) {
+        return respond(HttpStatus.CONFLICT, "last_factor_protected", ex.getMessage(), request);
+    }
+
     @ExceptionHandler(tech.cwvermaak.weldforge.service.SeatLimitExceededException.class)
     public ResponseEntity<Map<String, Object>> handleSeatLimit(
             tech.cwvermaak.weldforge.service.SeatLimitExceededException ex,

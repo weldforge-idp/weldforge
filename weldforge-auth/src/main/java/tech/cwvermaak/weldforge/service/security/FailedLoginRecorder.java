@@ -102,6 +102,25 @@ public class FailedLoginRecorder {
                 AuditService.meta("reason", "bad_current_password"));
     }
 
+    /**
+     * Failed self-service MFA reset: the user supplied the wrong current
+     * password (B-AUTH-5, F60).
+     *
+     * <p>Unlike {@link #badCurrentPassword(User)} this <em>does</em> feed the
+     * account lockout, because the endpoint it guards is reachable with a
+     * stolen access token and used to answer password guesses at full speed
+     * with nothing recorded at all. The per-IP rate-limit bucket added
+     * alongside is defeated by rotating source addresses; this counter is not,
+     * which makes it the control that actually closes the oracle.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void badResetPassword(User user) {
+        lockoutService.recordFailure(user);
+        auditService.recordUserAction(AuditEventTypes.AUTH_MFA_RESET_DENIED, user,
+                AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                AuditService.meta("reason", "bad_password"));
+    }
+
     private void bumpFailureCounter(Tenant tenant) {
         meterRegistry.counter(LOGIN_COUNTER, "outcome", "failure", "tenant", tenant.getSlug()).increment();
     }

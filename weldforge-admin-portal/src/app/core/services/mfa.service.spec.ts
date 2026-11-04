@@ -57,17 +57,32 @@ describe('MfaService', () => {
   });
 
   describe('selfReset', () => {
-    it('forwards the password to /reset and yields the removed count', () => {
+    it('sends the password together with a TOTP proof and yields the removed count', () => {
       http.post.mockReturnValue(of({ removed: 2 }));
 
       let removed = 0;
-      service.selfReset('hunter2!Strong').subscribe(r => (removed = r.removed));
+      service
+        .selfReset('hunter2!Strong', { type: 'TOTP', code: '123456' })
+        .subscribe(r => (removed = r.removed));
+
+      // B-AUTH-5 (F60): the password alone is no longer accepted, so the
+      // client must flatten the proof into the same body.
+      expect(http.post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/auth/mfa/reset'),
+        { password: 'hunter2!Strong', type: 'TOTP', code: '123456' }
+      );
+      expect(removed).toBe(2);
+    });
+
+    it('sends a backup code as proof when the authenticator is gone', () => {
+      http.post.mockReturnValue(of({ removed: 1 }));
+
+      service.selfReset('hunter2!Strong', { backupCode: 'ABCD-1234' }).subscribe();
 
       expect(http.post).toHaveBeenCalledWith(
         expect.stringContaining('/api/auth/mfa/reset'),
-        { password: 'hunter2!Strong' }
+        { password: 'hunter2!Strong', backupCode: 'ABCD-1234' }
       );
-      expect(removed).toBe(2);
     });
   });
 });
