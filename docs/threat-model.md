@@ -340,10 +340,12 @@ Each scenario: **Threat → Existing mitigation (cited) → Residual risk**.
   verified factor, taking a user from three factors to one but never to zero
   (accepted, `B-AUTH-5` residual); a clock-behind device can have a current code
   rejected after a prior future-skewed acceptance (benign, `B-MFA-1` note). The
-  self-service **password change** remains an unthrottled password oracle for a
-  caller who already holds a token (`B-AUTH-6`, filed by the F60 work and left for
-  its own decision — adding lockout there can lock people out of working
-  accounts).
+  self-service **password change** was the same oracle for a caller already
+  holding a token; **closed 2026-11-04 (F61/`B-AUTH-6`)** — it now refuses a
+  locked account before the compare, feeds the per-user lockout, answers 423 when
+  the attempt trips the lock, and has its own rate-limit bucket. With it, no
+  endpoint that re-verifies the account password can be asked an unlimited number
+  of questions, or asked any of them silently.
 
 ### S8 — Credential stuffing
 - **Threat.** Automated login attempts with breached credential lists.
@@ -473,7 +475,8 @@ here — each is owned by [security/hardening-backlog.md](security/hardening-bac
 | OIDC scope enforcement unconditional (needs client scope backfill) | **B-OIDC-4** (partial) | Medium |
 | SAML KeyInfo/metadata/issuer mismatch (`B-SAML-3`); legacy CBC+OAEP-SHA1 encryption (`B-SAML-2`, outward-facing — per-SP opt-in) | **B-SAML-3**, **B-SAML-2** | Medium |
 | Tamper-evident audit log (HMAC chain) | **B-TEN-5** | Low |
-| Self-service password change is an unthrottled password oracle for a caller holding a token (found by the F60 work; lockout there can lock people out of working accounts, so it is its own decision) | **B-AUTH-6** | Low |
+| A 401 carries the same error code whether the session expired or the credential just supplied was wrong, so a client can only tell them apart by path. F61 allowlisted the two password-re-verifying endpoints; the list is stale-prone and nothing fails if the next one is forgotten | **B-AUTH-7** | Low |
+| `sso.auth.login` is registered twice with different tag sets, so Micrometer refuses one and login metrics are silently dropped. Observed on `sha-b8aa10b`; predates F58-F60. Left alone by F61 because the fix is a metrics-contract decision, not a security one | **B-OBS-1** | Low |
 | Actuator / Swagger gated only by ingress/app-key, not role | **L1/L2** / **B-LEGACY-4** | Low |
 
 Recently **closed** (now counted as mitigations above, not open): failed-login

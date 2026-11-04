@@ -39,7 +39,8 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class RateLimitingService {
 
-    public enum Bucket4jEndpoint { LOGIN, REGISTER, MFA_VERIFY, RECOVERY, PUBLIC_ORDER }
+    public enum Bucket4jEndpoint { LOGIN, REGISTER, MFA_VERIFY, RECOVERY, PUBLIC_ORDER,
+                                  PASSWORD_CHANGE }
 
     private final RateLimitProperties properties;
 
@@ -54,6 +55,22 @@ public class RateLimitingService {
     // payment-gateway checkout per call: its own bucket, register cadence, so
     // an order and a sign-up from the same office do not starve each other.
     private final ConcurrentMap<String, Bucket> orderBuckets    = new ConcurrentHashMap<>();
+    // B-AUTH-6 (F61): /api/auth/change-password re-verifies the account password,
+    // so left unthrottled it answered password guesses at full speed and burned a
+    // bcrypt comparison per guess.
+    //
+    // Its own map on the LOGIN cadence, because neither existing bucket fits.
+    // RECOVERY is 5/hour and a *successful* change consumes a token too, so five
+    // colleagues behind one office NAT rotating passwords after an incident would
+    // hit the cap and the sixth would be refused. Sharing the LOGIN map would let
+    // a password change and a sign-in starve each other from that same NAT --
+    // the objection F60 recorded against putting /mfa/reset there.
+    //
+    // This bucket is NOT the control that closes the oracle: the per-user lockout
+    // is, because five failures end the attempt however many addresses the caller
+    // rotates through. This only stops one source burning CPU, so it is sized to
+    // be generous enough that no legitimate office notices it.
+    private final ConcurrentMap<String, Bucket> passwordChangeBuckets = new ConcurrentHashMap<>();
 
     /**
      * Try to consume one token from the caller's bucket.
@@ -79,6 +96,9 @@ public class RateLimitingService {
             case MFA_VERIFY -> key -> mfaBuckets.computeIfAbsent(key, k -> newMfaBucket());
             case RECOVERY   -> key -> recoveryBuckets.computeIfAbsent(key, k -> newRecoveryBucket());
             case PUBLIC_ORDER -> key -> orderBuckets.computeIfAbsent(key, k -> newRecoveryBucket());
+            // Login cadence, separate map -- see the field comment.
+            case PASSWORD_CHANGE -> key ->
+                    passwordChangeBuckets.computeIfAbsent(key, k -> newLoginBucket());
         };
     }
 

@@ -93,13 +93,35 @@ public class FailedLoginRecorder {
 
     /**
      * Failed self-service password change — the user supplied the wrong
-     * current password.
+     * current password (B-AUTH-6, F61).
+     *
+     * <p>Until F61 this audited and returned, so {@code /api/auth/change-password}
+     * answered password guesses at full speed with nothing recorded but a row
+     * nothing alerts on. It now feeds the account lockout, for the same reason
+     * {@link #badResetPassword(User)} does: the per-IP bucket beside it is
+     * defeated by rotating source addresses, and the per-user counter is not.
+     *
+     * <p>That this can lock an already-authenticated account is the intended
+     * behaviour and not a new exposure. {@link #badPassword} already feeds the
+     * same counter from {@code /api/auth/login}, which needs no token at all — so
+     * anyone holding an email address could already lock that account for the
+     * configured window. This closes an oracle without handing out a lever that
+     * was not already lying around in a weaker position.
+     *
+     * @return the lock expiry if this failure was the one that tripped the lock,
+     *         otherwise {@code null}. The caller uses it to answer 423 with a
+     *         wait rather than a bare 401, so the user is told what happened at
+     *         the moment it happens instead of on their next attempt.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void badCurrentPassword(User user) {
+    public java.time.LocalDateTime badCurrentPassword(User user) {
+        lockoutService.recordFailure(user);
+        java.time.LocalDateTime lockedUntil = user.getLockedUntil();
         auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_CHANGE_FAILED, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
-                AuditService.meta("reason", "bad_current_password"));
+                AuditService.meta("reason", "bad_current_password",
+                        "locked", lockedUntil != null));
+        return lockedUntil;
     }
 
     /**

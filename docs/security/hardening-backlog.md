@@ -87,6 +87,7 @@ single-use**, and (3) **governance documentation**.
 | F59 | **The trusted-proxy boundary trusted every hop (B-AUTH-1)** — `internal-proxies: ".*"` made `RemoteIpValve` walk the whole `X-Forwarded-For` chain and return the leftmost, caller-chosen entry, so the earlier fix that switched from parsing the header to `getRemoteAddr()` resolved to the same value and three call-site comments said otherwise. Narrowed to the private ranges, overridable via `APP_TRUSTED_PROXIES`. Not exploitable in production — Traefik strips inbound `X-Forwarded-*` by default, measured on staging — but the app no longer depends on that. | `src/main/resources/application.yml`, `config/security/RateLimitingFilter.java`, `service/audit/AuditService.java`, `service/AuthService.java` |
 
 | F60 | **Removing MFA requires proving you still hold it (B-AUTH-5)** — `selfReset` took the password alone, and `DELETE /factors/{id}` took nothing at all, so a stolen access token could strip every factor one row at a time. A reset now needs the password *and* a current factor proof in the same request (TOTP, SMS, WebAuthn, or a backup code — the lost-authenticator path); the delete route refuses the last verified factor and names the reset instead, while still cancelling an unverified enrollment. The password check was also an unthrottled, unaudited oracle: it now records a failure, feeds the per-user lockout, refuses a locked account before reading the password, and sits in the `RECOVERY` bucket. Both refusals return one indistinguishable 401. | `service/mfa/MfaService.java`, `service/mfa/LastFactorProtectedException.java`, `service/security/FailedLoginRecorder.java`, `config/security/RateLimitingFilter.java`, `model/dto/MfaResetRequestDto.java`, portal `features/security/security.component.ts` |
+| F61 | **A failed password change is recorded and throttled (B-AUTH-6)** — `changePassword` audited a wrong current password and did nothing else: no lockout, no rate limit, no lock check, so a stolen access token bought unlimited silent password guesses at one bcrypt comparison each. It now refuses a locked account *before* the compare, feeds the per-user lockout, answers **423** (not a vague 401) when the attempt is what tripped the lock, resets the counter on a successful change, and sits in its own `PASSWORD_CHANGE` bucket. Fixed alongside: the portal interceptor read these 401s as session expiry and signed the user out — which made F60's reset message unreachable in the browser. | `service/AuthService.java`, `service/security/FailedLoginRecorder.java`, `service/security/RateLimitingService.java`, `config/security/RateLimitingFilter.java`, `config/GlobalExceptionHandler.java`, portal `core/interceptors/auth.interceptor.ts` |
 ---
 
 
@@ -253,21 +254,109 @@ which means a `DELETE` with a request body — a worse trade for an attack that
 cannot remove MFA protection. Spec:
 [plans/2026-11-03-mfa-reset-step-up.md](../plans/2026-11-03-mfa-reset-step-up.md).
 
-**B-AUTH-6 · Low · Self-service password change is an unthrottled password oracle.**
-Found while fixing B-AUTH-5; the same defect, two methods away.
-`FailedLoginRecorder.badCurrentPassword` audits `auth.password.change_failed` and
-then returns — it never calls `lockoutService.recordFailure` — and
-`/api/auth/change-password` is not in `RateLimitingFilter.ROUTES` either. So a
-caller holding a stolen access token can test password guesses against it at full
-speed, and the only trace is an audit row nothing alerts on.
+**B-AUTH-6 · Low · Self-service password change was an unthrottled password oracle. ✅ FIXED (F61).**
+With this, the invariant holds across the whole surface: *no endpoint that
+re-verifies the account password can be asked an unlimited number of questions,
+and none of them can be asked silently.* F60 made it true of `/mfa/reset`; F61
+makes it true of the last one.
 
-Deliberately **not** fixed alongside F60. The change is one line, but it alters the
-behaviour of an endpoint every signed-in user touches, and getting it wrong locks
-people out of working accounts — a blast radius that deserves its own decision
-rather than riding along on another item's. *Fix:* give it the same treatment as
-F60 gave the reset path (`recordFailure` + a `RECOVERY` bucket entry), and decide
-explicitly whether a failed change should be able to lock the account, given the
-caller is already authenticated.
+**The decision this was deferred for, and the answer.** The open question was
+whether a failed change should be able to lock an already-authenticated account.
+It should, and the argument is symmetry rather than appetite for risk:
+`FailedLoginRecorder.badPassword` already feeds the same counter from
+`/api/auth/login`, which needs no token at all — so anyone holding an email
+address could already lock that account for fifteen minutes from a *weaker*
+position. Recording the failure here hands an attacker nothing new while closing
+an oracle only this endpoint offered. The cost to a real user is bounded and
+small: `max-attempts: 5`, `lock-minutes: 15`, auto-cleared when the window
+elapses.
+
+**What landed:** `ensureNotLocked` before the password compare (so a locked
+account is not an oracle, and bcrypt's runtime is not a signal — asserted by a
+counting encoder in the BDD steps, not assumed); `recordFailure` on a wrong
+current password; `recordSuccess` on a successful one, so fumbles do not
+accumulate across changes; and a **423 `account_locked`** with `Retry-After` when
+the failure is the one that trips the lock.
+
+**423 rather than the login paths' vague 401, deliberately.** Both login paths
+convert `AccountLockedException` to "Invalid credentials" so an attacker cannot
+tell locked from non-existent. That reasoning does not reach here: the caller is
+authenticated as this account's owner, so there is nothing to conceal and being
+vague only leaves them guessing why a correct password is refused.
+
+**A dedicated `PASSWORD_CHANGE` rate-limit bucket, not `RECOVERY`.** A
+*successful* change consumes a token too, so `RECOVERY`'s 5/hour would refuse the
+sixth colleague behind one office NAT rotating passwords after an incident; and
+sharing the `LOGIN` map would let a change and a sign-in starve each other from
+that same NAT, the objection F60 recorded against putting `/mfa/reset` there. Own
+map, login cadence, no new config. Note the bucket is **not** the control that
+closes the oracle — the per-user lockout is, because five failures end the attempt
+however many source addresses the caller rotates through. The bucket only stops
+one source burning CPU.
+
+`RateLimitingFilter.ROUTES` also moved from `Map.of` to `Map.ofEntries`: `Map.of`
+caps at 10 pairs and this entry was the tenth, so the next route added would have
+failed to compile with an error naming an argument count rather than a limit.
+
+Spec: [plans/2026-11-04-change-password-throttle.md](../plans/2026-11-04-change-password-throttle.md).
+
+**B-AUTH-7 · Low · A 401 cannot be told apart from an expired session by its code.**
+Found while fixing B-AUTH-6, and half of it was a live defect that F61 fixed as a
+prerequisite. The portal's `auth.interceptor.ts` treats a 401 on any path outside
+`PRE_AUTH_PATHS` as an expired session: it refreshes, replays, gets the same 401,
+clears the token and navigates to `/login?reason=session_expired`. For an endpoint
+that re-verifies the password *inside the request* a 401 is a verdict on what the
+user just typed, so the user was signed out and told their session expired when in
+fact they mistyped. **F60 shipped exactly that on `/api/auth/mfa/reset`** — the
+"Password or code incorrect" message it added could never render in the browser.
+F61 allowlists both that path and `/api/auth/change-password`.
+
+The allowlist is the stale-prone fix, not the right one, which is why this stays
+open. The server *does* distinguish the two cases — `ApiAuthenticationEntryPoint`
+writes "Authentication required", `GlobalExceptionHandler` writes the thrown
+message — but gives both the code `unauthorized`, so a client cannot branch on
+anything but the path. Two consequences: a path list has to be updated by whoever
+adds the next password-re-verifying endpoint and nothing fails if they forget; and
+on an allowlisted path a genuinely expired token now passes through instead of
+being refreshed, so a token expiring while a form is open yields an error on that
+submit. *Fix:* give in-request credential failures their own error code and branch
+on that. It is a contract change affecting every client, hence its own item.
+
+**B-TEST-1 · Medium · Integration tests prove the schema two Postgres majors below production.**
+Found while running the F61 gate. All **22** classes under
+`src/test/java/.../integration/` construct
+`new PostgreSQLContainer<>("postgres:16-alpine")`, while this estate's Postgres is
+`postgres:18.1-alpine` (`postgres-18-0` on tech01, confirmed from the live pod
+spec). So every Flyway migration in this repository is verified by CI against 16
+and then applied to 18, and the house rule exists precisely because that gap is
+invisible until it is not: *"a migration verified by hand against 18.1 but run
+through Flyway only on 16 is not proved on 18."*
+
+Nothing is known to be broken — V1-V71 do apply to 18.1 in production, so the gap
+has cost nothing so far. It is the *next* migration that is exposed, and the
+failure would land at deploy time in every environment at once rather than in CI.
+
+Not fixed by F61, which ships no migration and would have been widened from a
+six-file security change into a 22-file test-infrastructure change with a real
+chance of surfacing unrelated failures. *Fix:* lift the image to
+`postgres:18.1-alpine` in one change, centralise it in a shared constant or base
+class so it cannot drift per-file again, and run the full gate; treat anything it
+surfaces as the point of the exercise rather than as a blocker.
+
+**B-OBS-1 · Low · `sso.auth.login` fails to register, so login metrics are dropped.**
+Observed in the production log on `sha-b8aa10b`, and it predates F58/F59/F60:
+`FailedLoginRecorder.bumpFailureCounter` registers `sso.auth.login` with tags
+`[outcome, tenant]` while something else registers the same name with `[outcome]`
+alone. Micrometer refuses the second registration — *"Prometheus requires that all
+meters with the same name have the same set of tag keys"* — so whichever side loses
+the race silently stops counting, and the only evidence is a WARN at startup
+followed by DEBUG.
+
+Deliberately untouched by F61 even though it edits that class, because the fix is a
+metrics-contract decision and not a security one: whether `tenant` belongs on that
+meter at all, given it multiplies cardinality by tenant count and the dashboards
+may already aggregate without it. *Fix:* pick one tag set, register it in one
+place, and check the Grafana queries before changing which labels exist.
 
 ### OAuth2 / OIDC
 

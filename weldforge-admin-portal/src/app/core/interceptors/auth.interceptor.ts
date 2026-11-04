@@ -58,7 +58,30 @@ import { sharedRefresh } from '../session-refresh';
 
 const SKIP_REFRESH_RETRY = new HttpContextToken<boolean>(() => false);
 
-/** Endpoints whose 401 means "bad credentials", not "session expired". */
+/**
+ * Endpoints whose 401 means "bad credentials", not "session expired".
+ *
+ * The last two are NOT pre-auth — they are called by a signed-in user — but
+ * they belong here for the same reason: they re-verify the account password
+ * inside the request, so a 401 is a verdict on what the user just typed and
+ * not on their session. Without them the interceptor refreshes, replays, gets
+ * the same 401 because the password is still wrong, then clears the token and
+ * navigates to /login?reason=session_expired. The component's own error
+ * message never renders, and the user is told their session expired when in
+ * fact they mistyped.
+ *
+ * /api/auth/mfa/reset was a live instance of that: F60 made it answer 401 for a
+ * wrong password or a wrong factor code, so the "Password or code incorrect"
+ * message it added to the security panel was unreachable in the browser.
+ *
+ * /api/auth/change-password has no caller in this portal yet, so it is listed
+ * pre-emptively rather than as a fix — any other API consumer hits the cascade
+ * today, and a future password-change form here would reintroduce it.
+ *
+ * A locked account is a 423, not a 401 (B-AUTH-6/F61), so it never reaches this
+ * code path at all. That is deliberate: it is the response a user hits
+ * repeatedly while locked, and it stays legible even if this list goes stale.
+ */
 const PRE_AUTH_PATHS = [
   '/api/auth/login',
   '/api/auth/refresh',
@@ -68,6 +91,8 @@ const PRE_AUTH_PATHS = [
   '/api/auth/reset-password',
   '/api/auth/verify-email',
   '/api/auth/resend-verification',
+  '/api/auth/mfa/reset',
+  '/api/auth/change-password',
 ];
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {

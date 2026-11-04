@@ -561,7 +561,12 @@ export class SecurityComponent implements OnInit {
         // The server deliberately will not say which half was wrong, so
         // neither do we — saying "password incorrect" would rebuild the
         // password oracle in the UI copy.
-        if (e?.status === 401) this.err('Password or code incorrect', e);
+        // 423 since F61: the reset path calls ensureNotLocked, so a locked
+        // account is told so rather than being handed the same vague 401 as a
+        // wrong code. The caller is authenticated as this account's owner, so
+        // there is nothing to conceal and the server's detail names the wait.
+        if (e?.status === 423) this.err('Account locked', e);
+        else if (e?.status === 401) this.err('Password or code incorrect', e);
         else this.err('Reset failed', e);
       },
     });

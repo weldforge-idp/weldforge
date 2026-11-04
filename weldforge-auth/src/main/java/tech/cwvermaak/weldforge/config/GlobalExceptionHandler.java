@@ -67,6 +67,48 @@ public class GlobalExceptionHandler {
      * {@link BadCredentialsException} keeps its own handler above; Spring
      * picks the most specific, so this changes nothing for a failed login.
      */
+    /**
+     * The account is inside an active lockout window (B-AUTH-6, F61).
+     *
+     * <p>423 rather than 401, and deliberately NOT vague. The two login paths
+     * catch {@link tech.cwvermaak.weldforge.service.security.AccountLockedException}
+     * and rethrow {@code BadCredentialsException("Invalid credentials")} so an
+     * attacker enumerating accounts cannot tell "locked" from "does not exist" --
+     * that reasoning does not reach here, because every endpoint that lets this
+     * exception escape is one the caller has already authenticated to as the
+     * account owner. There is nothing left to conceal from them, and withholding
+     * the reason only leaves them guessing why a correct password is refused.
+     *
+     * <p>The status matters beyond semantics. The admin portal's interceptor
+     * treats a 401 on a non-allowlisted path as an expired session: it refreshes,
+     * replays, fails again and signs the user out with
+     * {@code reason=session_expired}. A locked account is the one response a user
+     * hits repeatedly, so answering it with 401 would sign them out on every
+     * attempt -- while the lock also stops them signing back in. 423 is outside
+     * that code path entirely, which keeps the failure legible even if the
+     * allowlist goes stale again.
+     */
+    @ExceptionHandler(tech.cwvermaak.weldforge.service.security.AccountLockedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccountLocked(
+            tech.cwvermaak.weldforge.service.security.AccountLockedException ex,
+            HttpServletRequest request) {
+        long retryAfterSeconds = 1L;
+        if (ex.getLockedUntil() != null) {
+            long secs = java.time.Duration.between(
+                    java.time.LocalDateTime.now(), ex.getLockedUntil()).getSeconds();
+            retryAfterSeconds = Math.max(1L, secs);
+        }
+        long minutes = Math.max(1L, (retryAfterSeconds + 59L) / 60L);
+        ResponseEntity<Map<String, Object>> base = respond(HttpStatus.LOCKED, "account_locked",
+                "Too many failed attempts. This account is locked for another "
+                        + minutes + (minutes == 1 ? " minute." : " minutes."),
+                request, Map.of("retryAfterSeconds", retryAfterSeconds));
+        return ResponseEntity.status(base.getStatusCode())
+                .headers(base.getHeaders())
+                .header("Retry-After", String.valueOf(retryAfterSeconds))
+                .body(base.getBody());
+    }
+
     @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
     public ResponseEntity<Map<String, Object>> handleUnauthenticated(
             org.springframework.security.core.AuthenticationException ex, HttpServletRequest request) {
