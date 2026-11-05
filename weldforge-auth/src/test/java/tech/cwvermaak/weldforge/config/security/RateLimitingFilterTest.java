@@ -60,6 +60,25 @@ class RateLimitingFilterTest {
     }
 
     @Test
+    @DisplayName("change-password routes to its OWN PASSWORD_CHANGE bucket, not RECOVERY or LOGIN")
+    void changePasswordIsLimitedOnItsOwnBucket() throws Exception {
+        when(service.tryConsume(any(), any())).thenReturn(ConsumptionProbe.consumed(9L, 0L));
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilterInternal(req("/api/auth/change-password"),
+                mock(HttpServletResponse.class), chain);
+
+        verify(service).tryConsume(eq(Bucket4jEndpoint.PASSWORD_CHANGE), any());
+        // B-AUTH-6 (F61). Having its own bucket is the decision, not an
+        // accident: RECOVERY is 5/hour and a successful change consumes a
+        // token too, so an office rotating passwords after an incident would
+        // be refused; sharing the LOGIN map would let a change and a sign-in
+        // starve each other from that same NAT.
+        verify(service, never()).tryConsume(eq(Bucket4jEndpoint.RECOVERY), any());
+        verify(service, never()).tryConsume(eq(Bucket4jEndpoint.LOGIN), any());
+    }
+
+    @Test
     @DisplayName("the anonymous order funnel routes to its own PUBLIC_ORDER bucket, and a depleted one is a 429")
     void publicOrdersAreLimited() throws Exception {
         when(service.tryConsume(eq(Bucket4jEndpoint.PUBLIC_ORDER), any()))

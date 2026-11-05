@@ -41,25 +41,35 @@ import java.util.Map;
 @Slf4j
 public class RateLimitingFilter extends OncePerRequestFilter {
 
-    private static final Map<String, Bucket4jEndpoint> ROUTES = Map.of(
-            "/api/auth/login",                Bucket4jEndpoint.LOGIN,
-            "/api/auth/register",             Bucket4jEndpoint.REGISTER,
-            "/api/auth/mfa/verify",           Bucket4jEndpoint.MFA_VERIFY,
+    // Map.ofEntries, not Map.of: Map.of is limited to 10 key/value pairs and
+    // this list reached exactly 10 at F61, so the next route added would have
+    // failed to compile with an error naming an argument count rather than a
+    // limit. The cliff is removed here rather than left for whoever walks off it.
+    private static final Map<String, Bucket4jEndpoint> ROUTES = Map.ofEntries(
+            Map.entry("/api/auth/login",               Bucket4jEndpoint.LOGIN),
+            Map.entry("/api/auth/register",            Bucket4jEndpoint.REGISTER),
+            Map.entry("/api/auth/mfa/verify",          Bucket4jEndpoint.MFA_VERIFY),
             // B-AUTH-3: throttle account-recovery + SMS-send (email-abuse /
             // SendGrid-quota exhaustion / SMS toll-fraud).
-            "/api/auth/forgot-password",      Bucket4jEndpoint.RECOVERY,
-            "/api/auth/reset-password",       Bucket4jEndpoint.RECOVERY,
-            "/api/auth/resend-verification",  Bucket4jEndpoint.RECOVERY,
-            "/api/auth/mfa/sms/send",         Bucket4jEndpoint.RECOVERY,
+            Map.entry("/api/auth/forgot-password",     Bucket4jEndpoint.RECOVERY),
+            Map.entry("/api/auth/reset-password",      Bucket4jEndpoint.RECOVERY),
+            Map.entry("/api/auth/resend-verification", Bucket4jEndpoint.RECOVERY),
+            Map.entry("/api/auth/mfa/sms/send",        Bucket4jEndpoint.RECOVERY),
             // B-AUTH-5 (F60): /mfa/reset re-verifies the password, so left
             // unthrottled it answered password guesses at full speed. Same
             // bucket as the other rare, sensitive operations; LOGIN would have
             // let a reset attempt and a sign-in starve each other behind one
             // office NAT. The per-user lockout in MfaService.selfReset is the
             // control that survives an attacker rotating source addresses.
-            "/api/auth/mfa/reset",            Bucket4jEndpoint.RECOVERY,
+            Map.entry("/api/auth/mfa/reset",           Bucket4jEndpoint.RECOVERY),
+            // B-AUTH-6 (F61): the last endpoint that re-verifies the account
+            // password. Its OWN bucket rather than RECOVERY, because a
+            // successful change consumes a token too and RECOVERY's 5/hour
+            // would throttle an office rotating passwords after an incident.
+            // See RateLimitingService.passwordChangeBuckets.
+            Map.entry("/api/auth/change-password",     Bucket4jEndpoint.PASSWORD_CHANGE),
             // Anonymous: one pending order + one gateway checkout per call.
-            "/api/public/orders",             Bucket4jEndpoint.PUBLIC_ORDER
+            Map.entry("/api/public/orders",            Bucket4jEndpoint.PUBLIC_ORDER)
     );
 
     private final RateLimitingService rateLimitingService;

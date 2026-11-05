@@ -35,6 +35,7 @@ import tech.cwvermaak.weldforge.service.security.PasswordPolicyService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService;
 import tech.cwvermaak.weldforge.service.security.RefreshTokenService.Issued;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -442,11 +443,30 @@ public class AuthService {
         Tenant tenant = currentTenant();
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenant.getSlug(), email)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        // B-AUTH-6 (F61). Checked BEFORE the password is compared, for the two
+        // reasons it is checked before the compare at login: a locked account
+        // must not keep answering password questions, and bcrypt's runtime is
+        // itself a timing signal. Unlike login this does NOT convert the
+        // exception to a vague 401 -- the caller is authenticated as the owner
+        // of this account, so there is nothing to conceal and a 423 tells them
+        // how long to wait. See GlobalExceptionHandler.handleAccountLocked.
+        lockoutService.ensureNotLocked(user);
         if (user.getPassword() == null
                 || !passwordEncoder.matches(currentPassword, user.getPassword())) {
-            failedLoginRecorder.badCurrentPassword(user);
+            // Feeds the per-user lockout since F61; before that this endpoint
+            // was an unthrottled, effectively unaudited password oracle for
+            // anyone holding a stolen access token.
+            LocalDateTime lockedUntil = failedLoginRecorder.badCurrentPassword(user);
+            if (lockedUntil != null) {
+                throw new AccountLockedException(lockedUntil);
+            }
             throw new BadCredentialsException("Current password is incorrect");
         }
+        // Proving the current password is the same evidence a sign-in provides,
+        // so it clears the counter too. Without this, fumbles accumulate across
+        // successful changes and a user who mistyped twice months ago starts
+        // three attempts from a lock.
+        lockoutService.recordSuccess(user);
         passwordPolicyService.validate(newPassword, tenant);
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setTokenVersion(user.getTokenVersion() + 1);

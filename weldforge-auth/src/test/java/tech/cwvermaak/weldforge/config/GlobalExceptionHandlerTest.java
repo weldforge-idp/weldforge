@@ -39,6 +39,46 @@ class GlobalExceptionHandlerTest {
         assertThat(resp.getBody()).containsEntry("path", "/api/auth/login");
     }
 
+    /**
+     * B-AUTH-6 (F61). A locked account answers 423, not the 401 the login
+     * paths deliberately blur it into. The status is load-bearing beyond
+     * semantics: the portal interceptor acts on 401 and would read a lock as
+     * an expired session, signing the user out on every attempt while the
+     * lock also stops them signing back in.
+     */
+    @Test
+    void accountLockedReturns423_withRetryAfter() {
+        java.time.LocalDateTime until = java.time.LocalDateTime.now().plusMinutes(15);
+        ResponseEntity<Map<String, Object>> resp = handler.handleAccountLocked(
+                new tech.cwvermaak.weldforge.service.security.AccountLockedException(until),
+                request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.LOCKED);
+        assertThat(resp.getBody()).containsEntry("error", "account_locked");
+        // The wait is told to the caller twice: as a header a client can honour
+        // and in the body, because the caller is authenticated as this
+        // account's owner and there is nothing to conceal from them.
+        assertThat(resp.getHeaders().getFirst("Retry-After")).isNotNull();
+        long retryAfter = Long.parseLong(resp.getHeaders().getFirst("Retry-After"));
+        assertThat(retryAfter).isBetween(840L, 900L);
+        assertThat(resp.getBody()).containsKey("retryAfterSeconds");
+        assertThat(String.valueOf(resp.getBody().get("detail")))
+                .contains("locked for another");
+    }
+
+    /** A lock that has already elapsed must still produce a sane header. */
+    @Test
+    void accountLockedInThePastStillReturnsAPositiveRetryAfter() {
+        ResponseEntity<Map<String, Object>> resp = handler.handleAccountLocked(
+                new tech.cwvermaak.weldforge.service.security.AccountLockedException(
+                        java.time.LocalDateTime.now().minusMinutes(5)),
+                request);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.LOCKED);
+        assertThat(Long.parseLong(resp.getHeaders().getFirst("Retry-After")))
+                .isGreaterThanOrEqualTo(1L);
+    }
+
     @Test
     void badRequestReturns400() {
         ResponseEntity<Map<String, Object>> resp = handler.handleBadRequest(
