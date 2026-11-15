@@ -219,8 +219,38 @@ public class AuditService {
     public Page<AuditEvent> search(Long tenantId, String eventType, String actorEmail,
                                    LocalDateTime since, LocalDateTime until,
                                    int page, int size) {
-        return repository.search(tenantId, nullIfBlank(eventType), nullIfBlank(actorEmail),
-                since, until, PageRequest.of(page, size));
+        return repository.findAll(searchSpec(tenantId, nullIfBlank(eventType), nullIfBlank(actorEmail), since, until),
+                PageRequest.of(page, size, org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "createdAt")));
+    }
+
+    /**
+     * Only the filters actually supplied become predicates; a missing one is
+     * absent from the SQL rather than bound as a null (see AuditEventRepository).
+     */
+    static org.springframework.data.jpa.domain.Specification<AuditEvent> searchSpec(
+            Long tenantId, String eventType, String actorEmail, LocalDateTime since, LocalDateTime until) {
+        return (root, query, cb) -> {
+            java.util.List<jakarta.persistence.criteria.Predicate> where = new java.util.ArrayList<>();
+            if (tenantId != null) where.add(cb.equal(root.get("tenant").get("id"), tenantId));
+            if (eventType != null) where.add(cb.equal(root.get("eventType"), eventType));
+            if (actorEmail != null) {
+                // Wildcards in the filter are matched literally: "a_b" must not
+                // match "axb", and "%" must not match every row.
+                String needle = "%" + escapeLike(actorEmail.toLowerCase(java.util.Locale.ROOT)) + "%";
+                where.add(cb.like(cb.lower(root.get("actorEmail")), needle, LIKE_ESCAPE));
+            }
+            if (since != null) where.add(cb.greaterThanOrEqualTo(root.get("createdAt"), since));
+            if (until != null) where.add(cb.lessThan(root.get("createdAt"), until));
+            return cb.and(where.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+    }
+
+    /** '!' rather than a backslash: no Java or SQL string-escaping to get wrong. */
+    private static final char LIKE_ESCAPE = '!';
+
+    static String escapeLike(String s) {
+        return s.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     // ---- Internals --------------------------------------------------

@@ -1,29 +1,17 @@
 package tech.cwvermaak.weldforge.repository;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import tech.cwvermaak.weldforge.model.AuditEvent;
 
-import java.time.LocalDateTime;
-
-public interface AuditEventRepository extends JpaRepository<AuditEvent, Long> {
-
-    @Query("""
-        select e from AuditEvent e
-        where (:tenantId is null or e.tenant.id = :tenantId)
-          and (:eventType is null or e.eventType = :eventType)
-          and (:actorEmail is null or lower(e.actorEmail) like lower(concat('%', :actorEmail, '%')))
-          and (:since is null or e.createdAt >= :since)
-          and (:until is null or e.createdAt <  :until)
-        order by e.createdAt desc
-        """)
-    Page<AuditEvent> search(@Param("tenantId")   Long tenantId,
-                            @Param("eventType") String eventType,
-                            @Param("actorEmail") String actorEmail,
-                            @Param("since")     LocalDateTime since,
-                            @Param("until")     LocalDateTime until,
-                            Pageable pageable);
+/**
+ * Searching goes through {@link JpaSpecificationExecutor} so that a filter
+ * that is not supplied is simply absent from the SQL. The previous JPQL used
+ * {@code (:p is null or ...)} for every optional filter; Postgres cannot type
+ * a null bound only inside {@code concat()}, the driver sent it as bytea, and
+ * {@code lower(bytea)} failed -- so every search without an actor filter,
+ * including the audit page's default load, answered 500.
+ */
+public interface AuditEventRepository extends JpaRepository<AuditEvent, Long>,
+        JpaSpecificationExecutor<AuditEvent> {
 }
