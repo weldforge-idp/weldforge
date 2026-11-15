@@ -54,7 +54,7 @@ public class TenantIsolationSteps {
                 appClientRepo, mfaService, auditService,
                 mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),
                 new tech.cwvermaak.weldforge.service.TenantSeatService(userRepo),
-                mock(tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership.class));
+                mock(tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership.class), org.mockito.Mockito.mock(tech.cwvermaak.weldforge.service.security.RefreshTokenService.class));
     }
 
     @Given("tenants {string} and {string} exist")

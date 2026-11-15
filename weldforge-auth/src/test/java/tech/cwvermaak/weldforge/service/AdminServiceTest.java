@@ -44,8 +44,11 @@ class AdminServiceTest {
     private AdminService admin;
     private Tenant tenant;
 
+    private tech.cwvermaak.weldforge.service.security.RefreshTokenService refreshTokens;
+
     @BeforeEach
     void setUp() {
+        refreshTokens = org.mockito.Mockito.mock(tech.cwvermaak.weldforge.service.security.RefreshTokenService.class);
         tenantAccessor = mock(TenantAccessor.class);
         roleRepo = mock(RoleRepository.class);
         userRepo = mock(UserRepository.class);
@@ -58,7 +61,7 @@ class AdminServiceTest {
 
         admin = new AdminService(tenantAccessor, roleRepo, userRepo, envRepo,
                 appClientRepo, mfaService, auditService, passwordResetService,
-                new TenantSeatService(userRepo), globalSuperAdmin);
+                new TenantSeatService(userRepo), globalSuperAdmin, refreshTokens);
 
         tenant = Tenant.builder().id(7L).slug("acme").name("Acme").build();
     }

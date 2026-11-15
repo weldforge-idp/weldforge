@@ -361,6 +361,17 @@ public class AuthService {
         Issued issued = refreshTokenService.rotateForTenant(
                 presented.rawToken(), tenant.getId(), clientIp(request), userAgent(request));
         User user = issued.row().getUser();
+        // A deactivated account does not refresh. Only the OIDC refresh grant
+        // checked this, so a user offboarded by SCIM or deleted by an admin
+        // kept calling /api/auth/refresh -- including through the legacy
+        // refresh_token cookie the Safe Space and Krusty proxies use -- and
+        // every rotation minted a fresh access token at the user's CURRENT
+        // token_version, undoing the bump deactivation made, while the refresh
+        // expiry slid forward (security review 2026-11-15). The throw rolls
+        // this rotation back; deactivation itself revokes the family.
+        if (!user.isActive()) {
+            throw new BadCredentialsException("Account is disabled");
+        }
         // The legacy cookie follows this session only when it IS this session
         // (a proxy that sends only it, or a browser whose legacy cookie holds
         // the same token). Holding another tenant's session, it is left
