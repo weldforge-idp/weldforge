@@ -32,6 +32,7 @@ import tech.cwvermaak.weldforge.config.tenant.TenantResolverFilter;
 public class SecurityConfig {
 
     private final CustomOAuth2UserService customOAuth2UserService;
+    private final CustomOidcUserService customOidcUserService;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final AppAuthorizationFilter appAuthorizationFilter;
@@ -250,7 +251,14 @@ public class SecurityConfig {
                                         clientRegistrationRepository,
                                         org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter
                                                 .DEFAULT_AUTHORIZATION_REQUEST_BASE_URI)))
-                        .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+                        // BOTH services. Spring routes a sign-in whose scope
+                        // includes openid (Google, Microsoft, Apple, LinkedIn)
+                        // to oidcUserService and never consults userService;
+                        // with only the latter set, those providers skipped
+                        // every provisioning check (security review 2026-11-15).
+                        .userInfoEndpoint(userInfo -> userInfo
+                                .userService(customOAuth2UserService)
+                                .oidcUserService(customOidcUserService))
                         .successHandler(oAuth2LoginSuccessHandler)
                 )
 
