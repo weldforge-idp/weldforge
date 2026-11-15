@@ -49,7 +49,13 @@ public class JndiLdapClient implements LdapClient {
 
     @Override
     public Optional<LdapAttributes> authenticate(TenantLdapProvider provider, String username, String password) {
-        if (provider == null || username == null || username.isBlank() || password == null) {
+        // An empty password is refused here, not passed on. A simple bind
+        // with a DN and a zero-length password is an "unauthenticated bind"
+        // (RFC 4513 5.1.2): many directories, Active Directory among them,
+        // answer it with SUCCESS without checking anything, which made an
+        // empty password a valid login for any directory user.
+        if (provider == null || username == null || username.isBlank()
+                || password == null || password.isEmpty()) {
             return Optional.empty();
         }
         try {
@@ -137,9 +143,17 @@ public class JndiLdapClient implements LdapClient {
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
         env.put(Context.PROVIDER_URL, provider.getUrl());
         if (dn != null && !dn.isBlank()) {
+            // Never send a DN with an empty credential: that is an
+            // unauthenticated bind, which a directory may report as success
+            // without checking anything (RFC 4513 5.1.2). The last line of
+            // defence for both the user bind and the service-account bind --
+            // an anonymous service bind is configured with no bind DN at all.
+            if (password == null || password.isEmpty()) {
+                throw new IllegalArgumentException("Refusing an LDAP simple bind with an empty password");
+            }
             env.put(Context.SECURITY_AUTHENTICATION, "simple");
             env.put(Context.SECURITY_PRINCIPAL, dn);
-            env.put(Context.SECURITY_CREDENTIALS, password == null ? "" : password);
+            env.put(Context.SECURITY_CREDENTIALS, password);
         } else {
             env.put(Context.SECURITY_AUTHENTICATION, "none");
         }

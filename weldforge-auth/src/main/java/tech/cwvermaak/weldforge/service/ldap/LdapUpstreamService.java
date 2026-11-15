@@ -48,7 +48,10 @@ public class LdapUpstreamService {
 
     @Transactional
     public Optional<User> authenticate(Tenant tenant, String username, String password) {
-        if (tenant == null || username == null || password == null) return Optional.empty();
+        // Empty is refused before any directory is contacted: see
+        // JndiLdapClient -- a DN with an empty password is an unauthenticated
+        // bind, which some directories report as success.
+        if (tenant == null || username == null || password == null || password.isEmpty()) return Optional.empty();
         List<TenantLdapProvider> providers = providerRepository.findByTenantIdAndEnabledTrue(tenant.getId());
         if (providers.isEmpty()) return Optional.empty();
 
