@@ -59,6 +59,7 @@ public class ScimUserService {
     private final AuditService auditService;
     private final MeterRegistry meterRegistry;
     private final tech.cwvermaak.weldforge.service.TenantSeatService seatService;
+    private final tech.cwvermaak.weldforge.service.security.RefreshTokenService refreshTokenService;
 
     // ---- Read paths --------------------------------------------------
 
@@ -155,6 +156,7 @@ public class ScimUserService {
         boolean activeChanged = wasActive != incoming.isActive();
         user.setActive(incoming.isActive());
         seatService.assertCapacityForActivation(user.getTenant(), user, wasActive);
+        endSessionsIfDeactivated(user, wasActive);
 
         auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
                 .eventType(AUDIT_SCIM_USER_REPLACE)
@@ -208,6 +210,7 @@ public class ScimUserService {
         // The loop above may have flipped `active`; a PATCH that reactivates
         // a user consumes a seat exactly like a create does.
         seatService.assertCapacityForActivation(user.getTenant(), user, wasActive);
+        endSessionsIfDeactivated(user, wasActive);
 
         auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
                 .eventType(AUDIT_SCIM_USER_PATCH)
@@ -238,6 +241,20 @@ public class ScimUserService {
     }
 
     // ---- Helpers -----------------------------------------------------
+
+    /**
+     * Deactivation is offboarding, so it ends every session the person has.
+     * It used to flip the flag and nothing else: their access tokens, their
+     * refresh tokens and their browser session all kept working (security
+     * review 2026-11-15). The token_version bump kills outstanding access
+     * tokens; revoking the refresh families means a later REactivation does
+     * not quietly resume the sessions that were open when they left.
+     */
+    private void endSessionsIfDeactivated(User user, boolean wasActive) {
+        if (!wasActive || user.isActive()) return;
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        refreshTokenService.revokeAllForUser(user, "scim_deactivated");
+    }
 
     private List<User> matchUsers(Long tid, ParsedFilter parsed) {
         if (!parsed.hasFilter()) {

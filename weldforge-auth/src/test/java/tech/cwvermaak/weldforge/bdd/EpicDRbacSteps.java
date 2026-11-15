@@ -184,7 +184,7 @@ public class EpicDRbacSteps {
                 envRepo, appClientRepo, mfaService, auditService,
                 mock(tech.cwvermaak.weldforge.service.PasswordResetService.class),
                 new tech.cwvermaak.weldforge.service.TenantSeatService(userRepository),
-                mock(tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership.class));
+                mock(tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership.class), org.mockito.Mockito.mock(tech.cwvermaak.weldforge.service.security.RefreshTokenService.class));
         oidcClientService = new OidcClientService(tenantAccessor, oidcClientRepository, auditService,
                 new tech.cwvermaak.weldforge.service.oidc.AccessTokenLifetime(3600L));
     }

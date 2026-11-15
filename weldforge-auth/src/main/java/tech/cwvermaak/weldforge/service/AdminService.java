@@ -38,6 +38,7 @@ public class AdminService {
     private final PasswordResetService passwordResetService;
     private final TenantSeatService seatService;
     private final tech.cwvermaak.weldforge.config.tenant.GlobalSuperAdminMembership globalSuperAdmin;
+    private final tech.cwvermaak.weldforge.service.security.RefreshTokenService refreshTokenService;
 
     private static final SecureRandom RNG = new SecureRandom();
 
@@ -140,6 +141,9 @@ public class AdminService {
         user.setActive(false);
         user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
+        // The version bump kills access tokens; the refresh families must go
+        // too, or a restore would resume the sessions open at deletion.
+        refreshTokenService.revokeAllForUser(user, "admin_deleted");
         User actor = currentActor();
         auditService.recordAdmin(AuditEventTypes.USER_DELETE, actor,
                 AuditEventTypes.TARGET_USER, String.valueOf(id),

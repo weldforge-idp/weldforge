@@ -122,17 +122,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // Session revocation: if the token's version is older than the
         // user's current token_version, every outstanding access token was
         // invalidated (password change, admin reset, logout-all). Refuse.
-        if (tokenVersion != null && tenantSlug != null) {
+        //
+        // And the account must still exist and be active. Both used to be
+        // skipped: the lookup ran only when the token carried a version, and a
+        // missing user was simply authenticated anyway, so a deleted account's
+        // token kept working; an inactive one was never checked at all. That
+        // left every surface that runs on this filter -- the API, OIDC
+        // /authorize on the wf_session cookie, SAML SSO -- serving a person
+        // their organisation had offboarded (security review 2026-11-15).
+        if (tenantSlug != null) {
             var userOpt = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenantSlug.toString(), email);
-            if (userOpt.isPresent()) {
-                if (userOpt.get().getTokenVersion() > tokenVersion) {
-                    filterChain.doFilter(request, response);
-                    return;
-                }
-                // Actor identity — the cross-tenant selector (X-WF-Tenant)
-                // resolves admin memberships against this user id.
-                TenantContext.setActorUser(userOpt.get().getId());
+            if (userOpt.isEmpty() || !userOpt.get().isActive()) {
+                log.debug("jwt_user_missing_or_inactive sub={} tenant={}", email, tenantSlug);
+                filterChain.doFilter(request, response);
+                return;
             }
+            if (tokenVersion != null && userOpt.get().getTokenVersion() > tokenVersion) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            // Actor identity — the cross-tenant selector (X-WF-Tenant)
+            // resolves admin memberships against this user id.
+            TenantContext.setActorUser(userOpt.get().getId());
         }
 
         // The JWT is authoritative for *who* the caller is and *which tenant*

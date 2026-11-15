@@ -46,8 +46,11 @@ class ScimUserServiceTest {
     private final List<User> store = new ArrayList<>();
     private final AtomicLong idSeq = new AtomicLong(100);
 
+    private tech.cwvermaak.weldforge.service.security.RefreshTokenService refreshTokens;
+
     @BeforeEach
     void setUp() {
+        refreshTokens = org.mockito.Mockito.mock(tech.cwvermaak.weldforge.service.security.RefreshTokenService.class);
         tenantAccessor = mock(TenantAccessor.class);
         userRepository = mock(UserRepository.class);
         auditService = mock(AuditService.class);
@@ -84,7 +87,7 @@ class ScimUserServiceTest {
         });
 
         service = new ScimUserService(tenantAccessor, userRepository, auditService, new SimpleMeterRegistry(),
-                new TenantSeatService(userRepository));
+                new TenantSeatService(userRepository), refreshTokens);
     }
 
     private ScimUserDto sample(String userName) {

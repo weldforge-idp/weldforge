@@ -92,7 +92,7 @@ public class ScimProvisioningSteps {
         }).when(auditService).log(any());
 
         scimService = new ScimUserService(tenantAccessor, userRepository, auditService, new SimpleMeterRegistry(),
-                new TenantSeatService(userRepository));
+                new TenantSeatService(userRepository), org.mockito.Mockito.mock(tech.cwvermaak.weldforge.service.security.RefreshTokenService.class));
     }
 
     @Given("tenant {string} exists for SCIM")
