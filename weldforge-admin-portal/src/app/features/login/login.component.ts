@@ -329,6 +329,7 @@ export class LoginComponent implements OnInit {
 
   ngOnInit(): void {
     this.webauthnAvailable.set(this.ceremony.available());
+    this.resumeFederatedSignIn();
     const slug = this.branding.slugFromHost();
     if (slug) {
       // Brand for the application being signed in to, not just the tenant.
@@ -368,6 +369,45 @@ export class LoginComponent implements OnInit {
         : '';
     this.externalNav.go(
         `${environment.apiBaseUrl}/oauth2/authorization/${slug}-${p.provider.toLowerCase()}${query}`);
+  }
+
+  /**
+   * A social sign-in that still needs this tenant's say comes back here
+   * instead of to the app. The server puts what it needs in the URL FRAGMENT,
+   * which no server ever receives, and this reads it once and clears it from
+   * the address bar so the challenge token does not linger in history:
+   *
+   * - `#mfa=<challenge>&factors=TOTP,WEBAUTHN` -- the provider was the first
+   *   factor; finish with the second, exactly as after a password.
+   * - `#error=<code>` -- the tenant refused (inactive or locked account, or an
+   *   MFA enrolment this page cannot do).
+   *
+   * Before 2026-11-15 a social sign-in skipped both: it issued a full session
+   * to locked and deactivated accounts and to accounts with a second factor.
+   */
+  private resumeFederatedSignIn(): void {
+    const fragment = this.route.snapshot.fragment;
+    if (!fragment) return;
+    const params = new URLSearchParams(fragment);
+    const challenge = params.get('mfa');
+    const errorCode = params.get('error');
+    if (!challenge && !errorCode) return;
+
+    try {
+      history.replaceState(history.state, '', location.pathname + location.search);
+    } catch { /* not fatal: the token is single-purpose and short-lived */ }
+
+    if (challenge) {
+      this.challengeToken = challenge;
+      this.factors = (params.get('factors') ?? '')
+          .split(',').map(f => f.trim()).filter(Boolean) as MfaFactorType[];
+      this.mode.set(this.hasPasskey() ? 'passkey' : (this.hasAuthenticator() ? 'totp' : 'backup'));
+      this.step.set('mfa');
+      return;
+    }
+    this.error.set(errorCode === 'mfa_enrollment_required'
+        ? 'Your organisation requires two-factor authentication. Sign in with your password to set it up.'
+        : 'This account cannot sign in right now. Contact your administrator.');
   }
 
   titleCase(v: string): string {

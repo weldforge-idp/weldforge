@@ -286,3 +286,87 @@ describe('LoginComponent — second factor options', () => {
     expect(challengedWith(['WEBAUTHN', 'TOTP']).hasAuthenticator()).toBe(true);
   });
 });
+
+/**
+ * A social sign-in that the tenant has not finished with comes back to this
+ * page with the outcome in the URL fragment (2026-11-15). Before that, a
+ * social sign-in skipped MFA and the active/lockout checks entirely.
+ */
+describe('LoginComponent — resuming a social sign-in', () => {
+  let router: { navigate: ReturnType<typeof vi.fn> };
+  let auth: { login: ReturnType<typeof vi.fn>; verifyMfa: ReturnType<typeof vi.fn>; socialProviders: ReturnType<typeof vi.fn> };
+
+  function componentWithFragment(fragment: string | null): LoginComponent {
+    TestBed.resetTestingModule();
+    router = { navigate: vi.fn() };
+    auth = {
+      login: vi.fn(),
+      verifyMfa: vi.fn().mockReturnValue(of({ token: 'session-token' })),
+      socialProviders: vi.fn().mockReturnValue(of([])),
+    };
+    TestBed.configureTestingModule({
+      imports: [LoginComponent],
+      providers: [
+        { provide: AuthService, useValue: auth },
+        {
+          provide: TenantBrandingService,
+          useValue: { current: signal(null), slugFromHost: () => null, load: () => of(null) },
+        },
+        { provide: Router, useValue: router },
+        { provide: ExternalNavigator, useValue: { go: vi.fn() } },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams: {}, fragment } } },
+      ],
+    });
+    const c = TestBed.createComponent(LoginComponent).componentInstance as LoginComponent;
+    c.ngOnInit();
+    return c;
+  }
+
+  it('opens the second-factor step with the challenge from the fragment, and finishes the sign-in', () => {
+    const c = componentWithFragment('mfa=challenge-from-social&factors=TOTP');
+
+    expect(c.step()).toBe('mfa');
+    expect(c.hasAuthenticator()).toBe(true);
+
+    c.otp = '123456';
+    c.submitMfa();
+
+    expect(auth.verifyMfa).toHaveBeenCalledWith(
+      expect.objectContaining({ challengeToken: 'challenge-from-social', code: '123456' }));
+    expect(router.navigate).toHaveBeenCalled();
+    expect(auth.login).not.toHaveBeenCalled();
+  });
+
+  it('clears the challenge from the address bar', () => {
+    const replace = vi.spyOn(history, 'replaceState');
+
+    componentWithFragment('mfa=secret-challenge&factors=TOTP');
+
+    expect(replace).toHaveBeenCalled();
+    const url = String(replace.mock.calls.at(-1)?.[2] ?? '');
+    expect(url).not.toContain('secret-challenge');
+    replace.mockRestore();
+  });
+
+  it('leads with a passkey when that is the factor the account has', () => {
+    expect(componentWithFragment('mfa=c&factors=WEBAUTHN').mode()).toBe('passkey');
+  });
+
+  it('explains a refusal instead of signing in', () => {
+    const c = componentWithFragment('error=account_unavailable');
+
+    expect(c.step()).toBe('credentials');
+    expect(c.error()).toContain('cannot sign in');
+  });
+
+  it('explains that MFA must be set up first', () => {
+    expect(componentWithFragment('error=mfa_enrollment_required').error()).toContain('two-factor');
+  });
+
+  it('ignores an unrelated fragment', () => {
+    const c = componentWithFragment('section-2');
+
+    expect(c.step()).toBe('credentials');
+    expect(c.error()).toBeNull();
+  });
+});

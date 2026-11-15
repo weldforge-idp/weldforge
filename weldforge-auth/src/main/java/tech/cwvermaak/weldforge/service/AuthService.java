@@ -640,6 +640,49 @@ public class AuthService {
             return Optional.empty();
         }
 
+        // The upstream proved who the person is; it did not decide whether
+        // this tenant lets them in. Every gate a password sign-in and an LDAP
+        // sign-in apply after the credential applies here too. None did:
+        // a deactivated or locked account, and an account with a second
+        // factor enrolled, all received a full session from a social sign-in
+        // (security review 2026-11-15).
+        Tenant tenant = user.getTenant();
+        if (!user.isActive()) {
+            failedLoginRecorder.inactiveUser(tenant, user, user.getEmail(), "social:" + providerKey);
+            throw new FederatedSignInRefusedException(FederatedSignInRefusedException.ACCOUNT_UNAVAILABLE,
+                    "Account is not active");
+        }
+        try {
+            lockoutService.ensureNotLocked(user);
+        } catch (AccountLockedException locked) {
+            throw new FederatedSignInRefusedException(FederatedSignInRefusedException.ACCOUNT_UNAVAILABLE,
+                    "Account is locked");
+        }
+        // Deliberately NOT lockoutService.recordSuccess: the failure counter
+        // counts wrong passwords and second factors, and a social sign-in
+        // proves neither, so it must not wipe them.
+
+        if (mfaService.hasVerifiedFactor(user)) {
+            String challengeToken = jwtService.generateMfaChallengeToken(
+                    user.getId(), tenant.getId(), tenant.getSlug());
+            auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_MFA_REQUIRED, user,
+                    AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                    AuditService.meta("source", "social", "provider", providerKey));
+            return Optional.of(AuthResponseDto.builder()
+                    .mfaRequired(true)
+                    .mfaChallengeToken(challengeToken)
+                    .availableFactors(mfaService.availableFactors(user))
+                    .build());
+        }
+        if (mfaPolicyService.mustEnroll(user)) {
+            auditService.recordUserAction(AuditEventTypes.MFA_ENROLLMENT_REQUIRED, user,
+                    AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
+                    AuditService.meta("reason", "tenant_policy_required", "source", "social",
+                            "provider", providerKey));
+            throw new FederatedSignInRefusedException(FederatedSignInRefusedException.MFA_ENROLLMENT_REQUIRED,
+                    "This tenant requires two-factor authentication to be set up first");
+        }
+
         var providerRow = SocialRegistrationId.parse(tenantSlug + "-" + providerKey)
                 .flatMap(parsed -> socialProviderRepository
                         .findByTenant_SlugAndProviderAndEnabledTrue(tenantSlug, parsed.provider()));

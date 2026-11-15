@@ -90,17 +90,54 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         // CustomOAuth2UserService, before a seat was consumed; by the time we
         // are called the sign-in has been admitted.
         Object hd = principal.getAttribute("hd");
-        boolean issued = authService
-                .issueFederatedSession(slug, email, parsed.providerKey(),
-                        hd == null ? null : hd.toString(), request, response)
-                .isPresent();
-        if (!issued) {
+        java.util.Optional<tech.cwvermaak.weldforge.model.dto.AuthResponseDto> outcome;
+        try {
+            outcome = authService.issueFederatedSession(slug, email, parsed.providerKey(),
+                    hd == null ? null : hd.toString(), request, response);
+        } catch (tech.cwvermaak.weldforge.service.FederatedSignInRefusedException refused) {
+            // The tenant will not complete this sign-in (inactive, locked, or
+            // an MFA enrolment the browser flow cannot do). Back to the login
+            // page, which explains it, rather than a bare error page.
+            response.sendRedirect(loginPage(request, slug) + "#error=" + refused.getCode());
+            return;
+        }
+        if (outcome.isEmpty()) {
             log.warn("Social sign-in succeeded but no user row exists: tenant={} email={}", slug, email);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "No account for this sign-in");
             return;
         }
 
+        var result = outcome.get();
+        if (result.isMfaRequired()) {
+            // A second factor is enrolled, so the provider's word is the first
+            // factor only. The login page finishes it exactly as it finishes a
+            // password sign-in. The challenge rides in the FRAGMENT: it is
+            // never sent to a server, so it stays out of access logs and
+            // Referer headers, and the page clears it from the address bar.
+            String factors = result.getAvailableFactors() == null ? ""
+                    : String.join(",", result.getAvailableFactors().stream().map(Object::toString).toList());
+            response.sendRedirect(loginPage(request, slug)
+                    + "#mfa=" + java.net.URLEncoder.encode(result.getMfaChallengeToken(), StandardCharsets.UTF_8)
+                    + "&factors=" + java.net.URLEncoder.encode(factors, StandardCharsets.UTF_8));
+            return;
+        }
+
         response.sendRedirect(destination(request, slug));
+    }
+
+    /**
+     * The tenant's login page, carrying the OIDC continuation when the
+     * request still has a usable one (normally it does not -- the provider
+     * drops it -- and the page resumes it from sessionStorage instead).
+     */
+    private String loginPage(HttpServletRequest request, String slug) {
+        String origin = publicHost.originForTenant(slug);
+        String base = origin + "/login";
+        String encoded = request.getParameter("oidcReturnTo");
+        if (encoded != null && !encoded.isBlank() && !destination(request, slug).equals(origin + "/")) {
+            return base + "?oidcReturnTo=" + java.net.URLEncoder.encode(encoded, StandardCharsets.UTF_8);
+        }
+        return base;
     }
 
     /**
