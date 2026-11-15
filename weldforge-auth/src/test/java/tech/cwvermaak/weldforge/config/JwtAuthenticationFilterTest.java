@@ -56,6 +56,40 @@ class JwtAuthenticationFilterTest {
                 .build();
         when(userRepository.findByTenant_SlugAndEmailIgnoreCase("acme", "u@acme.test"))
                 .thenReturn(Optional.of(u));
+        // The filter refuses a token whose user does not exist (or is not
+        // active), so every principal a test signs in as must exist.
+        User superAdmin = User.builder().id(8L).email("super@acme.test")
+                .tokenVersion(0)
+                .tenant(Tenant.builder().id(1L).slug("acme").build())
+                .build();
+        when(userRepository.findByTenant_SlugAndEmailIgnoreCase("acme", "super@acme.test"))
+                .thenReturn(Optional.of(superAdmin));
+    }
+
+    @Test
+    @DisplayName("A token whose user is inactive is not authenticated")
+    void inactive_user_is_refused() throws Exception {
+        User gone = User.builder().id(9L).email("gone@acme.test").tokenVersion(0).active(false)
+                .tenant(Tenant.builder().id(1L).slug("acme").build()).build();
+        when(userRepository.findByTenant_SlugAndEmailIgnoreCase("acme", "gone@acme.test"))
+                .thenReturn(Optional.of(gone));
+        HttpServletRequest req = req("acme.sso.weldforge.org", "/api/auth/me");
+        when(req.getHeader("Authorization")).thenReturn("Bearer " + token("gone@acme.test", "acme", 1L, false));
+
+        filter.doFilter(req, mock(HttpServletResponse.class), (r, s) -> {});
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    @DisplayName("A token whose user no longer exists is not authenticated")
+    void missing_user_is_refused() throws Exception {
+        HttpServletRequest req = req("acme.sso.weldforge.org", "/api/auth/me");
+        when(req.getHeader("Authorization")).thenReturn("Bearer " + token("deleted@acme.test", "acme", 1L, false));
+
+        filter.doFilter(req, mock(HttpServletResponse.class), (r, s) -> {});
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @AfterEach
