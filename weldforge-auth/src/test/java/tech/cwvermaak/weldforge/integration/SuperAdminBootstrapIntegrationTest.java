@@ -88,4 +88,50 @@ class SuperAdminBootstrapIntegrationTest {
         assertThat(memberships.findByUser_Id(saved.getId()))
                 .anyMatch(m -> m.getTenant() == null && m.getAdminRole() == AdminRole.SUPER_ADMIN);
     }
+
+    /**
+     * The attack the old {@code findFirstByEmailIgnoreCase} lookup allowed:
+     * somebody registers the bootstrap address in a tenant with sign-up open
+     * (a row is saved before any verification), and a later restart promotes
+     * whichever row Postgres returns first. Here the impostor's row is written
+     * FIRST, so on a heap scan it is the one an unordered "first" returns.
+     */
+    @Test
+    @DisplayName("an unverified look-alike in an open-signup tenant is never promoted")
+    void impostorInAnotherTenantIsNotPromoted() {
+        String email = "contested-admin@test.example";
+        Tenant open = tenants.saveAndFlush(Tenant.builder()
+                .slug("open-signup-it").name("open").displayName("open").build());
+        Tenant home = tenants.saveAndFlush(Tenant.builder()
+                .slug("home-it").name("home").displayName("home").build());
+        User impostor = users.saveAndFlush(user(open, email, false));
+        User real = users.saveAndFlush(user(home, email, true));
+
+        org.springframework.test.util.ReflectionTestUtils.setField(bootstrap, "bootstrapEmail", email);
+
+        // Unnamed tenant: two accounts hold the address, so nobody is promoted.
+        org.springframework.test.util.ReflectionTestUtils.setField(bootstrap, "bootstrapTenant", "");
+        bootstrap.run(null);
+        assertThat(users.findById(impostor.getId()).orElseThrow().getAdminRole()).isEqualTo(AdminRole.NONE);
+        assertThat(users.findById(real.getId()).orElseThrow().getAdminRole()).isEqualTo(AdminRole.NONE);
+
+        // Named tenant: exactly the real account.
+        org.springframework.test.util.ReflectionTestUtils.setField(bootstrap, "bootstrapTenant", "home-it");
+        bootstrap.run(null);
+        assertThat(users.findById(real.getId()).orElseThrow().getAdminRole()).isEqualTo(AdminRole.SUPER_ADMIN);
+        assertThat(users.findById(impostor.getId()).orElseThrow().getAdminRole()).isEqualTo(AdminRole.NONE);
+        assertThat(memberships.findByUser_Id(impostor.getId())).isEmpty();
+    }
+
+    private static User user(Tenant tenant, String email, boolean verified) {
+        return User.builder()
+                .tenant(tenant)
+                .username(email)
+                .email(email)
+                .provider(AuthProvider.LOCAL)
+                .providerId(email)
+                .emailVerified(verified)
+                .adminRole(AdminRole.NONE)
+                .build();
+    }
 }

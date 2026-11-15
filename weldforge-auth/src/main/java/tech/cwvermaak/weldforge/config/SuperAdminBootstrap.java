@@ -12,10 +12,16 @@ import tech.cwvermaak.weldforge.model.AdminRole;
 import tech.cwvermaak.weldforge.model.User;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 
+import java.util.List;
+
 /**
  * One-time bootstrap: if {@code APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL} is set
- * and a user with that email exists in any tenant, promote them to super
- * admin. This exists so a freshly-installed system can be bootstrapped without
+ * and exactly one user holds that email -- in the tenant named by
+ * {@code APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_TENANT}, or across all tenants when
+ * that is unset -- promote them to super admin. Once any super admin exists the
+ * account must also have a verified address.
+ *
+ * <p>This exists so a freshly-installed system can be bootstrapped without
  * a manual UPDATE against the database — nothing seeds an admin user, so on a
  * fresh install the first account must register through the normal flow and
  * then be promoted here.
@@ -40,6 +46,15 @@ public class SuperAdminBootstrap implements ApplicationRunner {
     @Value("${app.admin.bootstrap-super-admin-email:}")
     private String bootstrapEmail;
 
+    /**
+     * The tenant the bootstrap account lives in ({@code APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_TENANT}).
+     * Optional, but set it: an address is unique only within a tenant, so
+     * without it the bootstrap can only act when exactly one account in the
+     * whole system holds the address.
+     */
+    @Value("${app.admin.bootstrap-super-admin-tenant:}")
+    private String bootstrapTenant;
+
     private final UserRepository userRepository;
     private final GlobalSuperAdminMembership globalMembership;
 
@@ -55,16 +70,47 @@ public class SuperAdminBootstrap implements ApplicationRunner {
     @Transactional
     public void run(ApplicationArguments args) {
         if (bootstrapEmail == null || bootstrapEmail.isBlank()) return;
+        String email = bootstrapEmail.trim();
+        String tenant = bootstrapTenant == null || bootstrapTenant.isBlank() ? null : bootstrapTenant.trim();
 
-        userRepository.findFirstByEmailIgnoreCase(bootstrapEmail.trim())
-                .ifPresentOrElse(
-                        this::promote,
-                        () -> log.warn("Bootstrap super-admin email {} does not match any existing user — "
-                                + "create the user first, then restart.", bootstrapEmail));
+        // Never pick "the first" account with the address. An address is
+        // unique only per tenant, so anyone who could register it in any
+        // tenant with sign-up open created a row that a later restart might
+        // promote -- the lookup had no tenant, no order and no verification
+        // check, and ran on every start. Name the tenant, or the address must
+        // be unambiguous across the whole system.
+        List<User> matches = tenant != null
+                ? userRepository.findByTenant_SlugAndEmailIgnoreCase(tenant, email).map(List::of).orElse(List.of())
+                : userRepository.findAllByEmailIgnoreCase(email);
+
+        if (matches.isEmpty()) {
+            log.warn("Bootstrap super-admin email {} does not match any existing user{} — "
+                    + "create the user first, then restart.", email, tenant != null ? " in tenant " + tenant : "");
+            return;
+        }
+        if (matches.size() > 1) {
+            log.warn("Bootstrap super-admin email {} is held by {} accounts in different tenants; promoting none. "
+                    + "Set APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_TENANT to the tenant the account lives in.",
+                    email, matches.size());
+            return;
+        }
+        promote(matches.get(0));
     }
 
     private void promote(User user) {
-        if (!(user.isSuperAdmin() && user.getAdminRole() == AdminRole.SUPER_ADMIN)) {
+        boolean alreadyPromoted = user.isSuperAdmin() && user.getAdminRole() == AdminRole.SUPER_ADMIN;
+        // Once any super admin exists, the bootstrap is a recovery path, not a
+        // first run, and the account must have proved it controls the address.
+        // On a fresh install nothing can be verified yet without mail, and
+        // there is no existing authority to protect, so the first promotion is
+        // allowed unverified.
+        if (!alreadyPromoted && !user.isEmailVerified()
+                && userRepository.existsByAdminRole(AdminRole.SUPER_ADMIN)) {
+            log.warn("Bootstrap super-admin {} has not verified its email address; promoting nobody. "
+                    + "Verify the address, then restart.", user.getEmail());
+            return;
+        }
+        if (!alreadyPromoted) {
             user.setSuperAdmin(true);
             user.setAdminRole(AdminRole.SUPER_ADMIN);
             // Any token minted before this carries adm=NONE, so invalidate them

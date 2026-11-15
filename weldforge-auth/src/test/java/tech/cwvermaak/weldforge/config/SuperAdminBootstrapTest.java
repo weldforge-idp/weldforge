@@ -53,7 +53,7 @@ class SuperAdminBootstrapTest {
     @Test
     @DisplayName("promotion sets adminRole, which is what authorization actually reads")
     void promotesAdminRoleNotJustTheBoolean() {
-        when(users.findFirstByEmailIgnoreCase("alice@acme.test")).thenReturn(Optional.of(alice));
+        when(users.findAllByEmailIgnoreCase("alice@acme.test")).thenReturn(java.util.List.of(alice));
 
         runWith("alice@acme.test");
 
@@ -68,7 +68,7 @@ class SuperAdminBootstrapTest {
     @DisplayName("tokens issued before promotion are invalidated")
     void bumpsTokenVersion() {
         alice.setTokenVersion(3);
-        when(users.findFirstByEmailIgnoreCase(anyString())).thenReturn(Optional.of(alice));
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of(alice));
 
         runWith("alice@acme.test");
 
@@ -81,7 +81,7 @@ class SuperAdminBootstrapTest {
         alice.setSuperAdmin(true);
         alice.setAdminRole(AdminRole.SUPER_ADMIN);
         alice.setTokenVersion(7);
-        when(users.findFirstByEmailIgnoreCase(anyString())).thenReturn(Optional.of(alice));
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of(alice));
         when(memberships.findByUser_Id(42L)).thenReturn(java.util.List.of(
                 tech.cwvermaak.weldforge.model.AdminMembership.builder()
                         .user(alice).tenant(null).adminRole(AdminRole.SUPER_ADMIN).build()));
@@ -96,7 +96,7 @@ class SuperAdminBootstrapTest {
     @Test
     @DisplayName("promotion grants the global membership that cross-tenant reach is decided by")
     void grantsGlobalMembership() {
-        when(users.findFirstByEmailIgnoreCase(anyString())).thenReturn(Optional.of(alice));
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of(alice));
 
         runWith("alice@acme.test");
 
@@ -112,7 +112,7 @@ class SuperAdminBootstrapTest {
         alice.setSuperAdmin(true);
         alice.setAdminRole(AdminRole.SUPER_ADMIN);
         alice.setTokenVersion(7);
-        when(users.findFirstByEmailIgnoreCase(anyString())).thenReturn(Optional.of(alice));
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of(alice));
 
         runWith("alice@acme.test");
 
@@ -127,7 +127,7 @@ class SuperAdminBootstrapTest {
     void repairsHalfPromotedUser() {
         alice.setSuperAdmin(true);
         alice.setAdminRole(AdminRole.NONE);
-        when(users.findFirstByEmailIgnoreCase(anyString())).thenReturn(Optional.of(alice));
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of(alice));
 
         runWith("alice@acme.test");
 
@@ -145,10 +145,104 @@ class SuperAdminBootstrapTest {
         verifyNoInteractions(memberships);
     }
 
+    // ---- Who gets promoted -------------------------------------------------
+    //
+    // An address is unique only per tenant. The lookup used to be
+    // findFirstByEmailIgnoreCase -- no tenant, no order, no verification -- so
+    // anyone who registered the bootstrap address in a tenant with sign-up
+    // open had a row that a later restart could promote to super admin.
+
+    private User someoneElseWithTheSameAddress() {
+        Tenant other = Tenant.builder().id(2L).slug("open-signup").name("Open").build();
+        return User.builder().id(99L).tenant(other).email("alice@acme.test")
+                .adminRole(AdminRole.NONE).build();
+    }
+
+    private void runWith(String email, String tenant) {
+        ReflectionTestUtils.setField(bootstrap, "bootstrapTenant", tenant);
+        runWith(email);
+    }
+
+    @Test
+    @DisplayName("an address held in two tenants promotes nobody when no tenant is named")
+    void ambiguousAddressPromotesNobody() {
+        User other = someoneElseWithTheSameAddress();
+        when(users.findAllByEmailIgnoreCase("alice@acme.test")).thenReturn(java.util.List.of(alice, other));
+
+        runWith("alice@acme.test");
+
+        assertThat(alice.getAdminRole()).isEqualTo(AdminRole.NONE);
+        assertThat(other.getAdminRole()).isEqualTo(AdminRole.NONE);
+        verify(users, never()).save(any());
+        verify(memberships, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("naming the tenant promotes the account there and ignores the same address elsewhere")
+    void tenantScopedLookup() {
+        alice.setEmailVerified(true);
+        when(users.findByTenant_SlugAndEmailIgnoreCase("acme", "alice@acme.test")).thenReturn(Optional.of(alice));
+
+        runWith("alice@acme.test", "acme");
+
+        assertThat(alice.getAdminRole()).isEqualTo(AdminRole.SUPER_ADMIN);
+        // The cross-tenant lookup is never consulted, so a row registered in
+        // another tenant cannot be the one chosen.
+        verify(users, never()).findAllByEmailIgnoreCase(anyString());
+    }
+
+    @Test
+    @DisplayName("naming a tenant where the address does not exist promotes nobody")
+    void tenantScopedNoMatch() {
+        when(users.findByTenant_SlugAndEmailIgnoreCase(anyString(), anyString())).thenReturn(Optional.empty());
+
+        runWith("alice@acme.test", "acme");
+
+        verify(users, never()).save(any());
+        verify(users, never()).findAllByEmailIgnoreCase(anyString());
+    }
+
+    @Test
+    @DisplayName("once a super admin exists, an unverified address is not promoted")
+    void unverifiedRefusedWhenSuperAdminExists() {
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of(alice));
+        when(users.existsByAdminRole(AdminRole.SUPER_ADMIN)).thenReturn(true);
+
+        runWith("alice@acme.test");
+
+        assertThat(alice.getAdminRole()).isEqualTo(AdminRole.NONE);
+        verify(users, never()).save(any());
+        verify(memberships, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("once a super admin exists, a verified address is still promoted (lockout recovery)")
+    void verifiedPromotedWhenSuperAdminExists() {
+        alice.setEmailVerified(true);
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of(alice));
+        when(users.existsByAdminRole(AdminRole.SUPER_ADMIN)).thenReturn(true);
+
+        runWith("alice@acme.test");
+
+        assertThat(alice.getAdminRole()).isEqualTo(AdminRole.SUPER_ADMIN);
+        verify(users).save(alice);
+    }
+
+    @Test
+    @DisplayName("a fresh install with no super admin promotes the first account unverified")
+    void firstRunNeedsNoVerification() {
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of(alice));
+        when(users.existsByAdminRole(AdminRole.SUPER_ADMIN)).thenReturn(false);
+
+        runWith("alice@acme.test");
+
+        assertThat(alice.getAdminRole()).isEqualTo(AdminRole.SUPER_ADMIN);
+    }
+
     @Test
     @DisplayName("an unknown email promotes nobody")
     void unknownEmailIsANoOp() {
-        when(users.findFirstByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
+        when(users.findAllByEmailIgnoreCase(anyString())).thenReturn(java.util.List.of());
 
         runWith("nobody@acme.test");
 

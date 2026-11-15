@@ -64,7 +64,7 @@ docker compose up -d db        # Postgres — the compose service is named "db"
 #     -H "X-Tenant-Slug: default" -H "Content-Type: application/json" \
 #     -d '{"name":"You","email":"you@example.com","password":"CorrectHorse-9!"}'
 #
-#   APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL=you@example.com ./mvnw spring-boot:run
+#   APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL=you@example.com \n#   APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_TENANT=default ./mvnw spring-boot:run
 #
 # That promotes the account to SUPER_ADMIN on start-up; sign in again
 # afterwards, because the promotion invalidates earlier tokens. See also
