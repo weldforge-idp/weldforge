@@ -21,6 +21,7 @@ public class SamlIdpAdminController {
 
     private final SamlIdpService samlIdpService;
     private final SamlMetadataParser metadataParser;
+    private final tech.cwvermaak.weldforge.config.tenant.TenantAccessor tenantAccessor;
 
     @GetMapping
     public ResponseEntity<List<SamlServiceProviderDto>> list() {
@@ -53,6 +54,9 @@ public class SamlIdpAdminController {
     @PostMapping("/import-metadata")
     public ResponseEntity<SamlServiceProviderDto> importMetadata(
             @RequestBody Map<String, String> body) {
+        // The URL form makes this server fetch an address the caller chooses;
+        // it must not be reachable by an ordinary signed-in user.
+        tenantAccessor.requireTenantAdmin();
         String xml = body != null ? body.get("metadataXml") : null;
         String url = body != null ? body.get("metadataUrl") : null;
 

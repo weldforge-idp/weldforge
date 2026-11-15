@@ -39,6 +39,7 @@ public class SecurityConfig {
     private final MdcEnrichmentFilter mdcEnrichmentFilter;
     private final ScimAuthenticationFilter scimAuthenticationFilter;
     private final CrossTenantSelectorFilter crossTenantSelectorFilter;
+    private final tech.cwvermaak.weldforge.config.tenant.AdminAreaGateFilter adminAreaGateFilter;
     private final DatabaseClientRegistrationRepository clientRegistrationRepository;
     private final DatabaseRelyingPartyRegistrationRepository relyingPartyRegistrationRepository;
     private final SamlUserProvisioningSuccessHandler samlSuccessHandler;
@@ -145,6 +146,10 @@ public class SecurityConfig {
                 // /api/admin/** once the caller's identity + home tenant are
                 // resolved by the auth filters above.
                 .addFilterAfter(crossTenantSelectorFilter, ScimAuthenticationFilter.class)
+                // /api/admin/** needs an admin role in the acting tenant, not
+                // merely a signed-in caller. After the selector so it judges
+                // the tenant the call acts in.
+                .addFilterAfter(adminAreaGateFilter, CrossTenantSelectorFilter.class)
                 // Runs after auth + cross-tenant resolution so MDC carries the
                 // effective actor + tenant + role on every downstream log line.
                 .addFilterAfter(mdcEnrichmentFilter, CrossTenantSelectorFilter.class)
