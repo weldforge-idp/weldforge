@@ -9,7 +9,7 @@
 #   #   JWT_SECRET=$(openssl rand -base64 64)
 #   #   APP_CRYPTO_SECRET=$(openssl rand -base64 32)
 #   #   DB_PASSWORD=$(openssl rand -base64 24)
-#   # put those + WF_BOOTSTRAP_ADMIN_EMAIL into .env, then:
+#   # put those + WF_BOOTSTRAP_ADMIN_EMAIL (+ WF_BOOTSTRAP_ADMIN_TENANT) into .env, then:
 #   docker compose -f docker-compose.selfhost.yml up -d
 #
 # That pulls prebuilt images — no JDK or Node needed. To build from source
@@ -71,7 +71,10 @@ services:
       APP_PUBLIC_BASE_DOMAIN: ${WF_BASE_DOMAIN:-localhost}
       APP_PUBLIC_SCHEME: ${WF_SCHEME:-http}
       # First super-admin bootstrap: set to an email you'll register, then restart.
+      # The tenant you registered in (default: "default"). Without it the
+      # address must be held by exactly one account across all tenants.
       APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_EMAIL: ${WF_BOOTSTRAP_ADMIN_EMAIL:-}
+      APP_ADMIN_BOOTSTRAP_SUPER_ADMIN_TENANT: ${WF_BOOTSTRAP_ADMIN_TENANT:-default}
       # WebAuthn/passkeys: defaults are localhost-only; override for a real host.
       APP_MFA_WEBAUTHN_RP_ID: ${WF_WEBAUTHN_RP_ID:-localhost}
       APP_MFA_WEBAUTHN_ORIGINS: ${WF_WEBAUTHN_ORIGINS:-http://localhost:8080}

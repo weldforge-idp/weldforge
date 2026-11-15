@@ -56,7 +56,8 @@ cp .env.selfhost.example .env
 #      openssl rand -base64 64   # -> JWT_SECRET
 #      openssl rand -base64 32   # -> APP_CRYPTO_SECRET
 #      openssl rand -base64 24   # -> DB_PASSWORD
-#    Also set WF_BOOTSTRAP_ADMIN_EMAIL to the email you'll register as admin.
+#    Also set WF_BOOTSTRAP_ADMIN_EMAIL to the email you'll register as admin,
+#    and WF_BOOTSTRAP_ADMIN_TENANT if you register outside the `default` tenant.
 
 # 3. Launch (pulls prebuilt images; add --build to compile from source instead)
 docker compose -f docker-compose.selfhost.yml up -d
@@ -78,9 +79,12 @@ control:
 
 1. Register your user in the app (the admin portal sign-up, or `POST
    /api/auth/register`).
-2. Set `WF_BOOTSTRAP_ADMIN_EMAIL` in `.env` to that email and restart
-   (`docker compose -f docker-compose.selfhost.yml up -d`). On boot the user is
-   promoted to super-admin.
+2. Set `WF_BOOTSTRAP_ADMIN_EMAIL` in `.env` to that email (and
+   `WF_BOOTSTRAP_ADMIN_TENANT` to the tenant you registered in, if not
+   `default`) and restart (`docker compose -f docker-compose.selfhost.yml up -d`).
+   On boot the user is promoted to super-admin. The bootstrap only ever
+   promotes the one account with that address in that tenant, and once any
+   super-admin exists it also requires the address to be verified.
 3. **Unset it again** afterwards (hygiene). Full detail:
    [`runbooks/production-bootstrap.md` §7](runbooks/production-bootstrap.md#7-establish-the-first-super-admin).
 

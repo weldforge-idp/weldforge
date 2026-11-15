@@ -27,6 +27,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findFirstByEmailIgnoreCase(String email);
 
+    /**
+     * Every account holding an address, across all tenants. An address is
+     * unique only within a tenant, so a caller that cannot name the tenant
+     * must look at all of them and treat more than one as ambiguous --
+     * {@link #findFirstByEmailIgnoreCase} picks one in no defined order.
+     */
+    List<User> findAllByEmailIgnoreCase(String email);
+
+    boolean existsByAdminRole(tech.cwvermaak.weldforge.model.AdminRole adminRole);
+
     default Optional<User> findByTenantAndIdentifier(Long tenantId, String identifier) {
         return findByTenantIdAndEmailIgnoreCase(tenantId, identifier)
                 .or(() -> findByTenantIdAndUsernameIgnoreCase(tenantId, identifier));
