@@ -113,7 +113,7 @@ class PasswordResetIntegrationTest {
 
         PasswordResetToken resetToken = resetTokenRepository.save(PasswordResetToken.builder()
                 .tenant(tenant)
-                .user(user)
+                .user(user).email(user.getEmail())
                 .tokenHash(tokenHash)
                 .expiresAt(LocalDateTime.now().plusHours(1))
                 .build());
@@ -160,7 +160,7 @@ class PasswordResetIntegrationTest {
 
         resetTokenRepository.save(PasswordResetToken.builder()
                 .tenant(tenant)
-                .user(user)
+                .user(user).email(user.getEmail())
                 .tokenHash(tokenHash)
                 .expiresAt(LocalDateTime.now().minusHours(1)) // Already expired
                 .build());
@@ -191,7 +191,7 @@ class PasswordResetIntegrationTest {
 
         resetTokenRepository.save(PasswordResetToken.builder()
                 .tenant(tenant)
-                .user(user)
+                .user(user).email(user.getEmail())
                 .tokenHash(tokenHash)
                 .expiresAt(LocalDateTime.now().plusHours(1))
                 .build());

@@ -150,7 +150,7 @@ class EmailVerificationIntegrationTest {
 
         tokenRepository.save(EmailVerificationToken.builder()
                 .tenant(tenant)
-                .user(user)
+                .user(user).email(user.getEmail())
                 .tokenHash(tokenHash)
                 .expiresAt(LocalDateTime.now().minusHours(1)) // Already expired
                 .build());
