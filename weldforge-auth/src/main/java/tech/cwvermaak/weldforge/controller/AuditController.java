@@ -78,6 +78,9 @@ public class AuditController {
      * regardless of what they pass.
      */
     private Long scopeTenantId(Long requestedTenantId) {
+        // Both endpoints come through here. Without it any signed-in end user
+        // could read and export their tenant's whole audit trail.
+        tenantAccessor.requireAnyAdmin();
         if (tenantAccessor.isSuperAdmin()) {
             return requestedTenantId; // null = all tenants
         }

@@ -43,6 +43,7 @@ public class TenantController {
     private final TenantLdapService tenantLdapService;
     private final TenantCrmService tenantCrmService;
     private final SamlMetadataParser samlMetadataParser;
+    private final tech.cwvermaak.weldforge.config.tenant.TenantAccessor tenantAccessor;
 
     @GetMapping
     public ResponseEntity<List<TenantDto>> list() {
@@ -160,6 +161,9 @@ public class TenantController {
     public ResponseEntity<SamlProviderDto> importSamlProviderMetadata(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
+        // The URL form makes this server fetch an address the caller chooses;
+        // it must not be reachable by an ordinary signed-in user.
+        tenantAccessor.requireTenantAdmin();
         String xml = body != null ? body.get("metadataXml") : null;
         String url = body != null ? body.get("metadataUrl") : null;
 

@@ -86,6 +86,7 @@ public class PaymentGatewayAdminController {
 
     @GetMapping("/api/admin/tenants/{tenantId}/payment-gateways")
     public List<PaymentGatewayDto> listTenant(@PathVariable Long tenantId) {
+        tenantAccessor.requireAnyAdmin();
         tenantAccessor.requireSameTenant(tenantId);
         return gatewayRepository.findEnabledTenantGateways(tenantId).stream()
                 .map(this::toDto).toList();
@@ -94,6 +95,7 @@ public class PaymentGatewayAdminController {
     @PostMapping("/api/admin/tenants/{tenantId}/payment-gateways")
     public ResponseEntity<PaymentGatewayDto> createTenant(@PathVariable Long tenantId,
                                                            @Valid @RequestBody PaymentGatewayDto dto) {
+        tenantAccessor.requireTenantAdmin();
         tenantAccessor.requireSameTenant(tenantId);
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Tenant not found"));
@@ -106,6 +108,7 @@ public class PaymentGatewayAdminController {
     public PaymentGatewayDto updateTenant(@PathVariable Long tenantId,
                                            @PathVariable Long id,
                                            @Valid @RequestBody PaymentGatewayDto dto) {
+        tenantAccessor.requireTenantAdmin();
         tenantAccessor.requireSameTenant(tenantId);
         PaymentGateway existing = gatewayRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
@@ -114,6 +117,7 @@ public class PaymentGatewayAdminController {
 
     @DeleteMapping("/api/admin/tenants/{tenantId}/payment-gateways/{id}")
     public ResponseEntity<Void> deleteTenant(@PathVariable Long tenantId, @PathVariable Long id) {
+        tenantAccessor.requireTenantAdmin();
         tenantAccessor.requireSameTenant(tenantId);
         PaymentGateway existing = gatewayRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));

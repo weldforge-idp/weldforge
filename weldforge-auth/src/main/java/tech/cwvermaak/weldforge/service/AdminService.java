@@ -44,6 +44,7 @@ public class AdminService {
     // -------- Roles ---------------------------------------------------
 
     public List<RoleDto> listRoles() {
+        tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
         return roleRepository.findByTenantId(tid).stream()
                 .map(AdminService::toDto)
@@ -52,6 +53,7 @@ public class AdminService {
 
     @Transactional
     public RoleDto createRole(RoleDto dto) {
+        tenantAccessor.requireTenantAdmin();
         if (dto.getName() == null || dto.getName().trim().isEmpty()) {
             throw new IllegalArgumentException("Role name cannot be empty");
         }
@@ -69,6 +71,7 @@ public class AdminService {
 
     @Transactional
     public RoleDto updateRole(Long id, RoleDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         Role role = roleRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("Role " + id + " not found"));
@@ -79,6 +82,7 @@ public class AdminService {
 
     @Transactional
     public void deleteRole(Long id) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         Role role = roleRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("Role " + id + " not found"));
@@ -195,6 +199,12 @@ public class AdminService {
         Long tid = tenantAccessor.requireTenantId();
         User target = userRepository.findByIdAndTenantId(targetUserId, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + targetUserId + " not found"));
+        // The response carries the raw reset token, so issuing one for a
+        // super admin is taking over that account. deleteUser and
+        // resetUserMfa already refuse a super-admin target; this did not.
+        if (target.isSuperAdmin() && !tenantAccessor.isSuperAdmin()) {
+            throw new AccessDeniedException("Cannot issue a password reset for a super admin");
+        }
         PasswordResetService.IssuedReset issued = passwordResetService.adminIssueReset(target);
         User actor = currentActor();
         auditService.recordAdmin(AuditEventTypes.ADMIN_PASSWORD_RESET_ISSUED, actor,
@@ -286,7 +296,9 @@ public class AdminService {
      */
     @Transactional
     public UserResponseDto setUserRoles(Long targetUserId, java.util.List<Long> roleIds) {
-        tenantAccessor.requireAnyAdmin();
+        // A write: READ_ONLY passed requireAnyAdmin here and could assign
+        // itself any role an app's RBAC reads.
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
 
         User target = userRepository.findByIdAndTenantId(targetUserId, tid)
@@ -435,6 +447,7 @@ public class AdminService {
     // -------- Environments --------------------------------------------
 
     public List<EnvironmentDto> listEnvironments() {
+        tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
         return environmentRepository.findByTenantId(tid).stream()
                 .map(AdminService::toDto)
@@ -443,6 +456,7 @@ public class AdminService {
 
     @Transactional
     public EnvironmentDto createEnvironment(EnvironmentDto dto) {
+        tenantAccessor.requireTenantAdmin();
         if (dto.getName() == null || dto.getName().isBlank()) {
             throw new IllegalArgumentException("Environment name is required");
         }
@@ -458,6 +472,7 @@ public class AdminService {
 
     @Transactional
     public EnvironmentDto updateEnvironment(Long id, EnvironmentDto dto) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         Environment e = environmentRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("Environment " + id + " not found"));
@@ -469,6 +484,7 @@ public class AdminService {
 
     @Transactional
     public void deleteEnvironment(Long id) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         Environment e = environmentRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("Environment " + id + " not found"));
@@ -478,6 +494,7 @@ public class AdminService {
     // -------- App clients ---------------------------------------------
 
     public List<AppClientDto> listAppClients() {
+        tenantAccessor.requireAnyAdmin();
         Long tid = tenantAccessor.requireTenantId();
         return appClientRepository.findByTenantId(tid).stream()
                 .map(AdminService::toDtoMasked)
@@ -553,6 +570,7 @@ public class AdminService {
 
     @Transactional
     public void deleteAppClient(Long id) {
+        tenantAccessor.requireTenantAdmin();
         Long tid = tenantAccessor.requireTenantId();
         AppClient c = appClientRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("App client " + id + " not found"));
