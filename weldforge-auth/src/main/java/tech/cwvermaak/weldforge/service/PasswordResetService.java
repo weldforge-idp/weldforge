@@ -107,6 +107,7 @@ public class PasswordResetService {
                 .tenant(tenant)
                 .user(user)
                 .tokenHash(tokenHash)
+                .email(user.getEmail())
                 .returnTo(resolveReturnTo(tenant, returnTo))
                 .expiresAt(LocalDateTime.now().plusHours(EXPIRY_HOURS))
                 .build();
@@ -163,6 +164,13 @@ public class PasswordResetService {
         // opened anywhere — so the token is the only authority on which tenant
         // this is (docs/password-policy-spec.md).
         User user = resetToken.getUser();
+
+        // A completed reset marks the address verified (below), so a token
+        // mailed to an address the account no longer holds must not complete:
+        // it would verify the new address on the strength of the old one.
+        if (!MailedTokens.stillAddressedTo(resetToken.getEmail(), user)) {
+            throw new IllegalArgumentException("Invalid or expired reset token");
+        }
 
         passwordPolicyService.validate(newPassword, user.getTenant());
 
@@ -319,6 +327,7 @@ public class PasswordResetService {
                 .tenant(user.getTenant())
                 .user(user)
                 .tokenHash(sha256Hex(rawToken))
+                .email(user.getEmail())
                 // Invitation links can sit in an inbox a while — give them
                 // a longer life than a self-service reset.
                 .expiresAt(LocalDateTime.now().plusDays(7))
@@ -341,6 +350,7 @@ public class PasswordResetService {
                 .tenant(user.getTenant())
                 .user(user)
                 .tokenHash(sha256Hex(rawToken))
+                .email(user.getEmail())
                 .expiresAt(expiresAt)
                 .build());
         auditService.recordUserAction(AuditEventTypes.AUTH_PASSWORD_RESET_REQUESTED, user,

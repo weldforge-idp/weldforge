@@ -76,7 +76,7 @@ class PasswordResetVerifiesEmailTest {
 
     private void givenAValidTokenFor(User u) {
         PasswordResetToken token = PasswordResetToken.builder()
-                .tenant(u.getTenant()).user(u).tokenHash("ignored")
+                .tenant(u.getTenant()).user(u).email(u.getEmail()).tokenHash("ignored")
                 .expiresAt(LocalDateTime.now().plusHours(1)).used(false).build();
         when(resetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(token));
     }
@@ -114,7 +114,7 @@ class PasswordResetVerifiesEmailTest {
     @DisplayName("a spent or expired token verifies nothing")
     void aRefusedResetVerifiesNothing() {
         PasswordResetToken spent = PasswordResetToken.builder()
-                .tenant(user.getTenant()).user(user).tokenHash("ignored")
+                .tenant(user.getTenant()).user(user).email(user.getEmail()).tokenHash("ignored")
                 .expiresAt(LocalDateTime.now().plusHours(1)).used(true).build();
         when(resetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(spent));
 

@@ -60,6 +60,7 @@ public class EmailVerificationService {
                 .tenant(user.getTenant())
                 .user(user)
                 .tokenHash(hash)
+                .email(user.getEmail())
                 .expiresAt(LocalDateTime.now().plusHours(EXPIRY_HOURS))
                 .build();
 
@@ -111,6 +112,12 @@ public class EmailVerificationService {
         }
 
         User user = token.getUser();
+        // The token proves control of the mailbox it was sent to. If the
+        // account's address has changed since, verifying would mark an
+        // address nobody has proved -- possibly someone else's.
+        if (!MailedTokens.stillAddressedTo(token.getEmail(), user)) {
+            throw new IllegalArgumentException("Verification token is for a different email address");
+        }
         user.setEmailVerified(true);
         userRepository.save(user);
 

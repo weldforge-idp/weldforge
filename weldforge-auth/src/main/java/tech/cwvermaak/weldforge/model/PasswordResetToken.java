@@ -29,6 +29,13 @@ public class PasswordResetToken {
     @Column(name = "token_hash", nullable = false, length = 128)
     private String tokenHash;
 
+    /**
+     * The address this token was mailed to. Redemption refuses the token if
+     * the account no longer holds it, or if this is empty (V72).
+     */
+    @Column(length = 255)
+    private String email;
+
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
