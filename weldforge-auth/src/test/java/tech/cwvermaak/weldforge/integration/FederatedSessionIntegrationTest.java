@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -252,5 +253,112 @@ class FederatedSessionIntegrationTest {
         providerRow(null, null);
 
         assertThat(claimsOf(sessionToken(null)).get("idp")).isEqualTo("default-google");
+    }
+
+    // ---- 2026-11-15: the tenant's account gates apply to a social sign-in ----
+    //
+    // The provider proves who the person is; it does not decide whether this
+    // tenant lets them in. A deactivated or locked account, and an account
+    // with a second factor enrolled, all received a full session here.
+
+    @Autowired private tech.cwvermaak.weldforge.repository.MfaFactorRepository mfaFactorRepository;
+    @Autowired private tech.cwvermaak.weldforge.repository.TenantMfaPolicyRepository mfaPolicyRepository;
+
+    private User federatedUser(Tenant t, java.util.function.Consumer<User.UserBuilder> tweak) {
+        String tag = java.util.UUID.randomUUID().toString().substring(0, 8);
+        User.UserBuilder b = User.builder()
+                .tenant(t)
+                .username("fed-" + tag)
+                .email("fed-" + tag + "@test.com")
+                .provider(AuthProvider.GOOGLE)
+                .providerId("google-" + tag)
+                .emailVerified(true)
+                .active(true);
+        tweak.accept(b);
+        return userRepository.save(b.build());
+    }
+
+    private static boolean issuedSessionCookies(MockHttpServletResponse response) {
+        return response.getHeaders("Set-Cookie").stream()
+                .anyMatch(c -> c.startsWith("wf_refresh_") || c.startsWith("refresh_token=")
+                        || c.startsWith("wf_session="));
+    }
+
+    @Test
+    @DisplayName("a deactivated account gets no session from a social sign-in")
+    void inactiveAccountIsRefused() {
+        User u = federatedUser(tenant, b -> b.active(false));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThatThrownBy(() -> authService.issueFederatedSession(
+                "default", u.getEmail(), "google", null, new MockHttpServletRequest(), response))
+                .isInstanceOf(RuntimeException.class)
+                .extracting("code").isEqualTo("account_unavailable");
+        assertThat(issuedSessionCookies(response)).isFalse();
+    }
+
+    @Test
+    @DisplayName("a locked account gets no session from a social sign-in")
+    void lockedAccountIsRefused() {
+        User u = federatedUser(tenant, b -> b.lockedUntil(java.time.LocalDateTime.now().plusMinutes(10)));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThatThrownBy(() -> authService.issueFederatedSession(
+                "default", u.getEmail(), "google", null, new MockHttpServletRequest(), response))
+                .isInstanceOf(RuntimeException.class)
+                .extracting("code").isEqualTo("account_unavailable");
+        assertThat(issuedSessionCookies(response)).isFalse();
+    }
+
+    @Test
+    @DisplayName("an account with a second factor gets an MFA challenge, not a session")
+    void enrolledFactorGetsAChallenge() {
+        User u = federatedUser(tenant, b -> {});
+        mfaFactorRepository.save(tech.cwvermaak.weldforge.model.MfaFactor.builder()
+                .user(u).type(tech.cwvermaak.weldforge.model.MfaFactorType.TOTP)
+                .label("phone").totpSecretEnc("not-used-here").verified(true).enabled(true).build());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        Optional<AuthResponseDto> outcome = authService.issueFederatedSession(
+                "default", u.getEmail(), "google", null, new MockHttpServletRequest(), response);
+
+        assertThat(outcome).isPresent();
+        assertThat(outcome.get().isMfaRequired()).isTrue();
+        assertThat(outcome.get().getMfaChallengeToken()).isNotBlank();
+        assertThat(outcome.get().getToken()).as("no access token before the second factor").isNull();
+        assertThat(outcome.get().getAvailableFactors())
+                .contains(tech.cwvermaak.weldforge.model.MfaFactorType.TOTP);
+        assertThat(issuedSessionCookies(response)).isFalse();
+    }
+
+    @Test
+    @DisplayName("a tenant that requires MFA enrolment refuses a social sign-in from an unenrolled account")
+    void requiredEnrolmentIsRefused() {
+        String slug = "fed-mfa-" + java.util.UUID.randomUUID().toString().substring(0, 6);
+        Tenant strict = tenantRepository.save(Tenant.builder().slug(slug).name(slug).displayName(slug).build());
+        mfaPolicyRepository.save(tech.cwvermaak.weldforge.model.TenantMfaPolicy.builder()
+                .tenant(strict)
+                .enforcement(tech.cwvermaak.weldforge.model.TenantMfaPolicy.Enforcement.REQUIRED)
+                .gracePeriodDays(0)
+                .build());
+        User u = federatedUser(strict, b -> {});
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThatThrownBy(() -> authService.issueFederatedSession(
+                slug, u.getEmail(), "google", null, new MockHttpServletRequest(), response))
+                .isInstanceOf(RuntimeException.class)
+                .extracting("code").isEqualTo("mfa_enrollment_required");
+        assertThat(issuedSessionCookies(response)).isFalse();
+    }
+
+    @Test
+    @DisplayName("a social sign-in does not reset the password-failure counter")
+    void failureCounterIsNotReset() {
+        User u = federatedUser(tenant, b -> b.failedLoginAttempts(3));
+
+        authService.issueFederatedSession("default", u.getEmail(), "google", null,
+                new MockHttpServletRequest(), new MockHttpServletResponse());
+
+        assertThat(userRepository.findById(u.getId()).orElseThrow().getFailedLoginAttempts()).isEqualTo(3);
     }
 }
