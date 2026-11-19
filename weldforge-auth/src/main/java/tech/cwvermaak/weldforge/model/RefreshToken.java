@@ -91,6 +91,15 @@ public class RefreshToken {
     private String amr;
 
     /**
+     * When the sign-in that created this family happened. Rotation copies it
+     * forward, and no token in the family expires later than this plus the
+     * absolute session lifetime (WF-2). Backfilled by V74 from each family's
+     * earliest row.
+     */
+    @Column(name = "session_started_at", nullable = false)
+    private LocalDateTime sessionStartedAt;
+
+    /**
      * Space-separated scopes the resource owner granted when this family was
      * created (CONF-1.1). Replayed onto every token minted by rotating it, so a
      * refresh cannot widen scope past the original consent — RFC 6749 §6.
@@ -117,6 +126,7 @@ public class RefreshToken {
     @PrePersist
     void onCreate() {
         if (issuedAt == null) issuedAt = LocalDateTime.now();
+        if (sessionStartedAt == null) sessionStartedAt = issuedAt;
     }
 
     public boolean isActive(LocalDateTime now) {
