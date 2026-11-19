@@ -5,7 +5,7 @@
 .EXAMPLE
   ./run.ps1 -Plan 02-performance-baseline
   ./run.ps1 -Plan 01-load -P @{ threads = 100; duration = 300 }
-  ./run.ps1 -Plan 04-security -Tenant leap
+  ./run.ps1 -Plan 04-security -Tenant default
 
 .NOTES
   Targets the LOCAL docker-compose app on http://localhost:8076 by default.
@@ -19,7 +19,7 @@ param(
   [string]$JMeterHost = 'localhost',
   [int]$Port = 8076,
   [string]$Scheme = 'http',
-  [string]$Tenant = 'leap',
+  [string]$Tenant = 'default',
   [hashtable]$P = @{}   # extra -J properties, e.g. @{ threads = 100; duration = 300 }
 )
 
