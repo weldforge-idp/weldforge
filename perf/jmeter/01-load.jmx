@@ -40,7 +40,7 @@
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
             <collectionProp name="Arguments.arguments"/>
           </elementProp>
-          <stringProp name="HTTPSampler.path">/t/${__P(tenant,leap)}/.well-known/openid-configuration</stringProp>
+          <stringProp name="HTTPSampler.path">/t/${__P(tenant,default)}/.well-known/openid-configuration</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
           <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
@@ -60,7 +60,7 @@
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
             <collectionProp name="Arguments.arguments"/>
           </elementProp>
-          <stringProp name="HTTPSampler.path">/t/${__P(tenant,leap)}/oauth2/jwks</stringProp>
+          <stringProp name="HTTPSampler.path">/t/${__P(tenant,default)}/oauth2/jwks</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
         </HTTPSamplerProxy>
@@ -79,7 +79,7 @@
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
             <collectionProp name="Arguments.arguments"/>
           </elementProp>
-          <stringProp name="HTTPSampler.path">/t/${__P(tenant,leap)}/saml2/idp/metadata</stringProp>
+          <stringProp name="HTTPSampler.path">/t/${__P(tenant,default)}/saml2/idp/metadata</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
         </HTTPSamplerProxy>

@@ -41,7 +41,7 @@
             </elementProp>
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">X-Tenant-Slug</stringProp>
-              <stringProp name="Header.value">${__P(tenant,leap)}</stringProp>
+              <stringProp name="Header.value">${__P(tenant,default)}</stringProp>
             </elementProp>
           </collectionProp>
         </HeaderManager>
@@ -296,7 +296,7 @@
 
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="10 security headers present" enabled="true">
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"/></elementProp>
-          <stringProp name="HTTPSampler.path">/t/${__P(tenant,leap)}/.well-known/openid-configuration</stringProp>
+          <stringProp name="HTTPSampler.path">/t/${__P(tenant,default)}/.well-known/openid-configuration</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
         </HTTPSamplerProxy>
         <hashTree>
