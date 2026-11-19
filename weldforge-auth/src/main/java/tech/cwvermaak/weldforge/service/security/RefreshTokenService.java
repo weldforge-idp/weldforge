@@ -69,7 +69,7 @@ public class RefreshTokenService {
     public Issued issueNew(User user, String ipAddress, String userAgent, String amr) {
         // A password login is not an OIDC grant -- there is no consented scope
         // set to carry, so this stays null rather than inventing one.
-        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent, amr, null, null);
+        return persist(user, UUID.randomUUID(), null, ipAddress, userAgent, amr, null, null, null);
     }
 
     /**
@@ -86,7 +86,7 @@ public class RefreshTokenService {
     @Transactional
     public Issued issueNewForClient(User user, OidcClient client,
                                     String ipAddress, String userAgent, String amr) {
-        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr, null, null);
+        return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr, null, null, null);
     }
 
     /**
@@ -118,7 +118,7 @@ public class RefreshTokenService {
                                     String ipAddress, String userAgent, String amr,
                                     String grantedScopes, java.time.Instant authTime) {
         return persist(user, UUID.randomUUID(), client, ipAddress, userAgent, amr,
-                grantedScopes, authTime);
+                grantedScopes, authTime, null);
     }
 
     /**
@@ -278,7 +278,8 @@ public class RefreshTokenService {
         Issued successor = persist(row.getUser(), row.getFamilyId(), row.getClient(),
                 ipAddress, userAgent, row.getAmr(), row.getGrantedScopes(),
                 row.getAuthTime() == null ? null
-                        : row.getAuthTime().atZone(java.time.ZoneId.systemDefault()).toInstant());
+                        : row.getAuthTime().atZone(java.time.ZoneId.systemDefault()).toInstant(),
+                row.getSessionStartedAt() != null ? row.getSessionStartedAt() : row.getIssuedAt());
         repository.markReplacedBy(row.getId(), successor.row.getId());
 
         auditService.recordUserAction(AUDIT_REFRESH_ROTATE, row.getUser(),
@@ -302,8 +303,11 @@ public class RefreshTokenService {
 
     private Issued persist(User user, UUID familyId, OidcClient client,
                            String ipAddress, String userAgent, String amr,
-                           String grantedScopes, java.time.Instant authTime) {
+                           String grantedScopes, java.time.Instant authTime,
+                           LocalDateTime sessionStartedAt) {
         String raw = randomToken();
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime started = sessionStartedAt != null ? sessionStartedAt : now;
         // Lifetime resolves most-specific-first: this client, then the tenant
         // (PRD SSO-03), then the application default.
         //
@@ -322,13 +326,21 @@ public class RefreshTokenService {
         } else {
             expiresAt = LocalDateTime.now().plusDays(properties.getLifetimeDays());
         }
+        // WF-2: whichever comes first, the idle limit above or the absolute
+        // limit counted from the sign-in. Without the cap each rotation pushed
+        // the expiry forward again and a used family never ended.
+        LocalDateTime absoluteEnd = started.plusDays(properties.getAbsoluteLifetimeDays());
+        if (expiresAt.isAfter(absoluteEnd)) {
+            expiresAt = absoluteEnd;
+        }
         RefreshToken row = RefreshToken.builder()
                 .user(user)
                 .tenant(user.getTenant())
                 .client(client)
                 .familyId(familyId)
                 .tokenHash(hash(raw))
-                .issuedAt(LocalDateTime.now())
+                .issuedAt(now)
+                .sessionStartedAt(started)
                 .expiresAt(expiresAt)
                 .ipAddress(ipAddress)
                 .userAgent(userAgent)

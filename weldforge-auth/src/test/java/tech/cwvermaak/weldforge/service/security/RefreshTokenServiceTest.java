@@ -258,4 +258,81 @@ class RefreshTokenServiceTest {
         assertThatThrownBy(() -> service.rotateForTenant("nope", 1L, null, null))
                 .isInstanceOf(BadCredentialsException.class);
     }
+
+    // ---- WF-2: idle and absolute session limits ------------------------
+
+    private RefreshToken liveRow(String raw, LocalDateTime sessionStartedAt) {
+        RefreshToken row = RefreshToken.builder()
+                .id(200L).user(user).tenant(user.getTenant())
+                .familyId(UUID.randomUUID())
+                .tokenHash(RefreshTokenService.hash(raw))
+                .issuedAt(LocalDateTime.now().minusMinutes(1))
+                .sessionStartedAt(sessionStartedAt)
+                .expiresAt(LocalDateTime.now().plusDays(1))
+                .build();
+        when(repo.findByTokenHash(row.getTokenHash())).thenReturn(Optional.of(claimTarget = row));
+        return row;
+    }
+
+    @Test
+    @DisplayName("WF-2: a new family starts its session now")
+    void newFamilyStartsNow() {
+        RefreshTokenService.Issued issued = service.issueNew(user, "1.2.3.4", "ua");
+
+        assertThat(issued.row().getSessionStartedAt())
+                .isAfter(LocalDateTime.now().minusMinutes(1))
+                .isBefore(LocalDateTime.now().plusMinutes(1));
+    }
+
+    @Test
+    @DisplayName("WF-2: rotation copies the session start forward and keeps the idle limit")
+    void rotationKeepsTheStart() {
+        props.setAbsoluteLifetimeDays(30);
+        LocalDateTime started = LocalDateTime.now().minusDays(3);
+        liveRow("young", started);
+
+        RefreshTokenService.Issued issued = service.rotate("young", "1.2.3.4", "ua");
+
+        assertThat(issued.row().getSessionStartedAt()).isEqualTo(started);
+        assertThat(issued.row().getExpiresAt())
+                .as("idle limit: 7 days from now, well inside the absolute end")
+                .isAfter(LocalDateTime.now().plusDays(6))
+                .isBefore(LocalDateTime.now().plusDays(8));
+    }
+
+    @Test
+    @DisplayName("WF-2: no successor expires after the absolute end, however often it is used")
+    void successorIsCappedAtTheAbsoluteEnd() {
+        props.setAbsoluteLifetimeDays(30);
+        LocalDateTime started = LocalDateTime.now().minusDays(28);
+        liveRow("old", started);
+
+        RefreshTokenService.Issued issued = service.rotate("old", "1.2.3.4", "ua");
+
+        assertThat(issued.row().getExpiresAt()).isEqualTo(started.plusDays(30));
+    }
+
+    @Test
+    @DisplayName("WF-2: a family past its absolute end cannot be rotated")
+    void pastTheAbsoluteEndIsRefused() {
+        props.setAbsoluteLifetimeDays(30);
+        RefreshToken row = liveRow("ancient", LocalDateTime.now().minusDays(31));
+        // What V74 and the cap produce: the row's own expiry is the absolute end.
+        row.setExpiresAt(row.getSessionStartedAt().plusDays(30));
+
+        assertThatThrownBy(() -> service.rotate("ancient", "1.2.3.4", "ua"))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("expired");
+    }
+
+    @Test
+    @DisplayName("WF-2: a row from before V74 counts its session from its own issue time")
+    void legacyRowFallsBackToIssuedAt() {
+        props.setAbsoluteLifetimeDays(30);
+        RefreshToken row = liveRow("legacy", null);
+
+        RefreshTokenService.Issued issued = service.rotate("legacy", "1.2.3.4", "ua");
+
+        assertThat(issued.row().getSessionStartedAt()).isEqualTo(row.getIssuedAt());
+    }
 }
