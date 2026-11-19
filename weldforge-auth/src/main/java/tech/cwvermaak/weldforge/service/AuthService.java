@@ -635,6 +635,42 @@ public class AuthService {
                                                            String hostedDomain,
                                                            HttpServletRequest httpRequest,
                                                            HttpServletResponse response) {
+        return federatedSession("social", tenantSlug, email, providerKey, hostedDomain,
+                tenantSlug + "-" + providerKey, httpRequest, response);
+    }
+
+    /**
+     * The same, for a sign-in at a tenant's upstream SAML identity provider.
+     *
+     * <p>Until WF-3 (security review 2026-11-15) the SAML callback provisioned
+     * the account and then handed the request to Spring's default success
+     * handler, which under this deployment's stateless policy leaves nothing
+     * behind: no session was ever issued, and none of the gates below ran.
+     * It now ends exactly as a social sign-in does.
+     *
+     * <p>The {@code amr} is always empty. A SAML assertion's
+     * {@code AuthnContextClassRef} is the upstream's own claim about itself,
+     * and there is no per-provider trust setting for it yet.
+     */
+    @Transactional
+    public Optional<AuthResponseDto> issueSamlUpstreamSession(String tenantSlug, String email,
+                                                              String providerKey,
+                                                              HttpServletRequest httpRequest,
+                                                              HttpServletResponse response) {
+        return federatedSession("saml", tenantSlug, email, providerKey, null,
+                tenantSlug + "-saml-" + providerKey, httpRequest, response);
+    }
+
+    /**
+     * @param kind "social" or "saml": recorded in the audit entries, and only a
+     *             social provider row can assert an {@code amr}
+     * @param idp  the registration id, carried in the access token
+     */
+    private Optional<AuthResponseDto> federatedSession(String kind, String tenantSlug, String email,
+                                                       String providerKey, String hostedDomain,
+                                                       String idp,
+                                                       HttpServletRequest httpRequest,
+                                                       HttpServletResponse response) {
         User user = userRepository.findByTenant_SlugAndEmailIgnoreCase(tenantSlug, email).orElse(null);
         if (user == null) {
             return Optional.empty();
@@ -648,7 +684,7 @@ public class AuthService {
         // (security review 2026-11-15).
         Tenant tenant = user.getTenant();
         if (!user.isActive()) {
-            failedLoginRecorder.inactiveUser(tenant, user, user.getEmail(), "social:" + providerKey);
+            failedLoginRecorder.inactiveUser(tenant, user, user.getEmail(), kind + ":" + providerKey);
             throw new FederatedSignInRefusedException(FederatedSignInRefusedException.ACCOUNT_UNAVAILABLE,
                     "Account is not active");
         }
@@ -659,7 +695,7 @@ public class AuthService {
                     "Account is locked");
         }
         // Deliberately NOT lockoutService.recordSuccess: the failure counter
-        // counts wrong passwords and second factors, and a social sign-in
+        // counts wrong passwords and second factors, and a federated sign-in
         // proves neither, so it must not wipe them.
 
         if (mfaService.hasVerifiedFactor(user)) {
@@ -667,7 +703,7 @@ public class AuthService {
                     user.getId(), tenant.getId(), tenant.getSlug());
             auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_MFA_REQUIRED, user,
                     AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
-                    AuditService.meta("source", "social", "provider", providerKey));
+                    AuditService.meta("source", kind, "provider", providerKey));
             return Optional.of(AuthResponseDto.builder()
                     .mfaRequired(true)
                     .mfaChallengeToken(challengeToken)
@@ -677,24 +713,26 @@ public class AuthService {
         if (mfaPolicyService.mustEnroll(user)) {
             auditService.recordUserAction(AuditEventTypes.MFA_ENROLLMENT_REQUIRED, user,
                     AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
-                    AuditService.meta("reason", "tenant_policy_required", "source", "social",
+                    AuditService.meta("reason", "tenant_policy_required", "source", kind,
                             "provider", providerKey));
             throw new FederatedSignInRefusedException(FederatedSignInRefusedException.MFA_ENROLLMENT_REQUIRED,
                     "This tenant requires two-factor authentication to be set up first");
         }
 
-        var providerRow = SocialRegistrationId.parse(tenantSlug + "-" + providerKey)
-                .flatMap(parsed -> socialProviderRepository
-                        .findByTenant_SlugAndProviderAndEnabledTrue(tenantSlug, parsed.provider()));
-        List<String> amr = assertedAmrFor(providerRow.orElse(null), tenantSlug, providerKey);
+        List<String> amr = List.of();
+        if ("social".equals(kind)) {
+            var providerRow = SocialRegistrationId.parse(tenantSlug + "-" + providerKey)
+                    .flatMap(parsed -> socialProviderRepository
+                            .findByTenant_SlugAndProviderAndEnabledTrue(tenantSlug, parsed.provider()));
+            amr = assertedAmrFor(providerRow.orElse(null), tenantSlug, providerKey);
+        }
 
-        AuthResponseDto session = issueTokens(user, httpRequest, response, amr,
-                tenantSlug + "-" + providerKey);
+        AuthResponseDto session = issueTokens(user, httpRequest, response, amr, idp);
 
         auditService.recordUserAction(AuditEventTypes.AUTH_LOGIN_SUCCESS, user,
                 AuditEventTypes.TARGET_USER, String.valueOf(user.getId()),
                 AuditService.meta("tenant", tenantSlug, "provider", providerKey,
-                        "federated", true,
+                        "federated", true, "source", kind,
                         // Named assertedAmr, never amr: an operator reading the
                         // audit log must be able to tell an asserted factor
                         // from a verified one. Dropped by meta() when null.
