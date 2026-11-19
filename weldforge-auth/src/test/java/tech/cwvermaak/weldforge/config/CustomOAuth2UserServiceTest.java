@@ -318,4 +318,66 @@ class CustomOAuth2UserServiceTest {
                     .doesNotThrowAnyException();
         }
     }
+
+    @Nested
+    @DisplayName("the Microsoft directory allow-list (WF-4, V73)")
+    class MicrosoftDirectories {
+
+        private static final String MS = "acme-microsoft";
+        private static final String ACME_DIR = "11111111-2222-3333-4444-555555555555";
+
+        private void allowDirectories(String tids) {
+            when(providers.findByTenant_SlugAndProviderAndEnabledTrue(
+                    "acme", tech.cwvermaak.weldforge.model.SocialProviderType.MICROSOFT))
+                    .thenReturn(Optional.of(
+                            tech.cwvermaak.weldforge.model.TenantSocialProvider.builder()
+                                    .allowedTids(tids)
+                                    .build()));
+        }
+
+        @Test
+        @DisplayName("an account in a listed directory gets in, whatever the case of the id")
+        void listedDirectory() {
+            allowDirectories(ACME_DIR);
+
+            assertThatCode(() -> service.provision(MS, principal(Map.of(
+                    "email", "alice@acme.test", "email_verified", true,
+                    "tid", ACME_DIR.toUpperCase()))))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("an account from anyone else's directory is refused before anything is saved")
+        void otherDirectory() {
+            allowDirectories(ACME_DIR);
+
+            assertThatThrownBy(() -> service.provision(MS, principal(Map.of(
+                    "email", "mallory@acme.test", "email_verified", true,
+                    "tid", "99999999-8888-7777-6666-555555555555"))))
+                    .isInstanceOf(OAuth2AuthenticationException.class)
+                    .hasMessageContaining("Microsoft directory");
+            verify(users, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("no tid at all is refused when a list is set")
+        void missingTid() {
+            allowDirectories(ACME_DIR);
+
+            assertThatThrownBy(() -> service.provision(MS, principal(Map.of(
+                    "email", "alice@acme.test", "email_verified", true))))
+                    .isInstanceOf(OAuth2AuthenticationException.class);
+        }
+
+        @Test
+        @DisplayName("no list keeps today's behaviour")
+        void noList() {
+            allowDirectories(null);
+
+            assertThatCode(() -> service.provision(MS, principal(Map.of(
+                    "email", "alice@acme.test", "email_verified", true,
+                    "tid", "99999999-8888-7777-6666-555555555555"))))
+                    .doesNotThrowAnyException();
+        }
+    }
 }

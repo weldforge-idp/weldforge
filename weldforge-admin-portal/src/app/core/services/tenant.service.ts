@@ -110,6 +110,12 @@ export interface SocialProvider {
    * for a Workspace domain where the user cannot switch it off.
    */
   requiredHd?: string;
+  /**
+   * MICROSOFT only: space-separated Entra ID directory (tenant) ids allowed
+   * to sign in. Blank admits any directory, which is what Microsoft's
+   * multi-tenant `/common` endpoint does on its own (WF-4).
+   */
+  allowedTids?: string;
   registrationId?: string;
 }
 

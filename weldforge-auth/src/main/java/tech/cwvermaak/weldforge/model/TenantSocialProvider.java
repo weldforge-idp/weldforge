@@ -80,6 +80,14 @@ public class TenantSocialProvider {
     @Column(name = "required_hd", length = 255)
     private String requiredHd;
 
+    /**
+     * Entra ID directory ids ({@code tid}) a MICROSOFT provider accepts,
+     * space-separated. Null accepts any directory, which is what the
+     * multi-tenant {@code /common} endpoint does on its own (WF-4).
+     */
+    @Column(name = "allowed_tids", length = 1024)
+    private String allowedTids;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
