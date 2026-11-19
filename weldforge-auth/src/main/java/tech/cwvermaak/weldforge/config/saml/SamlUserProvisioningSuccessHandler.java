@@ -1,180 +1,108 @@
 package tech.cwvermaak.weldforge.config.saml;
 
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticatedPrincipal;
-import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
-import tech.cwvermaak.weldforge.model.AuthProvider;
-import tech.cwvermaak.weldforge.model.Tenant;
-import tech.cwvermaak.weldforge.model.TenantSamlProvider;
-import tech.cwvermaak.weldforge.model.User;
-import tech.cwvermaak.weldforge.repository.ScimGroupRepository;
-import tech.cwvermaak.weldforge.repository.TenantRepository;
-import tech.cwvermaak.weldforge.repository.TenantSamlProviderRepository;
-import tech.cwvermaak.weldforge.repository.UserRepository;
-import tech.cwvermaak.weldforge.service.GroupRoleMappingService;
-import tech.cwvermaak.weldforge.service.federation.FederationRulesEngine;
+import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
+import tech.cwvermaak.weldforge.model.dto.AuthResponseDto;
+import tech.cwvermaak.weldforge.service.AuthService;
+import tech.cwvermaak.weldforge.service.FederatedSignInRefusedException;
+import tech.cwvermaak.weldforge.service.SeatLimitExceededException;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
- * Post-SAML-login JIT provisioning. The registration id
- * ({@code {slug}-saml-{providerKey}}) tells us which tenant the user belongs
- * to, so there is no way for a SAML assertion from tenant A's IdP to end up
- * creating a user in tenant B.
+ * Finishes a sign-in at a tenant's upstream SAML identity provider.
+ *
+ * <p>Until WF-3 (security review 2026-11-15) this provisioned the account and
+ * handed the request to Spring's {@code SavedRequestAwareAuthenticationSuccessHandler}.
+ * Under this deployment's stateless policy that saves nothing, so the person
+ * came back from their IdP anonymous to WeldForge, and none of the gates a
+ * password sign-in applies (deactivated, locked, second factor, required MFA
+ * enrolment) ever ran. It is the defect {@code OAuth2LoginSuccessHandler}
+ * fixed for social sign-in on 2026-10-11, and it now ends the same way:
+ * {@link AuthService#issueSamlUpstreamSession} applies the gates and writes
+ * the same cookies a password sign-in writes.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
-@Slf4j
-public class SamlUserProvisioningSuccessHandler
-        extends SavedRequestAwareAuthenticationSuccessHandler {
+public class SamlUserProvisioningSuccessHandler implements AuthenticationSuccessHandler {
 
-    private final TenantRepository tenantRepository;
-    private final TenantSamlProviderRepository samlRepository;
-    private final UserRepository userRepository;
-    private final ScimGroupRepository scimGroupRepository;
-    private final GroupRoleMappingService groupRoleMappingService;
-    private final FederationRulesEngine federationRulesEngine;
-    private final tech.cwvermaak.weldforge.service.TenantSeatService seatService;
+    /** Login-page error code for a tenant out of seats. */
+    static final String SEAT_LIMIT = "seat_limit_exceeded";
+
+    private final SamlUpstreamProvisioner provisioner;
+    private final AuthService authService;
+    private final PublicHostProperties publicHost;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
-                                        Authentication authentication)
-            throws ServletException, IOException {
-        try {
-            provision(authentication);
-        } catch (Exception e) {
-            log.error("SAML user provisioning failed: {}", e.getMessage(), e);
-        }
-        super.onAuthenticationSuccess(request, response, authentication);
-    }
-
-    private void provision(Authentication authentication) {
+                                        Authentication authentication) throws IOException {
         if (!(authentication.getPrincipal() instanceof Saml2AuthenticatedPrincipal principal)) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unexpected authentication type");
             return;
         }
         String registrationId = principal.getRelyingPartyRegistrationId();
-        if (registrationId == null) return;
-
-        int idx = registrationId.indexOf(DatabaseRelyingPartyRegistrationRepository.SAML_INFIX);
-        if (idx <= 0) return;
-
-        String tenantSlug  = registrationId.substring(0, idx);
+        int idx = registrationId == null ? -1
+                : registrationId.indexOf(DatabaseRelyingPartyRegistrationRepository.SAML_INFIX);
+        if (idx <= 0) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Unrecognised provider registration");
+            return;
+        }
+        String slug = registrationId.substring(0, idx);
         String providerKey = registrationId.substring(
                 idx + DatabaseRelyingPartyRegistrationRepository.SAML_INFIX.length());
 
-        Optional<Tenant> tenantOpt = tenantRepository.findBySlug(tenantSlug);
-        if (tenantOpt.isEmpty()) return;
-        Tenant tenant = tenantOpt.get();
-
-        TenantSamlProvider cfg = samlRepository
-                .findByTenantIdAndProviderKey(tenant.getId(), providerKey)
-                .orElse(null);
-        String emailAttr = cfg != null ? cfg.getEmailAttribute() : "email";
-        String nameAttr  = cfg != null ? cfg.getNameAttribute()  : "name";
-
-        // Build a claim bag from the SAML assertion so the federation
-        // engine (PRD FED-02/04) sees the same view the rules were
-        // authored against.
-        Map<String, Object> claims = principalToClaims(principal);
-        Map<String, Object> transformed = federationRulesEngine.transformClaims(tenant, claims);
-
-        String email = (String) transformed.getOrDefault("email", firstAttribute(principal, emailAttr));
-        if (email == null) {
-            // Fall back to the NameID — many IdPs put the email there.
-            email = principal.getName();
-        }
-        if (email == null || email.isBlank()) {
-            log.warn("SAML assertion for tenant {} provider {} carried no usable email claim",
-                    tenantSlug, providerKey);
+        Optional<String> email;
+        try {
+            email = provisioner.provision(principal, slug, providerKey);
+        } catch (SeatLimitExceededException full) {
+            response.sendRedirect(loginPage(slug) + "#error=" + SEAT_LIMIT);
             return;
         }
-        String name = (String) transformed.getOrDefault("name", firstAttribute(principal, nameAttr));
-
-        // FED-02: prefer tenant-configured matching rules, fall back to
-        // email lookup if no rule matches (or none are configured).
-        final String finalEmail = email;
-        User user = federationRulesEngine.matchUser(tenant, claims)
-                .or(() -> userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), finalEmail))
-                .orElseGet(() -> User.builder()
-                        .tenant(tenant)
-                        .email(finalEmail)
-                        .username(finalEmail)
-                        .provider(AuthProvider.SAML)
-                        .providerId(principal.getName() != null ? principal.getName() : finalEmail)
-                        .build());
-
-        // JIT provisioning consumes a seat; an existing user re-authenticating
-        // does not. Note the caller swallows anything thrown here (see
-        // onAuthenticationSuccess) — so a capped-out tenant means the user is
-        // not provisioned and the failure is logged, rather than the SAML
-        // response itself being rejected.
-        if (user.getId() == null) {
-            seatService.assertCapacity(tenant);
+        if (email.isEmpty()) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "No account for this sign-in");
+            return;
         }
 
-        if (name != null) user.setName(name);
-        if (user.getEmail() == null) user.setEmail(email);
-        userRepository.save(user);
-
-        // Extract group claims from the SAML assertion and sync memberships
-        syncSamlGroups(principal, tenant, user);
-
-        // Apply group-role mappings
-        groupRoleMappingService.applyMappings(tenant.getId(), user.getId());
-    }
-
-    private void syncSamlGroups(Saml2AuthenticatedPrincipal principal, Tenant tenant, User user) {
-        List<Object> groupValues = principal.getAttribute("groups");
-        if (groupValues == null || groupValues.isEmpty()) return;
-
-        for (Object gv : groupValues) {
-            if (gv == null) continue;
-            String groupName = gv.toString();
-            if (groupName.isBlank()) continue;
-
-            scimGroupRepository.findByTenantIdAndNameIgnoreCase(tenant.getId(), groupName)
-                    .ifPresent(group -> {
-                        boolean alreadyMember = group.getMembers().stream()
-                                .anyMatch(m -> m.getId().equals(user.getId()));
-                        if (!alreadyMember) {
-                            group.getMembers().add(user);
-                            scimGroupRepository.save(group);
-                        }
-                    });
+        Optional<AuthResponseDto> outcome;
+        try {
+            outcome = authService.issueSamlUpstreamSession(slug, email.get(), providerKey, request, response);
+        } catch (FederatedSignInRefusedException refused) {
+            response.sendRedirect(loginPage(slug) + "#error=" + refused.getCode());
+            return;
         }
-    }
-
-    private static Map<String, Object> principalToClaims(Saml2AuthenticatedPrincipal principal) {
-        Map<String, Object> claims = new LinkedHashMap<>();
-        claims.put("nameId", principal.getName());
-        Map<String, List<Object>> attrs = principal.getAttributes();
-        if (attrs != null) {
-            for (Map.Entry<String, List<Object>> e : attrs.entrySet()) {
-                List<Object> v = e.getValue();
-                if (v == null || v.isEmpty()) continue;
-                claims.put(e.getKey(), v.size() == 1 ? v.get(0) : v);
-            }
+        if (outcome.isEmpty()) {
+            log.warn("SAML sign-in provisioned no user row: tenant={} provider={}", slug, providerKey);
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "No account for this sign-in");
+            return;
         }
-        return new HashMap<>(claims);
+
+        AuthResponseDto result = outcome.get();
+        if (result.isMfaRequired()) {
+            // The IdP's word is the first factor only. The challenge rides in
+            // the fragment, as for social sign-in: never sent to a server.
+            String factors = result.getAvailableFactors() == null ? ""
+                    : String.join(",", result.getAvailableFactors().stream().map(Object::toString).toList());
+            response.sendRedirect(loginPage(slug)
+                    + "#mfa=" + URLEncoder.encode(result.getMfaChallengeToken(), StandardCharsets.UTF_8)
+                    + "&factors=" + URLEncoder.encode(factors, StandardCharsets.UTF_8));
+            return;
+        }
+        response.sendRedirect(publicHost.originForTenant(slug) + "/");
     }
 
-    private static String firstAttribute(Saml2AuthenticatedPrincipal principal, String key) {
-        if (key == null) return null;
-        List<Object> values = principal.getAttribute(key);
-        if (values == null || values.isEmpty()) return null;
-        Object v = values.get(0);
-        return v == null ? null : v.toString();
+    private String loginPage(String slug) {
+        return publicHost.originForTenant(slug) + "/login";
     }
 }
