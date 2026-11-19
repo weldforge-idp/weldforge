@@ -235,8 +235,11 @@ public class AuthService {
         // current encoder strength now that we have the plaintext in hand.
         maybeUpgradePassword(user, request.getPassword());
 
-        lockoutService.recordSuccess(user);
-
+        // The counter is NOT cleared here when a second factor follows. Wrong
+        // passwords and wrong codes share it, so clearing it on the password
+        // step let anyone holding the password guess codes indefinitely: four
+        // wrong codes, sign in again, four more (Proboulos WF-5). MfaController
+        // clears it once the second factor is satisfied.
         if (mfaService.hasVerifiedFactor(user)) {
             String challengeToken = jwtService.generateMfaChallengeToken(
                     user.getId(), tenant.getId(), tenant.getSlug());
@@ -248,6 +251,7 @@ public class AuthService {
                     .availableFactors(mfaService.availableFactors(user))
                     .build();
         }
+        lockoutService.recordSuccess(user);
 
         // PRD MFA-03: if the tenant policy is REQUIRED and the user has no
         // verified factor (and grace period has elapsed), force enrollment
@@ -293,7 +297,7 @@ public class AuthService {
         } catch (AccountLockedException locked) {
             throw new BadCredentialsException("Invalid credentials");
         }
-        lockoutService.recordSuccess(user);
+        // Cleared only when no second factor follows; see login() (WF-5).
 
         if (mfaService.hasVerifiedFactor(user)) {
             String challengeToken = jwtService.generateMfaChallengeToken(
@@ -306,6 +310,7 @@ public class AuthService {
                     .availableFactors(mfaService.availableFactors(user))
                     .build();
         }
+        lockoutService.recordSuccess(user);
         if (mfaPolicyService.mustEnroll(user)) {
             String enrollmentToken = jwtService.generateMfaChallengeToken(
                     user.getId(), tenant.getId(), tenant.getSlug());
