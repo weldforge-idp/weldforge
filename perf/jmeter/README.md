@@ -13,15 +13,17 @@ backend, plus a runner and a seed script.
 1. **App running locally via Docker** (from `weldforge-auth/`):
    ```pwsh
    docker compose up -d --build        # app on :8076, Postgres on :5437
-   curl http://localhost:8076/t/leap/.well-known/openid-configuration
+   curl http://localhost:8076/t/default/.well-known/openid-configuration
    ```
-   A fresh DB runs all Flyway migrations, so the `leap` (public demo) and
-   `default` tenants exist with working signing keys.
+   A fresh DB runs all Flyway migrations, so the `default` tenant exists with
+   a working signing key. `leap` is production's public demo tenant and is no
+   longer provisioned by a migration, so the plans default to `default`. Pass
+   `-Tenant leap` only against a database that has it.
 2. **JMeter** at `C:\dev\tools\jmeter` (Java 25 already on PATH).
 3. For the **auth-based** probes (login throughput, lockout, rate-limit on a
    real account), seed users first:
    ```pwsh
-   ./seed.ps1 -Tenant leap
+   ./seed.ps1 -Tenant default
    ```
 
 ## Running

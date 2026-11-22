@@ -11,11 +11,11 @@
   app if you need a larger pool quickly.
 
 .EXAMPLE
-  ./seed.ps1 -Tenant leap -Count 3
+  ./seed.ps1 -Tenant default -Count 3
 #>
 param(
   [string]$BaseUrl = 'http://localhost:8076',
-  [string]$Tenant  = 'leap',
+  [string]$Tenant  = 'default',
   [int]$Count      = 3,
   [string]$Password = 'LoadTest1!pass'   # satisfies min-10 + upper/lower/digit/symbol
 )
@@ -38,4 +38,4 @@ Register 'Rate Limit' 'ratelimit@example.test'
 for ($i = 1; $i -le $Count; $i++) { Register "User $i" "user$i@example.test" }
 
 Write-Host "`nNote: if a tenant has emailVerificationRequired=true, login will be" -ForegroundColor Yellow
-Write-Host "blocked until verified. The 'leap'/'default' tenants ship with it off." -ForegroundColor Yellow
+Write-Host "blocked until verified. The 'default' tenant ships with it off." -ForegroundColor Yellow

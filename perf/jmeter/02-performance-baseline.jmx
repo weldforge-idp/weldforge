@@ -42,14 +42,14 @@
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
         </HTTPSamplerProxy>
         <hashTree>
-          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA <= 200ms" enabled="true">
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA &lt;= 200ms" enabled="true">
             <stringProp name="DurationAssertion.duration">${__P(sla_health,200)}</stringProp>
           </DurationAssertion>
           <hashTree/>
         </hashTree>
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET OIDC discovery" enabled="true">
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"/></elementProp>
-          <stringProp name="HTTPSampler.path">/t/${__P(tenant,leap)}/.well-known/openid-configuration</stringProp>
+          <stringProp name="HTTPSampler.path">/t/${__P(tenant,default)}/.well-known/openid-configuration</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
         </HTTPSamplerProxy>
@@ -61,14 +61,14 @@
             <intProp name="Assertion.test_type">8</intProp>
           </ResponseAssertion>
           <hashTree/>
-          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA <= 300ms" enabled="true">
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA &lt;= 300ms" enabled="true">
             <stringProp name="DurationAssertion.duration">${__P(sla_discovery,300)}</stringProp>
           </DurationAssertion>
           <hashTree/>
         </hashTree>
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET JWKS" enabled="true">
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"/></elementProp>
-          <stringProp name="HTTPSampler.path">/t/${__P(tenant,leap)}/oauth2/jwks</stringProp>
+          <stringProp name="HTTPSampler.path">/t/${__P(tenant,default)}/oauth2/jwks</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
         </HTTPSamplerProxy>
@@ -80,14 +80,14 @@
             <intProp name="Assertion.test_type">8</intProp>
           </ResponseAssertion>
           <hashTree/>
-          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA <= 300ms" enabled="true">
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA &lt;= 300ms" enabled="true">
             <stringProp name="DurationAssertion.duration">${__P(sla_jwks,300)}</stringProp>
           </DurationAssertion>
           <hashTree/>
         </hashTree>
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET SAML IdP metadata" enabled="true">
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"/></elementProp>
-          <stringProp name="HTTPSampler.path">/t/${__P(tenant,leap)}/saml2/idp/metadata</stringProp>
+          <stringProp name="HTTPSampler.path">/t/${__P(tenant,default)}/saml2/idp/metadata</stringProp>
           <stringProp name="HTTPSampler.method">GET</stringProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
         </HTTPSamplerProxy>
@@ -99,7 +99,7 @@
             <intProp name="Assertion.test_type">8</intProp>
           </ResponseAssertion>
           <hashTree/>
-          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA <= 800ms (XML signing)" enabled="true">
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="SLA &lt;= 800ms (XML signing)" enabled="true">
             <stringProp name="DurationAssertion.duration">${__P(sla_saml,800)}</stringProp>
           </DurationAssertion>
           <hashTree/>
