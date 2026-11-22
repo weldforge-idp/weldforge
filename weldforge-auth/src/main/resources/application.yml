@@ -281,7 +281,8 @@ app:
       register-capacity:       ${APP_RATE_LIMIT_REGISTER_CAPACITY:5}
       register-refill-minutes: ${APP_RATE_LIMIT_REGISTER_REFILL_MINUTES:60}
     refresh-token:
-      lifetime-days: ${APP_REFRESH_TOKEN_LIFETIME_DAYS:30}
+      lifetime-days: ${APP_REFRESH_TOKEN_LIFETIME_DAYS:30}                    # idle limit (per token)
+      absolute-lifetime-days: ${APP_REFRESH_TOKEN_ABSOLUTE_LIFETIME_DAYS:30}  # from sign-in (WF-2)
   mfa:
     totp:
       issuer: ${APP_MFA_TOTP_ISSUER:WeldForge}

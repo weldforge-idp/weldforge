@@ -9,8 +9,20 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.security.refresh-token")
 public class RefreshTokenProperties {
 
-    /** Absolute token lifetime in days. */
+    /**
+     * Lifetime of ONE token in days, when neither the client nor the tenant
+     * sets one. Rotation mints a successor with a fresh lifetime, so this is
+     * the IDLE limit of a session: a family unused for this long dies.
+     */
     private int lifetimeDays = 30;
+
+    /**
+     * The ABSOLUTE limit of a session, in days from the sign-in that started
+     * the family. No successor expires after it, however often the family is
+     * used; the person signs in again. Before WF-2 there was none, so a family
+     * refreshed at least once per idle period lived for ever.
+     */
+    private int absoluteLifetimeDays = 30;
 
     /**
      * How long an EXPIRED, never-revoked token row is kept before the purge
