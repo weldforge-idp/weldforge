@@ -159,6 +159,26 @@ public class AuthService {
         }
     }
 
+    /**
+     * WF-18 (performance and penetration test, 2026-11-16): every refusal that
+     * has no stored hash to check -- an unknown, disabled or locked account, or
+     * one with no local password -- used to answer at once, while a real account
+     * with a wrong password spent a BCrypt compare (300-600 ms). The difference
+     * told anyone timing the answers which addresses hold an account. Each such
+     * refusal now compares against a throwaway hash at the current cost, as
+     * Spring Security's DaoAuthenticationProvider does.
+     */
+    private volatile String timingEqualiserHash;
+
+    private void spendCompareTime(String rawPassword) {
+        String hash = timingEqualiserHash;
+        if (hash == null) {
+            hash = passwordEncoder.encode("timing-equaliser-" + java.util.UUID.randomUUID());
+            timingEqualiserHash = hash;
+        }
+        passwordEncoder.matches(rawPassword == null ? "" : rawPassword, hash);
+    }
+
     private static final int MAX_DISPLAY_NAME = 255;
 
     /**
@@ -202,6 +222,7 @@ public class AuthService {
                 .orElse(null);
 
         if (user == null) {
+            spendCompareTime(request.getPassword());
             failedLoginRecorder.unknownUser(tenant, request.getIdentifier());
             throw new BadCredentialsException("Invalid credentials");
         }
@@ -211,22 +232,29 @@ public class AuthService {
         // credentials" outward to avoid leaking which accounts have been
         // disabled, but the audit log carries the real reason.
         if (!user.isActive()) {
+            spendCompareTime(request.getPassword());
             failedLoginRecorder.inactiveUser(tenant, user, request.getIdentifier(), null);
             throw new BadCredentialsException("Invalid credentials");
         }
 
-        // Locked accounts never reach the password compare — this prevents
-        // timing oracles based on bcrypt runtime.
+        // A locked account never reaches the real compare, so a correct guess
+        // made during the lockout is not confirmed. It still spends the time
+        // of one, so its answer is as slow as any other refusal.
         try {
             lockoutService.ensureNotLocked(user);
         } catch (AccountLockedException locked) {
+            spendCompareTime(request.getPassword());
             // Present an identical "invalid credentials" error outward so an
             // attacker can't distinguish locked from non-existent.
             throw new BadCredentialsException("Invalid credentials");
         }
 
-        if (user.getPassword() == null
-                || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        if (user.getPassword() == null) {
+            spendCompareTime(request.getPassword());
+            failedLoginRecorder.badPassword(tenant, user, request.getIdentifier());
+            throw new BadCredentialsException("Invalid credentials");
+        }
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             failedLoginRecorder.badPassword(tenant, user, request.getIdentifier());
             throw new BadCredentialsException("Invalid credentials");
         }
