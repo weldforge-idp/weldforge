@@ -57,6 +57,20 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+    # Left on deliberately, and said so: some controllers still read lazy
+    # associations after the service call returns. Turning it off is its own
+    # change (Proboulos WF-17 follow-up).
+    open-in-view: true
+    properties:
+      hibernate:
+        # Spring's default here is DELAYED_ACQUISITION_AND_HOLD, which with
+        # open-in-view keeps the first connection a request touches until the
+        # request ends. A sign-in held it through the whole BCrypt compare, so
+        # ten concurrent sign-ins on one CPU took the entire pool and every
+        # other request failed with 500 after 30 s (WF-17, 2026-11-16).
+        # Releasing after each transaction returns it while the CPU works.
+        connection:
+          handling_mode: DELAYED_ACQUISITION_AND_RELEASE_AFTER_TRANSACTION
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
   flyway:
