@@ -272,6 +272,14 @@ interface TenantRow extends Tenant {
                     </mat-form-field>
                   </div>
                 </details>
+                @if (t.draft!.provider === 'MICROSOFT') {
+                  <mat-form-field appearance="outline" style="width: 100%">
+                    <mat-label>Allowed Microsoft directories (tenant ids)</mat-label>
+                    <input matInput [(ngModel)]="t.draft!.allowedTids"
+                           placeholder="e.g. 72f988bf-86f1-41af-91ab-2d7cd011db47">
+                    <mat-hint>Space-separated directory ids. Blank admits accounts from any Microsoft directory.</mat-hint>
+                  </mat-form-field>
+                }
                 <div class="wf-actions">
                   <mat-slide-toggle [(ngModel)]="t.draft!.enabled">Enabled</mat-slide-toggle>
                   <span class="spacer"></span>

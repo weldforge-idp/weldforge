@@ -103,15 +103,26 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         // carries no hd, passes the allow-list, and belongs to no organisation.
         // Refuse it here, before a seat is consumed and before a session with
         // an asserted strength could be minted for it.
-        String requiredHd = providerRepository
+        var providerRow = providerRepository
                 .findByTenant_SlugAndProviderAndEnabledTrue(tenantSlug, parsed.provider())
-                .map(tech.cwvermaak.weldforge.model.TenantSocialProvider::getRequiredHd)
                 .orElse(null);
+        String requiredHd = providerRow == null ? null : providerRow.getRequiredHd();
         if (!EmailDomainPolicy.satisfiesRequiredHostedDomain(
                 EmailDomainPolicy.parse(requiredHd), hostedDomain)) {
             throw new OAuth2AuthenticationException(new OAuth2Error("hosted_domain_required"),
                     "This provider only accepts accounts belonging to an approved "
                     + "organisation, and this account does not name one");
+        }
+
+        // WF-4: Microsoft's multi-tenant endpoint admits every Entra ID
+        // directory, and anyone can create one. tid names the directory the
+        // account belongs to; when the tenant lists directories, an absent or
+        // unlisted tid is refused here, before a seat is consumed.
+        if (providerRow != null
+                && !tech.cwvermaak.weldforge.service.security.EntraDirectoryPolicy.permits(
+                        providerRow.getAllowedTids(), asString(oAuth2User.getAttribute("tid")))) {
+            throw new OAuth2AuthenticationException(new OAuth2Error("directory_not_allowed"),
+                    "This tenant does not accept sign-ins from that Microsoft directory");
         }
 
         User existing = userRepository.findByTenantIdAndEmailIgnoreCase(tenant.getId(), email)

@@ -312,6 +312,10 @@ public class TenantService {
         String mergedHd = merged(dto.getRequiredHd(),
                 existing == null ? null : existing.getRequiredHd());
         tech.cwvermaak.weldforge.service.security.AssertedAmrPolicy.validate(mergedAmr, mergedHd);
+        String mergedTids = merged(dto.getAllowedTids(),
+                existing == null ? null : existing.getAllowedTids());
+        mergedTids = tech.cwvermaak.weldforge.service.security.EntraDirectoryPolicy
+                .normalise(dto.getProvider(), mergedTids);
 
         if (existing == null) {
             if (dto.getClientSecret() == null || dto.getClientSecret().isBlank()) {
@@ -326,6 +330,7 @@ public class TenantService {
                     .scopes(dto.getScopes())
                     .assertedAmr(mergedAmr)
                     .requiredHd(mergedHd)
+                    .allowedTids(mergedTids)
                     .enabled(dto.getEnabled() == null ? true : dto.getEnabled())
                     .build();
             TenantSocialProvider saved = providerRepository.save(fresh);
@@ -348,6 +353,7 @@ public class TenantService {
         // discover.
         existing.setAssertedAmr(mergedAmr);
         existing.setRequiredHd(mergedHd);
+        existing.setAllowedTids(mergedTids);
         if (dto.getEnabled() != null) existing.setEnabled(dto.getEnabled());
         auditService.recordAdmin(AuditEventTypes.SOCIAL_PROVIDER_UPSERT, currentActor(),
                 AuditEventTypes.TARGET_SOCIAL_PROVIDER, String.valueOf(existing.getId()),
@@ -455,6 +461,7 @@ public class TenantService {
                     // has proved anything.
                     d.setAssertedAmr(null);
                     d.setRequiredHd(null);
+                    d.setAllowedTids(null);
                     return d;
                 })
                 .toList();
@@ -522,6 +529,7 @@ public class TenantService {
                 .scopes(p.getScopes())
                 .assertedAmr(p.getAssertedAmr())
                 .requiredHd(p.getRequiredHd())
+                .allowedTids(p.getAllowedTids())
                 .enabled(p.getEnabled())
                 .registrationId(tenantSlug + "-" + p.getProvider().name().toLowerCase())
                 .build();

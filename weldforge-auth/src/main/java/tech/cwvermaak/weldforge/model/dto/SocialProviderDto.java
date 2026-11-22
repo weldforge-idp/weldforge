@@ -26,6 +26,8 @@ public class SocialProviderDto {
     private String assertedAmr;
     /** Required Google {@code hd} values. Admin-only, redacted as above. */
     private String requiredHd;
+    /** Allowed Entra ID directory ids, MICROSOFT only. Admin-only, redacted as above. */
+    private String allowedTids;
     /** Convenience for the login page: the registrationId Spring will route by. */
     private String registrationId;
 }
