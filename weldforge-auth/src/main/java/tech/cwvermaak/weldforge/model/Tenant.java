@@ -188,6 +188,21 @@ public class Tenant {
     private Long verifiedByUserId;
 
     /**
+     * Identity-proofing V2b. True when an email-verification request was
+     * declined by the domain gate (contact_email domain did not match a
+     * registered OIDC web origin) and is waiting for a SUPER_ADMIN to vouch
+     * for it. A super-admin approving the review clears this and issues the
+     * challenge; it never auto-sends while this is true.
+     */
+    @Column(name = "verification_review_required", nullable = false)
+    @Builder.Default
+    private boolean verificationReviewRequired = false;
+
+    /** Human-readable reason the V2b gate declined, shown in the review queue. */
+    @Column(name = "verification_review_reason", length = 255)
+    private String verificationReviewReason;
+
+    /**
      * Maximum number of <em>active</em> users this tenant may hold.
      * {@code null} means unlimited — the default, and what every tenant
      * predating the free tier carries.
