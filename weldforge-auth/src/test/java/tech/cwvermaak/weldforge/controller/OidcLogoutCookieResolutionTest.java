@@ -92,18 +92,19 @@ class OidcLogoutCookieResolutionTest {
                 jwtService);
     }
 
+    /** A POST logout — the method on which cookie-based termination is honoured (WF-10). */
     private MockHttpServletResponse logoutWithCookie(String cookieValue) {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/t/leap/oauth2/logout");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/t/leap/oauth2/logout");
         if (cookieValue != null) {
             request.setCookies(new Cookie(OidcLogoutController.SESSION_COOKIE, cookieValue));
         }
         MockHttpServletResponse response = new MockHttpServletResponse();
-        controller.logoutGet("leap", null, null, null, null, request, response);
+        controller.logoutPost("leap", null, null, null, null, request, response);
         return response;
     }
 
     @Test
-    @DisplayName("A session cookie with no id_token_hint still revokes the user's tokens")
+    @DisplayName("A POST with a session cookie and no id_token_hint revokes the user's tokens")
     void cookie_only_logout_ends_the_session() {
         String session = jwtService.generateAccessToken(
                 "alice@leap.test", 1L, "leap", false, 0);
@@ -111,6 +112,28 @@ class OidcLogoutCookieResolutionTest {
         logoutWithCookie(session);
 
         verify(authService).logoutAll(alice);
+    }
+
+    @Test
+    @DisplayName("WF-10: a GET with only the session cookie must NOT revoke sessions (CSRF)")
+    void get_with_cookie_does_not_terminate() {
+        // The CSRF vector: the session cookie is SameSite=Lax, so a top-level
+        // GET navigation the victim never meant to make carries it. A bare GET
+        // must therefore clear the browser's cookies but leave every session
+        // standing — otherwise one link logs the victim out everywhere.
+        String session = jwtService.generateAccessToken(
+                "alice@leap.test", 1L, "leap", false, 0);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/t/leap/oauth2/logout");
+        request.setCookies(new Cookie(OidcLogoutController.SESSION_COOKIE, session));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        controller.logoutGet("leap", null, null, null, null, request, response);
+
+        verify(authService, never()).logoutAll(any());
+        // The browser's own cookies are still cleared — a harmless, same-origin effect.
+        Cookie cleared = response.getCookie(OidcLogoutController.SESSION_COOKIE);
+        org.assertj.core.api.Assertions.assertThat(cleared).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(cleared.getMaxAge()).isZero();
     }
 
     @Test
