@@ -124,6 +124,37 @@ class RefreshTokenServiceTest {
     }
 
     @Test
+    @DisplayName("WF-8: rotation preserves the family's original auth_time, so a refreshed ID token dates from the login")
+    void rotationPreservesAuthTime() {
+        // auth_time is the instant the user authenticated. A refreshed ID token
+        // must carry that, not the moment of the refresh — otherwise every
+        // refresh silently asserts a fresh login that never happened, defeating
+        // max_age and prompt=max_age checks downstream. The controller mints the
+        // refreshed ID token from the row's auth_time, so rotation copying it
+        // forward is what makes that correct.
+        UUID familyId = UUID.randomUUID();
+        String existingHash = RefreshTokenService.hash("dated-raw");
+        LocalDateTime login = LocalDateTime.now().minusHours(6);
+        RefreshToken existing = RefreshToken.builder()
+                .id(100L)
+                .user(user)
+                .tenant(user.getTenant())
+                .familyId(familyId)
+                .tokenHash(existingHash)
+                .issuedAt(LocalDateTime.now().minusMinutes(1))
+                .expiresAt(LocalDateTime.now().plusDays(7))
+                .authTime(login)
+                .build();
+        when(repo.findByTokenHash(existingHash)).thenReturn(Optional.of(claimTarget = existing));
+
+        RefreshTokenService.Issued issued = service.rotate("dated-raw", "1.2.3.4", "ua");
+
+        assertThat(issued.row().getAuthTime())
+                .as("the successor keeps the original login time, not the refresh time")
+                .isEqualTo(login);
+    }
+
+    @Test
     @DisplayName("re-using a token that was already rotated revokes the whole family")
     void reuse_revokesFamily() {
         UUID familyId = UUID.randomUUID();
