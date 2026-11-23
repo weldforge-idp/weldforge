@@ -19,6 +19,7 @@ import tech.cwvermaak.weldforge.repository.OidcClientRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
 import tech.cwvermaak.weldforge.service.oidc.ClientCredentials;
+import tech.cwvermaak.weldforge.service.oidc.ClientCredentialsScopePolicy;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationException;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService;
 import tech.cwvermaak.weldforge.service.oidc.OidcAuthorizationService.AuthorizeRequest;
@@ -486,9 +487,10 @@ public class OidcAuthorizationController {
             }
             case "client_credentials" -> {
                 OidcClient client = authorizationService.verifyClientCredentials(tenant, clientId, clientSecret);
-                List<String> scopes = scope == null
-                        ? client.getScopeList()
-                        : Arrays.stream(scope.split("\\s+")).filter(s -> !s.isBlank()).toList();
+                // WF-7: the client's registration is the ceiling. Echoing the
+                // requested scope verbatim let a client mint a token claiming
+                // any scope it cared to name.
+                List<String> scopes = ClientCredentialsScopePolicy.resolve(client.getScopeList(), scope);
                 IssuedTokens issued = tokenService.issueForClientCredentials(tenant, client, scopes, issuer);
                 yield ResponseEntity.ok(Map.of(
                         "access_token", issued.accessToken(),
