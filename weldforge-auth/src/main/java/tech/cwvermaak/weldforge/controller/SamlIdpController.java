@@ -271,17 +271,16 @@ public class SamlIdpController {
         String xml;
         try {
             byte[] decoded = java.util.Base64.getDecoder().decode(samlRequest);
-            // For redirect binding, the request may be deflated
-            try {
-                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                java.util.zip.InflaterOutputStream inflater = new java.util.zip.InflaterOutputStream(baos);
-                inflater.write(decoded);
-                inflater.close();
-                xml = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
-            } catch (Exception e) {
-                // Not compressed — raw base64
-                xml = new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
-            }
+            // For redirect binding, the request may be deflated. WF-13: the
+            // inflated size is bounded, so a small compressed payload cannot
+            // expand without limit and exhaust the heap. A payload that is not
+            // DEFLATE is read raw, exactly as before; one that blows the cap
+            // raises SamlRequestTooLargeException and is answered 400 below.
+            byte[] inflated = tech.cwvermaak.weldforge.service.saml.SamlDeflate.inflate(
+                    decoded, tech.cwvermaak.weldforge.service.saml.SamlDeflate.MAX_INFLATED_BYTES);
+            xml = (inflated != null)
+                    ? new String(inflated, java.nio.charset.StandardCharsets.UTF_8)
+                    : new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
 
             // XXE-hardened, namespace-aware DOM parse (B-SAML-1).
             SamlInboundMessageParser.ParsedMessage parsed = SamlInboundMessageParser.parse(xml);
