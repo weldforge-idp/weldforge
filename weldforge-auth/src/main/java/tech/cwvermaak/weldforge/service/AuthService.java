@@ -91,7 +91,21 @@ public class AuthService {
      */
     private final tech.cwvermaak.weldforge.repository.TenantSocialProviderRepository socialProviderRepository;
 
-    @Transactional
+    /**
+     * WF-19 (performance and penetration test, 2026-11-16): registration was
+     * {@code @Transactional}, so the BCrypt hash below ran inside the one
+     * transaction the method held, keeping a pooled connection busy for the
+     * ~hundreds of milliseconds the hash takes. At four concurrent sign-ups the
+     * pool was starved and p95 reached 12 s. It is the same shape WF-17 fixed
+     * for login, and the fix is the same: like {@code login}, this method is not
+     * transactional, so each repository call is its own short transaction
+     * (acquiring and releasing a connection per the
+     * {@code RELEASE_AFTER_TRANSACTION} handling mode) and the hash holds none.
+     * open-in-view keeps the Hibernate session open, so lazy loading is
+     * unaffected; the duplicate pre-check is a check-then-insert either way and
+     * the {@code users_tenant_email_unique} index remains the real guard
+     * against a concurrent duplicate (mapped to a 400).
+     */
     public AuthResponseDto register(RegisterRequestDto request, HttpServletRequest httpRequest,
                                     HttpServletResponse response) {
         Tenant tenant = requestedTenant(httpRequest);
