@@ -83,6 +83,7 @@ public class OidcAuthorizationService {
     private final tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker familyRevoker;
     private final tech.cwvermaak.weldforge.repository.MfaFactorRepository mfaFactorRepository;
     private final tech.cwvermaak.weldforge.service.TenantMfaPolicyService mfaPolicyService;
+    private final ClientSecretVerifier clientSecretVerifier;
 
     // ---- Authorize endpoint ------------------------------------------
 
@@ -418,8 +419,7 @@ public class OidcAuthorizationService {
                 throw reject("invalid_grant",
                         "PKCE (code_challenge) is required for public clients");
             }
-        } else if (request.clientSecret() == null
-                || !constantTimeEquals(request.clientSecret(), client.getClientSecret())) {
+        } else if (!clientSecretVerifier.verify(client, request.clientSecret())) {
             throw reject("invalid_client", "Client secret mismatch");
         }
 
@@ -453,7 +453,7 @@ public class OidcAuthorizationService {
             throw reject("unauthorized_client",
                     "Public clients cannot use the client_credentials grant");
         }
-        if (clientSecret == null || !constantTimeEquals(clientSecret, client.getClientSecret())) {
+        if (!clientSecretVerifier.verify(client, clientSecret)) {
             throw reject("invalid_client", "Client secret mismatch");
         }
         if (!client.getGrantTypeList().contains("client_credentials")) {
@@ -480,8 +480,7 @@ public class OidcAuthorizationService {
         if (!client.getGrantTypeList().contains("refresh_token")) {
             throw reject("unauthorized_client", "Client is not allowed to use refresh_token");
         }
-        if (!client.isPublicClient()
-                && (clientSecret == null || !constantTimeEquals(clientSecret, client.getClientSecret()))) {
+        if (!client.isPublicClient() && !clientSecretVerifier.verify(client, clientSecret)) {
             throw reject("invalid_client", "Client secret mismatch");
         }
         return client;
@@ -613,11 +612,4 @@ public class OidcAuthorizationService {
         return sha256(verifier);
     }
 
-    /** Constant-time string comparison — avoids a timing oracle on the client secret. */
-    private static boolean constantTimeEquals(String a, String b) {
-        if (a == null || b == null) return false;
-        return MessageDigest.isEqual(
-                a.getBytes(StandardCharsets.UTF_8),
-                b.getBytes(StandardCharsets.UTF_8));
-    }
 }

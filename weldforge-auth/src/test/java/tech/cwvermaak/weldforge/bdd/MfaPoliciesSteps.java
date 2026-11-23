@@ -150,7 +150,8 @@ public class MfaPoliciesSteps {
                 policyRepo, mfaFactorRepo, userRepo, auditService);
         oidcAuthService = new OidcAuthorizationService(oidcClientRepo, codeRepo, auditService,
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), mock(tech.cwvermaak.weldforge.service.security.RefreshTokenFamilyRevoker.class),
-                mfaFactorRepo, mfaPolicyService);
+                mfaFactorRepo, mfaPolicyService,
+                new tech.cwvermaak.weldforge.service.oidc.ClientSecretVerifier(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
     }
 
     private Tenant tenant(String slug) {

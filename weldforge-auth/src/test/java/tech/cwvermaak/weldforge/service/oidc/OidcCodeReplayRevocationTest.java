@@ -80,7 +80,8 @@ class OidcCodeReplayRevocationTest {
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
                 familyRevoker,
                 mock(MfaFactorRepository.class),
-                mock(TenantMfaPolicyService.class));
+                mock(TenantMfaPolicyService.class),
+                new ClientSecretVerifier(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
         leap = Tenant.builder().id(1L).slug("leap").name("Leap").build();
         portal = OidcClient.builder().id(10L).tenant(leap).clientId("portal")

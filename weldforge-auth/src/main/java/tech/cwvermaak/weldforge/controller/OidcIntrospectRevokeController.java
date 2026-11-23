@@ -36,6 +36,7 @@ public class OidcIntrospectRevokeController {
     private final OidcClientRepository clientRepository;
     private final OidcIntrospectionService introspectionService;
     private final OidcRevocationService revocationService;
+    private final tech.cwvermaak.weldforge.service.oidc.ClientSecretVerifier clientSecretVerifier;
 
     @PostMapping(value = "/t/{slug}/oauth2/introspect",
                  consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
@@ -111,16 +112,8 @@ public class OidcIntrospectRevokeController {
 
     private boolean verifyClient(Tenant tenant, String clientId, String clientSecret) {
         return clientRepository.findByTenantIdAndClientId(tenant.getId(), clientId)
-                .map(c -> constantTimeEquals(clientSecret, c.getClientSecret()))
+                .map(c -> clientSecretVerifier.verify(c, clientSecret))
                 .orElse(false);
-    }
-
-    /** Constant-time secret comparison — avoids a timing oracle on the client secret. */
-    private static boolean constantTimeEquals(String a, String b) {
-        if (a == null || b == null) return false;
-        return java.security.MessageDigest.isEqual(
-                a.getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                b.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     /**
@@ -130,12 +123,13 @@ public class OidcIntrospectRevokeController {
      * {@code client_id} is all there is -- the same position the token endpoint
      * already takes for a public client's code exchange, where PKCE rather than
      * a secret is what proves the caller. A confidential client must present
-     * its secret, compared in constant time.
+     * its secret, verified in constant time against the stored hash (or, until
+     * it rotates, the legacy encrypted form) by {@code ClientSecretVerifier}.
      */
-    private static boolean authenticatesAs(OidcClient client, String clientSecret) {
+    private boolean authenticatesAs(OidcClient client, String clientSecret) {
         if (client.isPublicClient()) {
             return true;
         }
-        return constantTimeEquals(clientSecret, client.getClientSecret());
+        return clientSecretVerifier.verify(client, clientSecret);
     }
 }
