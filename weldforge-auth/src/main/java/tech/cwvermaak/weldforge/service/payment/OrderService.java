@@ -114,7 +114,16 @@ public class OrderService {
         String token = newOrderToken();
         // A slug held for 10 minutes makes sense while a card is being typed.
         // It does not survive a human replying to an email, so the manual path
-        // holds it long enough for that conversation to happen.
+        // records a longer window for that conversation to happen.
+        //
+        // B-PROV-2: the manual-path hold is SOFT. This order carries no gateway
+        // and stays CREATED, and V76's partial unique index covers only
+        // CHECKOUT_STARTED/PAID/PROVISIONING_FAILED rows and gateway-bearing
+        // CREATED rows — so a gateway-less CREATED order records the slug as a
+        // preference without blocking anyone else. That is what stops an
+        // anonymous, unverified caller parking a desirable slug for 72h and
+        // renewing it. The window below is now just how long the lead stays
+        // live before OrderExpiryScheduler retires it.
         LocalDateTime slugExpires = canCheckOut
                 ? LocalDateTime.now().plusMinutes(slugReservationMinutes)
                 : LocalDateTime.now().plusHours(manualFollowUpReservationHours);

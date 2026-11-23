@@ -32,7 +32,10 @@ Feature: Platform billing — payment-first-then-provision
     Then the order is in state "CREATED"
     And the customer did not receive a checkout URL
     And the next step is "MANUAL_FOLLOW_UP"
-    And the slug "smme" is still reserved
+    # B-PROV-2: the manual path records the slug as a soft preference, not a
+    # hard reservation an anonymous caller could squat (see V76 and
+    # SlugReservationIntegrationTest for the index that enforces it).
+    And the slug "smme" is recorded as a soft preference
     And sales was notified about the order
     And no tenant with slug "smme" exists
 
