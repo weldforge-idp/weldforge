@@ -677,10 +677,22 @@ public class OidcAuthorizationController {
      */
     private static boolean needsReauthentication(OidcPrompt prompts, Integer maxAge,
                                                  HttpServletRequest request) {
-        if (prompts.requiresReauthentication()) return true;
-        if (maxAge == null || maxAge < 0) return false;
-
         java.time.Instant authTime = sessionAuthTime(request);
+
+        if (prompts.requiresReauthentication()) {
+            // prompt=login / select_account demand a fresh authentication. It
+            // is SATISFIED once the user has authenticated at or after the
+            // moment we demanded it -- the reauth marker, exactly what it is
+            // for (WF-9). Without that credit, a genuine re-login would bounce
+            // straight back to login_required, because the RP's prompt=login
+            // is still on the resumed URL; so Option A never actually
+            // succeeded. On the first pass there is no marker and the demand
+            // stands.
+            java.time.Instant demandedAt = reauthDeadline(request);
+            return demandedAt == null || authTime == null || authTime.isBefore(demandedAt);
+        }
+
+        if (maxAge == null || maxAge < 0) return false;
         // No auth_time on the session means we cannot show the session is
         // fresh enough, and max_age is a requirement rather than a
         // preference -- so re-authenticate instead of assuming.
