@@ -78,7 +78,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        Bucket4jEndpoint endpoint = ROUTES.get(request.getRequestURI());
+        Bucket4jEndpoint endpoint = ROUTES.get(matchPath(request));
         if (endpoint == null) {
             chain.doFilter(request, response);
             return;
@@ -103,6 +103,43 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
         response.setHeader("X-RateLimit-Remaining", String.valueOf(probe.getRemainingTokens()));
         chain.doFilter(request, response);
+    }
+
+    /**
+     * The path to match against {@link #ROUTES}, decoded and normalised so it
+     * cannot be dodged by encoding (WF-14).
+     *
+     * <p>{@code getRequestURI()} is the raw, percent-encoded request target per
+     * the servlet spec, but Tomcat decodes and normalises before it routes to a
+     * controller — so {@code /api/auth/lo%67in}, a trailing slash, or matrix
+     * parameters would all reach the login handler while missing a lookup keyed
+     * on the raw URI, leaving the endpoint unthrottled. The container's own
+     * {@code getServletPath()}/{@code getPathInfo()} are the decoded, normalised
+     * path it matched the handler with, so keying on them matches exactly what
+     * ran. A single trailing slash and any matrix parameters are trimmed so
+     * {@code /api/auth/login/} and {@code /api/auth/login;x=1} map to the same
+     * bucket. The {@code getRequestURI()} fallback (for an unusual servlet
+     * mapping that leaves the servlet path empty) is decoded through
+     * {@link java.net.URI} so it cannot carry the encoding past the guard.
+     */
+    static String matchPath(HttpServletRequest request) {
+        String servletPath = request.getServletPath();
+        String pathInfo = request.getPathInfo();
+        String path = (servletPath == null ? "" : servletPath) + (pathInfo == null ? "" : pathInfo);
+        if (path.isEmpty()) {
+            try {
+                String decoded = new java.net.URI(request.getRequestURI()).getPath();
+                if (decoded != null) path = decoded;
+            } catch (java.net.URISyntaxException ignored) {
+                path = request.getRequestURI() == null ? "" : request.getRequestURI();
+            }
+        }
+        int semicolon = path.indexOf(';');
+        if (semicolon >= 0) path = path.substring(0, semicolon);
+        while (path.length() > 1 && path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        }
+        return path;
     }
 
     private static String clientIp(HttpServletRequest request) {
