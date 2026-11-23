@@ -48,6 +48,17 @@ import java.util.regex.Pattern;
  * <p>Matched on the decoded servlet path as well as the raw URI: Spring MVC
  * routes {@code /api/%61dmin/roles} to the same controller, and a gate keyed on
  * the raw URI alone would not see it.
+ *
+ * <p>WF-6: once a caller is confirmed to be an admin, they must also hold a
+ * verified second factor. An admin-console credential that is only a password
+ * is one phishing away from tenant-wide control, so a factorless admin is
+ * answered {@code 403 mfa_enrolment_required} and the portal sends them to
+ * enrol (the enrolment endpoints are under {@code /api/auth/mfa/**}, which this
+ * gate does not cover, so that screen is always reachable). Service accounts
+ * are exempt — a machine credential has no interactive factor and is protected
+ * by key secrecy and rotation. Gated by {@code app.admin.require-mfa} (default
+ * false) so dev and the test suite are unaffected and the hosted clusters opt
+ * in, the same way {@code APP_REQUIRE_SECURE_SECRETS} gates secret hygiene.
  */
 @Component
 @RequiredArgsConstructor
@@ -59,6 +70,10 @@ public class AdminAreaGateFilter extends OncePerRequestFilter {
             Pattern.compile("^/api/admin/users/[^/]+/role-grants(/.*)?$");
 
     private final TenantAccessor tenantAccessor;
+    private final tech.cwvermaak.weldforge.repository.MfaFactorRepository mfaFactorRepository;
+
+    @org.springframework.beans.factory.annotation.Value("${app.admin.require-mfa:false}")
+    private boolean requireAdminMfa;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -85,7 +100,27 @@ public class AdminAreaGateFilter extends OncePerRequestFilter {
                     "This endpoint requires an admin role in tenant '" + TenantContext.get() + "'", request));
             return;
         }
+
+        // WF-6: an admin must also hold a verified second factor. Only human
+        // admins — a service account has no interactive factor and is exempt.
+        if (requireAdminMfa && adminLacksSecondFactor()) {
+            log.info("admin_mfa_required path={} tenant={} user={}",
+                    decoded, TenantContext.get(), TenantContext.getActorUserId());
+            ApiProblem.write(response, ApiProblem.body(HttpStatus.FORBIDDEN, "mfa_enrolment_required",
+                    "An administrator must enrol a multi-factor method (under /api/auth/mfa) "
+                            + "before using the admin console", request));
+            return;
+        }
         filterChain.doFilter(request, response);
+    }
+
+    /** A human admin who has no enabled, verified MFA factor (WF-6). */
+    private boolean adminLacksSecondFactor() {
+        Long userId = TenantContext.getActorUserId();
+        if (TenantContext.getActorServiceAccountId() != null || userId == null) {
+            return false; // machine credential, or no resolvable user — not gated here
+        }
+        return mfaFactorRepository.findByUserIdAndEnabledTrueAndVerifiedTrue(userId).isEmpty();
     }
 
     private AdminRole callerRole() {
