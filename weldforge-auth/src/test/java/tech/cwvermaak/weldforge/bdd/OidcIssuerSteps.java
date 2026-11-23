@@ -233,7 +233,8 @@ public class OidcIssuerSteps {
 
         authorizationService = new OidcAuthorizationService(clientRepo, codeRepo, auditService,
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), familyRevoker,
-                mfaFactorRepo, mfaPolicyService);
+                mfaFactorRepo, mfaPolicyService,
+                new tech.cwvermaak.weldforge.service.oidc.ClientSecretVerifier(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
         // V62: the roles claim is read from the repository, not from a lazy
         // collection. These suites assert other claims, so an empty set is fine.
         var roleRepositoryForTest = org.mockito.Mockito.mock(

@@ -35,9 +35,27 @@ public class OidcClient {
     @Column(name = "client_id", nullable = false, length = 128)
     private String clientId;
 
+    /**
+     * Legacy reversibly-encrypted client secret (B-OIDC-7). Nullable since the
+     * migrate-on-rotation change: a client created or rotated after V75 stores
+     * only {@link #clientSecretHash} and leaves this null. A client registered
+     * before it keeps its encrypted secret here and verifies against it until
+     * it next rotates. Never re-displayed; see {@code ClientSecretVerifier}.
+     */
     @Convert(converter = EncryptedStringConverter.class)
-    @Column(name = "client_secret_enc", nullable = false, columnDefinition = "TEXT")
+    @Column(name = "client_secret_enc", columnDefinition = "TEXT")
     private String clientSecret;
+
+    /**
+     * SHA-256 of this client's secret (B-OIDC-7), stored exactly as
+     * {@link #registrationAccessTokenHash} is and for the same reason: the
+     * secret is a bearer credential compared but never recovered, so a database
+     * dump should not be enough to impersonate the client. Set on create and on
+     * rotate; null for a client that predates V75 and has not rotated (it still
+     * carries {@link #clientSecret}) and for a public client (which has none).
+     */
+    @Column(name = "client_secret_hash", length = 64)
+    private String clientSecretHash;
 
     /**
      * SHA-256 of this client's RFC 7592 registration access token (CONF-4.3).

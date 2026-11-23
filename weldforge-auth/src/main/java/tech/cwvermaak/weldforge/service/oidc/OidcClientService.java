@@ -119,7 +119,11 @@ public class OidcClientService {
         OidcClient client = OidcClient.builder()
                 .tenant(tenant)
                 .clientId(clientId)
-                .clientSecret(clientSecret)
+                // B-OIDC-7: store only the hash of a confidential client's
+                // secret; the encrypted column stays null for clients created
+                // after V75. Public clients have no secret at all.
+                .clientSecret(null)
+                .clientSecretHash(isPublic ? null : hashClientSecret(clientSecret))
                 .name(dto.getName())
                 .redirectUris(joinCsv(dto.getRedirectUris()))
                 .postLogoutRedirectUris(joinCsv(dto.getPostLogoutRedirectUris()))
@@ -374,7 +378,11 @@ public class OidcClientService {
                     "Public clients authenticate with PKCE and have no secret to rotate");
         }
         String newSecret = generateSecret();
-        client.setClientSecret(newSecret);
+        // B-OIDC-7: rotation migrates the client onto a hash and drops any
+        // legacy encrypted secret, so a rotated client leaves the old form
+        // behind for good.
+        client.setClientSecret(null);
+        client.setClientSecretHash(hashClientSecret(newSecret));
         auditService.recordAdmin(AuditEventTypes.OIDC_CLIENT_ROTATE_SECRET, null,
                 AuditEventTypes.TARGET_OIDC_CLIENT, client.getClientId(),
                 AuditService.meta("tenant", client.getTenant().getSlug()));
@@ -618,6 +626,22 @@ public class OidcClientService {
      * nothing and cost latency on every management call.
      */
     public static String hashRegistrationToken(String raw) {
+        return sha256UrlB64(raw);
+    }
+
+    /**
+     * Hash an OIDC client secret for storage or comparison (B-OIDC-7).
+     *
+     * <p>Same SHA-256 form as {@link #hashRegistrationToken}, and for the same
+     * reason: the secret is a 256-bit random bearer value, not a password, so a
+     * slow KDF would buy nothing and cost latency on every token call. Verified
+     * through {@code ClientSecretVerifier}, never recovered.
+     */
+    public static String hashClientSecret(String raw) {
+        return sha256UrlB64(raw);
+    }
+
+    private static String sha256UrlB64(String raw) {
         try {
             java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
             return java.util.Base64.getUrlEncoder().withoutPadding()
