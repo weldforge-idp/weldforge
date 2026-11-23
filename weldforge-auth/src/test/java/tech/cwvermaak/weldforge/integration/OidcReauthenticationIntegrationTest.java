@@ -190,6 +190,25 @@ class OidcReauthenticationIntegrationTest {
     }
 
     @Test
+    @DisplayName("prompt=login SUCCEEDS once the user has re-authenticated after the demand")
+    void promptLogin_afterReauth_proceeds() throws Exception {
+        // The marker is in the PAST, so the live session (authenticated just
+        // now in seed()) is at or after it: the re-authentication prompt=login
+        // asked for has happened. The request must now proceed -- to consent or
+        // the redirect -- not bounce back to sign-in and not fail login_required.
+        // Without crediting the marker, Option A never actually completes.
+        MvcResult r = authorize("prompt", "login",
+                "wf_reauth_at", String.valueOf(java.time.Instant.now().getEpochSecond() - 120));
+
+        assertThat(r.getResponse().getStatus()).isIn(200, 302);
+        String location = r.getResponse().getHeader("Location");
+        if (location != null) {
+            assertThat(location).doesNotContain("/login/");
+            assertThat(location).doesNotContain("error=login_required");
+        }
+    }
+
+    @Test
     @DisplayName("prompt=login with prompt=none is a contradiction, not a silent winner")
     void promptLoginAndNone_isInvalidRequest() throws Exception {
         MvcResult r = authorize("prompt", "none login");
