@@ -49,8 +49,20 @@ public class SamlMetadataParser {
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException("metadataUrl is required");
         }
+        // WF-12: an admin-supplied URL is a server-side fetch, so it must pass
+        // the SSRF egress guard before any request is made — otherwise the
+        // metadata import is a pivot to loopback, RFC-1918 and the
+        // 169.254.169.254 cloud-metadata endpoint. The client never follows
+        // redirects (default policy NEVER), so a 3xx to an internal host is
+        // returned, not chased.
+        URI uri;
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            uri = tech.cwvermaak.weldforge.service.security.EgressGuard.validate(url);
+        } catch (tech.cwvermaak.weldforge.service.security.EgressNotAllowedException e) {
+            throw new IllegalArgumentException("metadataUrl rejected: " + e.getMessage(), e);
+        }
+        try {
+            HttpRequest req = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(15))
                     .header("Accept", "application/samlmetadata+xml, application/xml, text/xml, */*")
                     .GET()
