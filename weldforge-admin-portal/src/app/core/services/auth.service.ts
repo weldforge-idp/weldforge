@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { TokenRefreshScheduler } from './token-refresh.scheduler';
+import { AccessTokenStore } from './access-token-store';
 import { sharedRefresh } from '../session-refresh';
 
 export type MfaFactorType = 'TOTP' | 'WEBAUTHN';
@@ -27,17 +28,16 @@ export class AuthService {
   constructor(
     private http: HttpClient,
     private scheduler: TokenRefreshScheduler,
+    private tokenStore: AccessTokenStore,
   ) {
-    // If a token is already in localStorage (page reload while logged
-    // in, or new tab opened with a live session), schedule the next
-    // proactive refresh immediately so the user doesn't see a 401
-    // round-trip on their first request.
-    const existing = this.getAccessToken();
-    if (existing) this.scheduler.scheduleFromToken(existing);
+    // The access token now lives only in memory (WF-15), so a page reload
+    // starts with none and isLoggedIn() is false until adoptCookieSession()
+    // refreshes from the httpOnly cookie -- which schedules the next proactive
+    // refresh as it stores the fresh token. There is nothing to pick up here.
   }
 
   isLoggedIn(): boolean {
-    return !!localStorage.getItem('access_token');
+    return !!this.tokenStore.get();
   }
 
   /**
@@ -154,12 +154,12 @@ export class AuthService {
       .post(`${this.url}/logout-all`, null, { withCredentials: true })
       .pipe(catchError(() => of(null)));
     this.scheduler.cancel();
-    localStorage.removeItem('access_token');
+    this.tokenStore.clear();
     return obs;
   }
 
   getAccessToken(): string | null {
-    return localStorage.getItem('access_token');
+    return this.tokenStore.get();
   }
 
   /**
@@ -209,7 +209,7 @@ export class AuthService {
 
   private storeIfAccess(res: AuthResponse) {
     if (res && res.token && !res.mfaRequired) {
-      localStorage.setItem('access_token', res.token);
+      this.tokenStore.set(res.token);
       this.scheduler.scheduleFromToken(res.token);
     }
   }

@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { adminGuard } from './admin.guard';
 import { AuthService } from '../services/auth.service';
 import { TokenRefreshScheduler } from './../services/token-refresh.scheduler';
+import { AccessTokenStore } from '../services/access-token-store';
 import { HttpClient } from '@angular/common/http';
 
 /** An unsigned JWT with the given claims -- the portal never verifies signatures. */
@@ -22,7 +23,6 @@ describe('adminGuard', () => {
 
   function runWith(claims: Record<string, unknown> | null): boolean {
     localStorage.clear();
-    if (claims) localStorage.setItem('access_token', token(claims));
     TestBed.resetTestingModule();
     router = { navigate: vi.fn() };
     TestBed.configureTestingModule({
@@ -33,6 +33,7 @@ describe('adminGuard', () => {
         { provide: Router, useValue: router },
       ],
     });
+    if (claims) TestBed.inject(AccessTokenStore).set(token(claims));
     return TestBed.runInInjectionContext(
       () => adminGuard({} as never, {} as never)) as boolean;
   }
