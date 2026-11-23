@@ -202,6 +202,14 @@ wf:
     slug-holdback-days: ${APP_PUBLIC_SLUG_HOLDBACK_DAYS:90}
 
 app:
+  admin:
+    # WF-6: require an enrolled, verified MFA factor of any admin-console user
+    # before they may call /api/admin/**. Default false, so local dev and the
+    # test suite are unaffected and a self-hosted deployment opts in; the hosted
+    # clusters set APP_ADMIN_REQUIRE_MFA=true. Service accounts are exempt — a
+    # machine credential has no interactive second factor. Mirrors how
+    # require-secure-secrets gates the secret-hygiene check.
+    require-mfa: ${APP_ADMIN_REQUIRE_MFA:false}
   jwt:
     # The HMAC signing secret for legacy platform tokens. In every real
     # deployment this MUST be supplied via the JWT_SECRET env var (sourced
