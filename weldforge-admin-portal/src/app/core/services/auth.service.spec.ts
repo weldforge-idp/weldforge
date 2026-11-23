@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { of } from 'rxjs';
 import { AuthService, AuthResponse } from './auth.service';
 import { TokenRefreshScheduler } from './token-refresh.scheduler';
+import { AccessTokenStore } from './access-token-store';
 
 /**
  * Unit tests for the AuthService login flow — with extra attention to the
@@ -12,16 +13,19 @@ import { TokenRefreshScheduler } from './token-refresh.scheduler';
 describe('AuthService', () => {
   let http: { post: any; get: any; delete: any };
   let scheduler: { scheduleFromToken: any; cancel: any };
+  let store: AccessTokenStore;
   let service: AuthService;
 
   beforeEach(() => {
+    localStorage.clear();
     http = { post: vi.fn(), get: vi.fn(), delete: vi.fn() };
     scheduler = { scheduleFromToken: vi.fn(), cancel: vi.fn() };
+    store = new AccessTokenStore();
     service = new AuthService(
       http as unknown as HttpClient,
       scheduler as unknown as TokenRefreshScheduler,
+      store,
     );
-    localStorage.clear();
   });
 
   describe('login', () => {
@@ -34,7 +38,7 @@ describe('AuthService', () => {
         .subscribe(r => (observed = r));
 
       expect(observed).toEqual(response);
-      expect(localStorage.getItem('access_token')).toBe('tok-123');
+      expect(store.get()).toBe('tok-123');
       expect(service.isLoggedIn()).toBe(true);
     });
 
@@ -51,7 +55,7 @@ describe('AuthService', () => {
 
       service.login({ identifier: 'alice@acme.test', password: 'secret' }).subscribe();
 
-      expect(localStorage.getItem('access_token')).toBeNull();
+      expect(store.get()).toBeNull();
       expect(service.isLoggedIn()).toBe(false);
     });
   });
@@ -67,7 +71,7 @@ describe('AuthService', () => {
         code: '123456',
       }).subscribe();
 
-      expect(localStorage.getItem('access_token')).toBe('tok-after-mfa');
+      expect(store.get()).toBe('tok-after-mfa');
       expect(service.isLoggedIn()).toBe(true);
     });
   });
@@ -78,11 +82,11 @@ describe('AuthService', () => {
       // ignores the body but still has to subscribe so the request goes
       // out, which the AppComponent click handler does.
       http.post.mockReturnValue(of({ refreshTokensRevoked: 2 }));
-      localStorage.setItem('access_token', 'stale');
+      store.set('stale');
 
       service.logout().subscribe();
 
-      expect(localStorage.getItem('access_token')).toBeNull();
+      expect(store.get()).toBeNull();
       expect(service.isLoggedIn()).toBe(false);
       expect(scheduler.cancel).toHaveBeenCalled();
       // First arg = URL, second = body (null), third = options.
@@ -93,11 +97,11 @@ describe('AuthService', () => {
       http.post.mockReturnValue({
         pipe: () => ({ subscribe: () => undefined }),
       });
-      localStorage.setItem('access_token', 'stale');
+      store.set('stale');
 
       // Should not throw even when the http call errors.
       expect(() => service.logout().subscribe()).not.toThrow();
-      expect(localStorage.getItem('access_token')).toBeNull();
+      expect(store.get()).toBeNull();
     });
   });
 
@@ -117,7 +121,7 @@ describe('AuthService', () => {
       { claims: { sa: false, adm: 'NONE' }, expected: false },
       { claims: {}, expected: false },
     ])('$claims -> $expected', ({ claims, expected }) => {
-      localStorage.setItem('access_token', token(claims));
+      store.set(token(claims));
       expect(service.hasAdminAccess()).toBe(expected);
     });
 

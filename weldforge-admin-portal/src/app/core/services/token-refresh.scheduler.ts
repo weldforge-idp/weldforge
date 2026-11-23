@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { refreshSession } from '../session-refresh';
+import { AccessTokenStore } from './access-token-store';
 
 /**
  * Proactively rotates the access JWT just before it expires.
@@ -34,6 +35,7 @@ import { refreshSession } from '../session-refresh';
 @Injectable({ providedIn: 'root' })
 export class TokenRefreshScheduler {
   private readonly http = inject(HttpClient);
+  private readonly tokenStore = inject(AccessTokenStore);
 
   /** Refresh this many seconds BEFORE the JWT's exp. */
   private static readonly LEEWAY_SECONDS = 30;
@@ -48,7 +50,6 @@ export class TokenRefreshScheduler {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private channel: BroadcastChannel | null = null;
   private channelHandler: ((ev: MessageEvent<unknown>) => void) | null = null;
-  private storageHandler: ((ev: StorageEvent) => void) | null = null;
 
   /**
    * Call on app boot (with the token already in localStorage), after a
@@ -101,7 +102,7 @@ export class TokenRefreshScheduler {
 
     try {
       const res = await firstValueFrom(refreshSession(this.http));
-      localStorage.setItem('access_token', res.token);
+      this.tokenStore.set(res.token);
       this.broadcastNewToken(res.token);
       this.scheduleFromToken(res.token);
     } catch {
@@ -153,29 +154,11 @@ export class TokenRefreshScheduler {
   // ---- Cross-tab broadcast -----------------------------------------
   private ensureChannel(): void {
     if (this.channel || typeof BroadcastChannel === 'undefined') {
-      this.installStorageFallback();
       return;
     }
     this.channel = new BroadcastChannel(TokenRefreshScheduler.CHANNEL_NAME);
     this.channelHandler = (ev) => this.onMessage(ev.data);
     this.channel.addEventListener('message', this.channelHandler);
-    this.installStorageFallback();
-  }
-
-  /**
-   * Safari and a few embedded browsers still ship without
-   * BroadcastChannel. Storage events on the access_token key give us
-   * the same notification (followers see the leader's setItem) and we
-   * piggy-back on that.
-   */
-  private installStorageFallback(): void {
-    if (this.storageHandler) return;
-    this.storageHandler = (ev) => {
-      if (ev.key === 'access_token' && ev.newValue) {
-        this.scheduleFromToken(ev.newValue);
-      }
-    };
-    window.addEventListener('storage', this.storageHandler);
   }
 
   private broadcastNewToken(token: string): void {
@@ -186,8 +169,8 @@ export class TokenRefreshScheduler {
     if (!data || typeof data !== 'object') return;
     const msg = data as { kind?: string; token?: string; from?: string };
     if (msg.kind === 'token' && msg.token && msg.from !== TokenRefreshScheduler.TAB_ID) {
-      // Leader announced a new token; pick it up and reschedule.
-      localStorage.setItem('access_token', msg.token);
+      // Leader announced a new token; adopt it into memory and reschedule.
+      this.tokenStore.set(msg.token);
       this.scheduleFromToken(msg.token);
     }
   }

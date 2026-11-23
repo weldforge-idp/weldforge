@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 
 import { TenantPickerService } from './tenant-picker.service';
 import { AuthService } from './auth.service';
+import { AccessTokenStore } from './access-token-store';
 import { TokenRefreshScheduler } from './token-refresh.scheduler';
 
 /** An unsigned JWT with the given payload -- the portal never verifies signatures. */
@@ -14,6 +15,7 @@ function token(claims: Record<string, unknown>): string {
 
 describe('TenantPickerService', () => {
   let picker: TenantPickerService;
+  let store: AccessTokenStore;
 
   beforeEach(() => {
     localStorage.clear();
@@ -26,13 +28,14 @@ describe('TenantPickerService', () => {
       ],
     });
     picker = TestBed.inject(TenantPickerService);
+    store = TestBed.inject(AccessTokenStore);
   });
 
   it('tracks the selection once a super-admin token appears (2026-09-11 regression)', () => {
     // Evaluated before sign-in: not a super-admin yet, so no selector.
     expect(picker.outgoingSlug()).toBeNull();
 
-    localStorage.setItem('access_token', token({ tenant: 'default', sa: true, adm: 'SUPER_ADMIN' }));
+    store.set(token({ tenant: 'default', sa: true, adm: 'SUPER_ADMIN' }));
     picker.set('cwvermaak-tech');
 
     // As a memoised computed() this stayed null for the life of the page
@@ -41,7 +44,7 @@ describe('TenantPickerService', () => {
   });
 
   it('follows a change of selection', () => {
-    localStorage.setItem('access_token', token({ tenant: 'default', adm: 'SUPER_ADMIN' }));
+    store.set(token({ tenant: 'default', adm: 'SUPER_ADMIN' }));
     picker.set('leap');
     expect(picker.outgoingSlug()).toBe('leap');
     picker.set('intellisuite');
@@ -49,19 +52,19 @@ describe('TenantPickerService', () => {
   });
 
   it('defaults to the home tenant when nothing is picked', () => {
-    localStorage.setItem('access_token', token({ tenant: 'default', adm: 'SUPER_ADMIN' }));
+    store.set(token({ tenant: 'default', adm: 'SUPER_ADMIN' }));
     expect(picker.outgoingSlug()).toBe('default');
   });
 
   it('stops sending a selector when the token stops being super-admin', () => {
-    localStorage.setItem('access_token', token({ tenant: 'default', adm: 'SUPER_ADMIN' }));
+    store.set(token({ tenant: 'default', adm: 'SUPER_ADMIN' }));
     picker.set('leap');
-    localStorage.setItem('access_token', token({ tenant: 'default', adm: 'TENANT_ADMIN' }));
+    store.set(token({ tenant: 'default', adm: 'TENANT_ADMIN' }));
     expect(picker.outgoingSlug()).toBeNull();
   });
 
   it('rejects a malformed slug', () => {
-    localStorage.setItem('access_token', token({ tenant: 'default', adm: 'SUPER_ADMIN' }));
+    store.set(token({ tenant: 'default', adm: 'SUPER_ADMIN' }));
     picker.set('leap');
     picker.set('../evil');
     expect(picker.outgoingSlug()).toBe('leap');
@@ -86,7 +89,7 @@ describe('TenantPickerService', () => {
     { claims: {}, eligible: false },
   ])('eligibility for $claims', ({ claims, eligible }) => {
     it(eligible ? 'sends the picked tenant' : 'sends no selector', () => {
-      localStorage.setItem('access_token', token({ tenant: 'default', ...claims }));
+      store.set(token({ tenant: 'default', ...claims }));
       picker.set('leap');
       expect(TestBed.inject(AuthService).isSuperAdmin()).toBe(eligible);
       expect(picker.outgoingSlug()).toBe(eligible ? 'leap' : null);

@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Observable, ReplaySubject, take } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { TENANT_HINT_KEY } from './services/access-token-store';
 
 export interface RefreshResponse {
   token: string;
@@ -8,18 +9,18 @@ export interface RefreshResponse {
 }
 
 /**
- * The tenant of the session in local storage -- the one a refresh renews.
- * Read straight from the token, expired or not: an expired access token is
- * exactly when we refresh, and it still names its tenant.
+ * The tenant of the current session -- the one a refresh renews.
+ *
+ * <p>Read from the persisted tenant-slug hint, not the access token: WF-15
+ * moved the token into memory, so on a cold load (the moment we refresh) there
+ * is no token to read, but the slug the last session wrote still names the
+ * tenant. The slug is not a credential. When no hint is stored the refresh
+ * falls back to the host, which on a tenant subdomain still names the tenant.
  */
 export function storedSessionTenant(): string | null {
   try {
-    const token = localStorage.getItem('access_token');
-    if (!token) return null;
-    const payload = token.split('.')[1];
-    if (!payload) return null;
-    const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    return typeof claims.tenant === 'string' && claims.tenant ? claims.tenant : null;
+    const slug = localStorage.getItem(TENANT_HINT_KEY);
+    return slug && slug.trim() ? slug : null;
   } catch {
     return null;
   }

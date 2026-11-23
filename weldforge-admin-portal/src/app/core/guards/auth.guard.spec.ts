@@ -8,6 +8,7 @@ import { AuthService } from '../services/auth.service';
 import { ExternalNavigator } from '../external-navigator';
 import { stashOidcContinuation } from '../oidc-continuation';
 import { TokenRefreshScheduler } from './../services/token-refresh.scheduler';
+import { AccessTokenStore } from '../services/access-token-store';
 import { environment } from '../../../environments/environment';
 
 function token(claims: Record<string, unknown>): string {
@@ -36,7 +37,6 @@ describe('authGuard', () => {
 
   function run(opts: { storedToken?: string; refresh?: Observable<unknown> }) {
     localStorage.clear();
-    if (opts.storedToken) localStorage.setItem('access_token', opts.storedToken);
     TestBed.resetTestingModule();
     router = { createUrlTree: vi.fn().mockReturnValue(LOGIN_TREE) };
     externalNav = { go: vi.fn() };
@@ -50,6 +50,7 @@ describe('authGuard', () => {
         { provide: ExternalNavigator, useValue: externalNav },
       ],
     });
+    if (opts.storedToken) TestBed.inject(AccessTokenStore).set(opts.storedToken);
     return TestBed.runInInjectionContext(
         () => authGuard({} as never, { url: '/tenants' } as never));
   }
@@ -72,7 +73,7 @@ describe('authGuard', () => {
     expect(result).toBe(true);
     // The whole point: the token is now in hand, so the next navigation is
     // not another round trip and not another trip through Google.
-    expect(localStorage.getItem('access_token')).toBe(fresh);
+    expect(TestBed.inject(AccessTokenStore).get()).toBe(fresh);
   });
 
   it('goes to login, keeping the destination, when there is no session at all', async () => {
@@ -80,7 +81,7 @@ describe('authGuard', () => {
 
     expect(result).toBe(LOGIN_TREE);
     expect(router.createUrlTree).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: '/tenants' } });
-    expect(localStorage.getItem('access_token')).toBeNull();
+    expect(TestBed.inject(AccessTokenStore).get()).toBeNull();
   });
 
   it('treats a refresh that answers without a token as signed out', async () => {

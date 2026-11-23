@@ -13,6 +13,7 @@ import { Router } from '@angular/router';
 import { catchError, Observable, switchMap, throwError } from 'rxjs';
 
 import { TokenRefreshScheduler } from '../services/token-refresh.scheduler';
+import { AccessTokenStore } from '../services/access-token-store';
 import { sharedRefresh } from '../session-refresh';
 
 // x-app-authorization is injected by the nginx reverse proxy on the
@@ -99,8 +100,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
   const http = inject(HttpClient);
   const scheduler = inject(TokenRefreshScheduler);
+  const tokenStore = inject(AccessTokenStore);
 
-  const authed = withBearer(req);
+  const authed = withBearer(req, tokenStore);
 
   return next(authed).pipe(
     catchError((err: unknown) => {
@@ -118,20 +120,20 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         // failure. Clear local state, cancel any future proactive
         // refresh, and bounce to login.
         scheduler.cancel();
-        localStorage.removeItem('access_token');
+        tokenStore.clear();
         router.navigate(['/login'], {
           queryParams: { returnUrl: router.url, reason: 'session_expired' },
         });
         return throwError(() => err);
       }
 
-      return refreshAndReplay(req, next, http, router, scheduler);
+      return refreshAndReplay(req, next, http, router, scheduler, tokenStore);
     }),
   );
 };
 
-function withBearer(req: HttpRequest<unknown>): HttpRequest<unknown> {
-  const token = localStorage.getItem('access_token');
+function withBearer(req: HttpRequest<unknown>, tokenStore: AccessTokenStore): HttpRequest<unknown> {
+  const token = tokenStore.get();
   if (!token) return req;
   return req.clone({ setHeaders: { Authorization: `Bearer ${token}` } });
 }
@@ -142,6 +144,7 @@ function refreshAndReplay(
   http: HttpClient,
   router: Router,
   scheduler: TokenRefreshScheduler,
+  tokenStore: AccessTokenStore,
 ): Observable<HttpEvent<unknown>> {
   // sharedRefresh collapses every caller in this tab onto one request,
   // including the auth guard, which is not an interceptor and used to
@@ -150,7 +153,7 @@ function refreshAndReplay(
   return sharedRefresh(http)
     .pipe(
       switchMap(res => {
-        localStorage.setItem('access_token', res.token);
+        tokenStore.set(res.token);
         // Reset the proactive timer to the new exp — without this it
         // would still be set to the previous token's exp (probably in
         // the past) and fire a redundant /refresh on the next tick.
@@ -159,7 +162,7 @@ function refreshAndReplay(
       }),
       catchError(refreshErr => {
         scheduler.cancel();
-        localStorage.removeItem('access_token');
+        tokenStore.clear();
         router.navigate(['/login'], {
           queryParams: { returnUrl: router.url, reason: 'session_expired' },
         });

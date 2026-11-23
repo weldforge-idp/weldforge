@@ -6,6 +6,7 @@ import { Router } from '@angular/router';
 
 import { authInterceptor } from './auth.interceptor';
 import { TokenRefreshScheduler } from '../services/token-refresh.scheduler';
+import { AccessTokenStore } from '../services/access-token-store';
 import { resetSharedRefresh } from '../session-refresh';
 import { environment } from '../../../environments/environment';
 
@@ -30,10 +31,10 @@ describe('authInterceptor: a 401 that means "wrong credential", not "expired ses
   let http: HttpClient;
   let ctl: HttpTestingController;
   let navigate: ReturnType<typeof vi.fn>;
+  let store: AccessTokenStore;
 
   beforeEach(() => {
     localStorage.clear();
-    localStorage.setItem('access_token', 'a-live-token');
     resetSharedRefresh();
     navigate = vi.fn();
 
@@ -48,6 +49,8 @@ describe('authInterceptor: a 401 that means "wrong credential", not "expired ses
     });
     http = TestBed.inject(HttpClient);
     ctl = TestBed.inject(HttpTestingController);
+    store = TestBed.inject(AccessTokenStore);
+    store.set('a-live-token');
   });
 
   for (const path of ['/api/auth/change-password', '/api/auth/mfa/reset']) {
@@ -69,7 +72,7 @@ describe('authInterceptor: a 401 that means "wrong credential", not "expired ses
       // No refresh was attempted, and the session survived.
       ctl.expectNone(`${environment.apiBaseUrl}/api/auth/refresh`);
       expect(navigate).not.toHaveBeenCalled();
-      expect(localStorage.getItem('access_token')).toBe('a-live-token');
+      expect(store.get()).toBe('a-live-token');
     });
   }
 
