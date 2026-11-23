@@ -28,6 +28,10 @@ import { TenantBrandingService } from '../../core/services/tenant-branding.servi
           <img *ngIf="logoUrl() as logo" [src]="logo" [alt]="displayName()" height="44">
           <div class="wf-wordmark" *ngIf="!logoUrl()">{{ wordmark() }}</div>
           <div class="wf-eyebrow" *ngIf="eyebrow()">{{ eyebrow() }}</div>
+          <div class="wf-verified-badge" *ngIf="showVerifiedBadge()" role="status">
+            <span class="wf-verified-check" aria-hidden="true">✓</span>
+            Verified tenant
+          </div>
           <h1>{{ headline }}</h1>
           <p class="wf-sub" *ngIf="subline">{{ subline }}</p>
         </div>
@@ -136,6 +140,32 @@ import { TenantBrandingService } from '../../core/services/tenant-branding.servi
     :host-context(body.wf-light) .wf-unverified-banner code {
       background: rgba(0, 0, 0, 0.06);
     }
+    /* V2d verified badge — positive polarity of the warning above. Green,
+       fixed palette (not tenant-themed) so it means the same thing on every
+       tenant and cannot be faked through a branding map. */
+    .wf-verified-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin: 10px auto 0;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(16, 122, 72, 0.18);
+      color: #6ee7b7;
+      border: 1px solid #1a7a4f;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .wf-verified-badge .wf-verified-check {
+      font-weight: 700;
+      line-height: 1;
+    }
+    :host-context(body.wf-light) .wf-verified-badge {
+      background: #d1fae5;
+      color: #065f46;
+      border-color: #10b981;
+    }
   `]
 })
 export class AuthShellComponent implements OnInit {
@@ -168,6 +198,19 @@ export class AuthShellComponent implements OnInit {
   readonly showUnverifiedBanner = computed(() => {
     const b = this.branding.current();
     return !!b && b.verified === false;
+  });
+
+  /**
+   * V2d — the positive counterpart of the warning banner: shown only when a
+   * branded tenant has loaded AND its verified flag is explicitly true. Same
+   * guard as the warning (suppressed on the unbranded apex and while loading),
+   * and, like the warning, it is not tenant-themeable — an unverified tenant
+   * must not be able to paint itself a "Verified" badge through its branding
+   * map.
+   */
+  readonly showVerifiedBadge = computed(() => {
+    const b = this.branding.current();
+    return !!b && b.verified === true;
   });
 
   readonly host = computed(() =>
