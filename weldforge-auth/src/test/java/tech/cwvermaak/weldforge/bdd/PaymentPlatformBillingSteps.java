@@ -310,17 +310,20 @@ public class PaymentPlatformBillingSteps {
                 .isEqualTo(CreateOrderResponse.NextStep.valueOf(step));
     }
 
-    @Then("the slug {string} is still reserved")
-    public void slugStillReserved(String slug) {
+    @Then("the slug {string} is recorded as a soft preference")
+    public void slugRecordedAsSoftPreference(String slug) {
         PendingOrder order = ordersByToken.get(lastCreateResponse.getOrderToken());
+        // The lead is captured: the order carries the requested slug and sits
+        // in CREATED for a human to follow up.
         assertThat(order.getRequestedTenantSlug()).isEqualTo(slug);
-        assertThat(order.getStatus().isActive())
-                .as("an active status is what holds the partial unique index")
-                .isTrue();
-        // Long enough for a human to reply to an email, not the 10 minutes a
-        // card payment gets.
-        assertThat(order.getSlugReservationExpires())
-                .isAfter(LocalDateTime.now().plusHours(1));
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CREATED);
+        // Soft, not a hard reservation: the manual path carries no gateway, and
+        // V76's partial unique index excludes gateway-less CREATED rows, so this
+        // slug does not block another caller. (The index itself is exercised in
+        // SlugReservationIntegrationTest, against a real Postgres.)
+        assertThat(order.getSelectedGateway())
+                .as("a soft manual-path order holds no gateway and so no hard reservation")
+                .isNull();
     }
 
     @Then("sales was notified about the order")
