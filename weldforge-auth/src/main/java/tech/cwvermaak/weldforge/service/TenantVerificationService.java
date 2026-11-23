@@ -154,6 +154,26 @@ public class TenantVerificationService {
                 AuditService.meta("slug", tenant.getSlug(), "contact_email", contactEmail));
     }
 
+    /**
+     * Clear a tenant's review flag WITHOUT issuing a challenge. For the V2c
+     * watchword case (and any review a super-admin judges benign) where the
+     * answer is "looked, it's fine" rather than "send the email proof".
+     * SUPER_ADMIN only.
+     */
+    @Transactional
+    public void dismissVerificationReview(Long tenantId) {
+        tenantAccessor.requireSuperAdmin();
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Tenant " + tenantId + " not found"));
+        String reason = tenant.getVerificationReviewReason();
+        tenant.setVerificationReviewRequired(false);
+        tenant.setVerificationReviewReason(null);
+        tenantRepository.save(tenant);
+        auditService.recordAdmin(AuditEventTypes.TENANT_VERIFICATION_REVIEW_DISMISSED, currentActor(),
+                AuditEventTypes.TARGET_TENANT, String.valueOf(tenant.getId()),
+                AuditService.meta("slug", tenant.getSlug(), "cleared_reason", reason));
+    }
+
     /** The V2b review queue — tenants the domain gate declined. SUPER_ADMIN only. */
     @Transactional(readOnly = true)
     public java.util.List<ReviewQueueEntry> tenantsAwaitingReview() {

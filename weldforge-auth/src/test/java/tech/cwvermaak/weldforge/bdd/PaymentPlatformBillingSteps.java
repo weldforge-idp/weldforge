@@ -205,7 +205,8 @@ public class PaymentPlatformBillingSteps {
         mailService = mock(tech.cwvermaak.weldforge.service.mail.MailService.class);
         orderService = new OrderService(orderRepo, txRepo, routing, slugValidator, mailService, List.of(fakeGateway));
         provisioningService = new TenantProvisioningService(
-                tenantRepo, saRepo, subRepo, orderRepo, orderService, auditService, slugValidator);
+                tenantRepo, saRepo, subRepo, orderRepo, orderService, auditService, slugValidator,
+                org.mockito.Mockito.mock(tech.cwvermaak.weldforge.service.SlugWatchwordPolicy.class));
         webhookService = new WebhookService(gatewayRepo, orderService, provisioningService, List.of(fakeGateway));
     }
 

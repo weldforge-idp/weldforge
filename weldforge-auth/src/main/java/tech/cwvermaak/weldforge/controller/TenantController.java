@@ -125,6 +125,16 @@ public class TenantController {
         return ResponseEntity.accepted().build();
     }
 
+    /**
+     * V2b/V2c: a super-admin clears a review flag without issuing a challenge —
+     * for a watchword auto-flag (V2c) or any review judged benign. SUPER_ADMIN.
+     */
+    @PostMapping("/{id}/dismiss-verification-review")
+    public ResponseEntity<Void> dismissVerificationReview(@PathVariable Long id) {
+        tenantVerificationService.dismissVerificationReview(id);
+        return ResponseEntity.noContent().build();
+    }
+
     // -- Social providers ---------------------------------------------
 
     @GetMapping("/{id}/social-providers")

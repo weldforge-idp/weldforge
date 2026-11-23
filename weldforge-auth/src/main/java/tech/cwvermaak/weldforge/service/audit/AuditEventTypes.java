@@ -51,6 +51,10 @@ public final class AuditEventTypes {
     public static final String TENANT_VERIFICATION_REVIEW_REQUIRED = "tenant.verification.review_required";
     /** V2b: a super-admin vouched for a queued tenant and the challenge was issued. */
     public static final String TENANT_VERIFICATION_REVIEW_APPROVED = "tenant.verification.review_approved";
+    /** V2b/V2c: a super-admin dismissed a review flag without issuing a challenge. */
+    public static final String TENANT_VERIFICATION_REVIEW_DISMISSED = "tenant.verification.review_dismissed";
+    /** V2c: a tenant's slug matched a brand-sensitive watchword and was auto-flagged for review. */
+    public static final String TENANT_SLUG_WATCHWORD_FLAGGED = "tenant.slug.watchword_flagged";
     public static final String TENANT_PROVISIONED_VIA_BILLING = "tenant.provisioned_via_billing";
 
     /** Cross-tenant admin access via the X-WF-Tenant selector (cross-tenant-admin-spec.md). */
