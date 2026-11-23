@@ -100,6 +100,20 @@ public class ScimUserController {
                 .build());
     }
 
+    /**
+     * A write aimed at a privileged account (WF-11). RFC 7644 §3.12's
+     * {@code scimType} set has no value for "not allowed to touch this
+     * resource", so the field is left off and the 403 plus detail carry it.
+     */
+    @ExceptionHandler(tech.cwvermaak.weldforge.service.scim.ScimAdminProtectedException.class)
+    public ResponseEntity<ScimErrorDto> handleAdminProtected(
+            tech.cwvermaak.weldforge.service.scim.ScimAdminProtectedException e) {
+        return ResponseEntity.status(403).body(ScimErrorDto.builder()
+                .status("403")
+                .detail(e.getMessage())
+                .build());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ScimErrorDto> handleBadRequest(IllegalArgumentException e) {
         return ResponseEntity.status(400).body(ScimErrorDto.builder()

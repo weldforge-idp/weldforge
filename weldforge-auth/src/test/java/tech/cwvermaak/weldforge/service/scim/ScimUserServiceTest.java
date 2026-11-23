@@ -219,4 +219,85 @@ class ScimUserServiceTest {
         assertThatThrownBy(() -> service.get(999L, null))
                 .isInstanceOf(EntityNotFoundException.class);
     }
+
+    // ---- WF-11: a SCIM key may not modify a privileged account -----------
+
+    private User storedAdmin(boolean superAdmin, tech.cwvermaak.weldforge.model.AdminRole role) {
+        User admin = User.builder()
+                .id(idSeq.getAndIncrement())
+                .tenant(tenant)
+                .username("admin@acme.test")
+                .email("admin@acme.test")
+                .superAdmin(superAdmin)
+                .adminRole(role)
+                .active(true)
+                .createdAt(LocalDateTime.now())
+                .build();
+        store.add(admin);
+        return admin;
+    }
+
+    @Test
+    @DisplayName("PATCH deactivating a super admin is refused with 403, not applied")
+    void patch_refusesSuperAdmin() {
+        User admin = storedAdmin(true, tech.cwvermaak.weldforge.model.AdminRole.NONE);
+        ScimPatchRequestDto patch = ScimPatchRequestDto.builder()
+                .operations(List.of(ScimPatchRequestDto.Operation.builder()
+                        .op("replace").path("active").value(false).build()))
+                .build();
+
+        assertThatThrownBy(() -> service.patch(admin.getId(), patch, null))
+                .isInstanceOf(ScimAdminProtectedException.class)
+                .hasMessageContaining("administrator");
+        assertThat(admin.isActive()).as("the admin is left untouched").isTrue();
+    }
+
+    @Test
+    @DisplayName("PATCH is refused for any admin-console role, not only super admin")
+    void patch_refusesAdminRole() {
+        User admin = storedAdmin(false, tech.cwvermaak.weldforge.model.AdminRole.SUPER_ADMIN);
+        ScimPatchRequestDto patch = ScimPatchRequestDto.builder()
+                .operations(List.of(ScimPatchRequestDto.Operation.builder()
+                        .op("replace").path("active").value(false).build()))
+                .build();
+
+        assertThatThrownBy(() -> service.patch(admin.getId(), patch, null))
+                .isInstanceOf(ScimAdminProtectedException.class);
+    }
+
+    @Test
+    @DisplayName("PUT replacing an admin is refused with 403")
+    void replace_refusesAdmin() {
+        User admin = storedAdmin(true, tech.cwvermaak.weldforge.model.AdminRole.NONE);
+        ScimUserDto put = ScimUserDto.builder()
+                .userName("hijacked@acme.test").active(false).build();
+
+        assertThatThrownBy(() -> service.replace(admin.getId(), put, null))
+                .isInstanceOf(ScimAdminProtectedException.class);
+        assertThat(admin.getUsername()).isEqualTo("admin@acme.test");
+    }
+
+    @Test
+    @DisplayName("DELETE of an admin is refused with 403")
+    void delete_refusesAdmin() {
+        User admin = storedAdmin(true, tech.cwvermaak.weldforge.model.AdminRole.NONE);
+
+        assertThatThrownBy(() -> service.delete(admin.getId()))
+                .isInstanceOf(ScimAdminProtectedException.class);
+        verify(userRepository, never()).delete(any(User.class));
+    }
+
+    @Test
+    @DisplayName("an ordinary member is still writable")
+    void patch_allowsOrdinaryMember() {
+        ScimUserDto created = service.create(sample("alice@acme.test"), null);
+        Long id = Long.valueOf(created.getId());
+        ScimPatchRequestDto patch = ScimPatchRequestDto.builder()
+                .operations(List.of(ScimPatchRequestDto.Operation.builder()
+                        .op("replace").path("active").value(false).build()))
+                .build();
+
+        ScimUserDto patched = service.patch(id, patch, null);
+        assertThat(patched.isActive()).isFalse();
+    }
 }

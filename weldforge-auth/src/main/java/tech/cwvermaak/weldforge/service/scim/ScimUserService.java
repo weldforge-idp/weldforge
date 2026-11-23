@@ -145,6 +145,7 @@ public class ScimUserService {
         Long tid = tenantAccessor.requireTenantId();
         User user = userRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found"));
+        requireNotPrivileged(user);
 
         if (incoming.getUserName() != null) user.setUsername(incoming.getUserName());
         String email = primaryEmail(incoming);
@@ -175,6 +176,7 @@ public class ScimUserService {
         Long tid = tenantAccessor.requireTenantId();
         User user = userRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found"));
+        requireNotPrivileged(user);
 
         if (patch == null || patch.getOperations() == null) {
             return toDto(user, location);
@@ -229,6 +231,7 @@ public class ScimUserService {
         Long tid = tenantAccessor.requireTenantId();
         User user = userRepository.findByIdAndTenantId(id, tid)
                 .orElseThrow(() -> new EntityNotFoundException("User " + id + " not found"));
+        requireNotPrivileged(user);
         userRepository.delete(user);
 
         auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
@@ -279,6 +282,37 @@ public class ScimUserService {
             }
             default -> userRepository.findByTenantId(tid);
         };
+    }
+
+    /**
+     * Refuse a SCIM write that targets a privileged account (WF-11).
+     *
+     * <p>A user is privileged when they are a super admin or hold any
+     * admin-console role. The directory connector provisions ordinary members;
+     * an admin is granted and revoked by a human in the console, so a SCIM key
+     * must not be able to deactivate, overwrite or delete one. The refusal is
+     * audited so an attempt is visible, then surfaced as a {@code 403}.
+     */
+    private void requireNotPrivileged(User user) {
+        boolean privileged = user.isSuperAdmin()
+                || (user.getAdminRole() != null
+                    && user.getAdminRole() != tech.cwvermaak.weldforge.model.AdminRole.NONE);
+        if (!privileged) {
+            return;
+        }
+        meterRegistry.counter("sso.scim.admin_write_refused",
+                "tenant", user.getTenant().getSlug()).increment();
+        auditService.log(tech.cwvermaak.weldforge.model.AuditEvent.builder()
+                .eventType(AUDIT_SCIM_USER_PATCH)
+                .outcome(tech.cwvermaak.weldforge.model.AuditEvent.Outcome.FAILURE)
+                .tenant(user.getTenant())
+                .targetType(AuditEventTypes.TARGET_USER)
+                .targetId(String.valueOf(user.getId()))
+                .metadata(AuditService.meta(
+                        "userName", user.getUsername(),
+                        "reason", "scim key may not modify an admin account")));
+        throw new ScimAdminProtectedException(
+                "A SCIM key may not modify an administrator account; manage admins in the console");
     }
 
     private void emitActiveAudit(User user) {
