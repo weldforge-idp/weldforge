@@ -74,7 +74,14 @@ public class OidcLogoutController {
                                            @RequestParam(value = "state", required = false) String state,
                                            HttpServletRequest request,
                                            HttpServletResponse response) {
-        return handleLogout(slug, idTokenHint, postLogoutRedirectUri, clientId, state, request, response);
+        // WF-10: a GET must not end a session from the ambient cookie alone.
+        // The session cookie is SameSite=Lax, so a top-level navigation the
+        // victim never intended (a link, an image redirect) carries it, and a
+        // bare GET /oauth2/logout would then revoke every one of their
+        // sessions — cross-site request forgery. A GET still ends the session
+        // it is told about through a valid id_token_hint, which an attacker
+        // cannot forge; cookie-based termination is left to POST.
+        return handleLogout(slug, idTokenHint, postLogoutRedirectUri, clientId, state, request, response, false);
     }
 
     @PostMapping("/t/{slug}/oauth2/logout")
@@ -85,18 +92,24 @@ public class OidcLogoutController {
                                             @RequestParam(value = "state", required = false) String state,
                                             HttpServletRequest request,
                                             HttpServletResponse response) {
-        return handleLogout(slug, idTokenHint, postLogoutRedirectUri, clientId, state, request, response);
+        // A POST is not driveable cross-site with the Lax session cookie
+        // attached, so terminating from the cookie here is safe.
+        return handleLogout(slug, idTokenHint, postLogoutRedirectUri, clientId, state, request, response, true);
     }
 
     private ResponseEntity<?> handleLogout(String slug, String idTokenHint, String postLogoutRedirectUri,
                                                String clientIdHint, String state,
-                                               HttpServletRequest request, HttpServletResponse response) {
+                                               HttpServletRequest request, HttpServletResponse response,
+                                               boolean allowCookieTermination) {
         Tenant tenant = tenantRepository.findBySlug(slug)
                 .orElseThrow(() -> new EntityNotFoundException("Unknown tenant: " + slug));
 
-        // Resolve the user, either from the id_token_hint or from the current session cookie.
+        // Resolve the user, either from the id_token_hint or from the current
+        // session cookie. The id_token_hint is unforgeable and so is honoured on
+        // any method; the ambient cookie is trusted to name whose sessions to
+        // end only on POST (WF-10), where a cross-site caller cannot attach it.
         User user = resolveUserFromHint(tenant, idTokenHint).orElse(null);
-        if (user == null) {
+        if (user == null && allowCookieTermination) {
             user = resolveUserFromCookie(tenant, request).orElse(null);
         }
 
