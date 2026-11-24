@@ -62,6 +62,7 @@ public class TenantService {
     private final AuditService auditService;
     private final PublicHostProperties publicHost;
     private final TenantSlugValidator slugValidator;
+    private final SlugWatchwordPolicy slugWatchwordPolicy;
     private final PasswordPolicyOverrideValidator passwordPolicyOverrideValidator;
     private final PasswordPolicyService passwordPolicyService;
     /** Last on purpose: appended so existing constructor call sites stay positionally valid. */
@@ -114,6 +115,9 @@ public class TenantService {
                 .contactEmail(dto.getContactEmail())
                 .build();
         Tenant saved = tenantRepository.save(t);
+        // V2c: a brand-sensitive slug (bank, pay, secure, …) is flagged for
+        // super-admin review rather than trusted on sight.
+        slugWatchwordPolicy.flagIfWatchword(saved);
         auditService.recordAdmin(AuditEventTypes.TENANT_CREATE, currentActor(),
                 AuditEventTypes.TARGET_TENANT, String.valueOf(saved.getId()),
                 AuditService.meta("slug", saved.getSlug(), "name", saved.getName()));

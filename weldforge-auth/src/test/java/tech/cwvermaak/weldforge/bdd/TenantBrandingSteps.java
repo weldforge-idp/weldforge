@@ -117,6 +117,7 @@ public class TenantBrandingSteps {
                                     auditService, publicHost,
                                     new tech.cwvermaak.weldforge.service.TenantSlugValidator(
                                             publicHost, mock(tech.cwvermaak.weldforge.repository.TenantSlugHoldbackRepository.class)),
+                org.mockito.Mockito.mock(tech.cwvermaak.weldforge.service.SlugWatchwordPolicy.class),
                 new tech.cwvermaak.weldforge.service.security.PasswordPolicyOverrideValidator(), new tech.cwvermaak.weldforge.service.security.PasswordPolicyService(new tech.cwvermaak.weldforge.service.security.PasswordPolicyProperties(), tech.cwvermaak.weldforge.service.security.BreachedPasswordScreen.DISABLED),
                 org.mockito.Mockito.mock(tech.cwvermaak.weldforge.repository.OidcClientRepository.class));
     }

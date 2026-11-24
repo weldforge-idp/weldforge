@@ -57,6 +57,7 @@ public class TenantProvisioningService {
     private final OrderService orderService;
     private final AuditService auditService;
     private final TenantSlugValidator slugValidator;
+    private final tech.cwvermaak.weldforge.service.SlugWatchwordPolicy slugWatchwordPolicy;
 
     private static final SecureRandom RNG = new SecureRandom();
 
@@ -123,7 +124,11 @@ public class TenantProvisioningService {
         tenant.setName(order.getOrganisation());
         tenant.setDisplayName(order.getOrganisation());
         tenant.setEnabled(true);
-        return tenantRepository.save(tenant);
+        Tenant saved = tenantRepository.save(tenant);
+        // V2c: this is the self-service path — a paid order for a slug like
+        // "securebank" must be flagged for super-admin review, not trusted.
+        slugWatchwordPolicy.flagIfWatchword(saved);
+        return saved;
     }
 
     private String mintServiceAccount(Tenant tenant) {
