@@ -47,6 +47,10 @@ public final class AuditEventTypes {
     public static final String TENANT_VERIFIED               = "tenant.verified";
     public static final String TENANT_UNVERIFIED             = "tenant.unverified";
     public static final String TENANT_VERIFICATION_REQUESTED = "tenant.verification.requested";
+    /** V2b: the domain gate declined an auto-issue and queued the tenant for review. */
+    public static final String TENANT_VERIFICATION_REVIEW_REQUIRED = "tenant.verification.review_required";
+    /** V2b: a super-admin vouched for a queued tenant and the challenge was issued. */
+    public static final String TENANT_VERIFICATION_REVIEW_APPROVED = "tenant.verification.review_approved";
     public static final String TENANT_PROVISIONED_VIA_BILLING = "tenant.provisioned_via_billing";
 
     /** Cross-tenant admin access via the X-WF-Tenant selector (cross-tenant-admin-spec.md). */

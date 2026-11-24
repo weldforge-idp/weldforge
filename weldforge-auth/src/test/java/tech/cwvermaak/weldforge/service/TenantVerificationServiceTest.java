@@ -10,11 +10,15 @@ import org.springframework.test.util.ReflectionTestUtils;
 import tech.cwvermaak.weldforge.config.tenant.PublicHostProperties;
 import tech.cwvermaak.weldforge.config.tenant.TenantAccessor;
 import tech.cwvermaak.weldforge.config.tenant.TenantContext;
+import tech.cwvermaak.weldforge.model.OidcClient;
 import tech.cwvermaak.weldforge.model.Tenant;
 import tech.cwvermaak.weldforge.model.TenantVerificationToken;
+import tech.cwvermaak.weldforge.repository.OidcClientRepository;
 import tech.cwvermaak.weldforge.repository.TenantRepository;
 import tech.cwvermaak.weldforge.repository.TenantVerificationTokenRepository;
 import tech.cwvermaak.weldforge.repository.UserRepository;
+
+import java.util.List;
 import tech.cwvermaak.weldforge.service.audit.AuditEventTypes;
 import tech.cwvermaak.weldforge.service.audit.AuditService;
 import tech.cwvermaak.weldforge.service.mail.MailService;
@@ -48,10 +52,17 @@ class TenantVerificationServiceTest {
     private final AuditService auditService = mock(AuditService.class);
     private final MailService mailService = mock(MailService.class);
     private final PublicHostProperties publicHost = publicHost();
+    private final OidcClientRepository oidcClientRepository = mock(OidcClientRepository.class);
 
     private final TenantVerificationService service = new TenantVerificationService(
             accessor, tenantRepository, userRepository, tokenRepository,
-            auditService, mailService, publicHost);
+            auditService, mailService, publicHost, oidcClientRepository);
+
+    /** A confidential client whose web origin matches the acme.com domain. */
+    private static OidcClient acmeClient() {
+        return OidcClient.builder().id(1L).clientId("acme-app")
+                .webOrigins("https://app.acme.com").build();
+    }
 
     @BeforeEach
     void setUp() {
@@ -61,14 +72,18 @@ class TenantVerificationServiceTest {
     }
 
     @Test
-    @DisplayName("requestVerification mints a token, emails it, audits, and invalidates pending")
+    @DisplayName("requestVerification mints a token, emails it, audits, and invalidates pending when the domain gate passes")
     void request_happy_path() {
         Tenant t = Tenant.builder().id(7L).slug("acme").name("Acme")
                 .contactEmail("ops@acme.com").build();
         when(tenantRepository.findById(7L)).thenReturn(Optional.of(t));
         when(tokenRepository.invalidatePendingForTenant(eq(7L), any())).thenReturn(2);
+        // V2b gate passes: ops@acme.com matches the registered web origin app.acme.com.
+        when(oidcClientRepository.findByTenantId(7L)).thenReturn(List.of(acmeClient()));
 
-        service.requestVerification(7L);
+        var outcome = service.requestVerification(7L);
+        assertThat(outcome)
+                .isEqualTo(TenantVerificationService.VerificationRequestOutcome.CHALLENGE_SENT);
 
         // Token row was saved with hashed token and snapshot contactEmail.
         ArgumentCaptor<TenantVerificationToken> rowCap =
@@ -237,6 +252,99 @@ class TenantVerificationServiceTest {
         assertThatThrownBy(() -> service.consumeToken(null))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(tokenRepository, never()).findByTokenHash(anyString());
+    }
+
+    @Test
+    @DisplayName("V2b: a contact_email whose domain matches no web origin is queued for review, not emailed")
+    void request_domain_mismatch_queues_for_review() {
+        Tenant t = Tenant.builder().id(7L).slug("acme").name("Acme")
+                .contactEmail("someone@gmail.com").build();
+        when(tenantRepository.findById(7L)).thenReturn(Optional.of(t));
+        when(oidcClientRepository.findByTenantId(7L)).thenReturn(List.of(acmeClient()));
+
+        var outcome = service.requestVerification(7L);
+
+        assertThat(outcome)
+                .isEqualTo(TenantVerificationService.VerificationRequestOutcome.QUEUED_FOR_REVIEW);
+        assertThat(t.isVerificationReviewRequired()).isTrue();
+        assertThat(t.getVerificationReviewReason()).contains("gmail.com");
+        verify(mailService, never()).send(anyString(), anyString(), anyString());
+        verify(tokenRepository, never()).save(any());
+        verify(auditService).recordAdmin(
+                eq(AuditEventTypes.TENANT_VERIFICATION_REVIEW_REQUIRED), any(),
+                eq(AuditEventTypes.TARGET_TENANT), eq("7"), any());
+    }
+
+    @Test
+    @DisplayName("V2b: a tenant with no registered web origins is queued for review")
+    void request_no_weborigins_queues() {
+        Tenant t = Tenant.builder().id(7L).slug("acme").name("Acme")
+                .contactEmail("ops@acme.com").build();
+        when(tenantRepository.findById(7L)).thenReturn(Optional.of(t));
+        when(oidcClientRepository.findByTenantId(7L)).thenReturn(List.of());
+
+        var outcome = service.requestVerification(7L);
+
+        assertThat(outcome)
+                .isEqualTo(TenantVerificationService.VerificationRequestOutcome.QUEUED_FOR_REVIEW);
+        assertThat(t.isVerificationReviewRequired()).isTrue();
+        verify(mailService, never()).send(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("V2b: a super-admin request skips the gate and sends the challenge")
+    void request_superadmin_skips_gate() {
+        Tenant t = Tenant.builder().id(7L).slug("acme").name("Acme")
+                .contactEmail("someone@gmail.com").build();
+        when(tenantRepository.findById(7L)).thenReturn(Optional.of(t));
+        when(accessor.isSuperAdmin()).thenReturn(true);
+
+        var outcome = service.requestVerification(7L);
+
+        assertThat(outcome)
+                .isEqualTo(TenantVerificationService.VerificationRequestOutcome.CHALLENGE_SENT);
+        verify(mailService).send(eq("someone@gmail.com"), anyString(), anyString());
+        // The gate is skipped, so the web-origin list is never consulted.
+        verify(oidcClientRepository, never()).findByTenantId(anyLong());
+    }
+
+    @Test
+    @DisplayName("V2b: approving a queued review issues the challenge, clears the flag, and audits")
+    void approve_issues_challenge() {
+        Tenant t = Tenant.builder().id(7L).slug("acme").name("Acme")
+                .contactEmail("someone@gmail.com")
+                .verificationReviewRequired(true)
+                .verificationReviewReason("mismatch").build();
+        when(tenantRepository.findById(7L)).thenReturn(Optional.of(t));
+
+        service.approveVerificationReview(7L);
+
+        verify(accessor).requireSuperAdmin();
+        assertThat(t.isVerificationReviewRequired()).isFalse();
+        assertThat(t.getVerificationReviewReason()).isNull();
+        verify(mailService).send(eq("someone@gmail.com"), anyString(), anyString());
+        verify(auditService).recordAdmin(
+                eq(AuditEventTypes.TENANT_VERIFICATION_REVIEW_APPROVED), any(),
+                eq(AuditEventTypes.TARGET_TENANT), eq("7"), any());
+    }
+
+    @Test
+    @DisplayName("V2b: the review queue lists the flagged tenants with their reasons")
+    void review_queue_lists_flagged() {
+        Tenant t = Tenant.builder().id(7L).slug("acme").name("Acme")
+                .contactEmail("someone@gmail.com")
+                .verificationReviewRequired(true)
+                .verificationReviewReason("domain mismatch").build();
+        when(tenantRepository.findByVerificationReviewRequiredTrue()).thenReturn(List.of(t));
+
+        var queue = service.tenantsAwaitingReview();
+
+        verify(accessor).requireSuperAdmin();
+        assertThat(queue).singleElement().satisfies(e -> {
+            assertThat(e.slug()).isEqualTo("acme");
+            assertThat(e.contactEmail()).isEqualTo("someone@gmail.com");
+            assertThat(e.reason()).isEqualTo("domain mismatch");
+        });
     }
 
     private static PublicHostProperties publicHost() {

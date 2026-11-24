@@ -97,8 +97,31 @@ public class TenantController {
      * docs/auth-url-spec.md §"Tenant identity-proofing".
      */
     @PostMapping("/{id}/request-verification")
-    public ResponseEntity<Void> requestVerification(@PathVariable Long id) {
-        tenantVerificationService.requestVerification(id);
+    public ResponseEntity<Map<String, Object>> requestVerification(@PathVariable Long id) {
+        var outcome = tenantVerificationService.requestVerification(id);
+        // V2b: the challenge may be sent, or declined by the domain gate and
+        // queued for super-admin review. The caller needs to know which.
+        return ResponseEntity.accepted().body(Map.of("outcome", outcome.name()));
+    }
+
+    /**
+     * V2b review queue — tenants whose email-verification request the domain
+     * gate declined (contact_email domain did not match a registered OIDC web
+     * origin). SUPER_ADMIN only (enforced in the service).
+     */
+    @GetMapping("/verification-review-queue")
+    public ResponseEntity<List<tech.cwvermaak.weldforge.service.TenantVerificationService.ReviewQueueEntry>>
+            verificationReviewQueue() {
+        return ResponseEntity.ok(tenantVerificationService.tenantsAwaitingReview());
+    }
+
+    /**
+     * V2b: a super-admin vouches for a queued tenant; the challenge is issued
+     * (bypassing the gate) and the review flag cleared. SUPER_ADMIN only.
+     */
+    @PostMapping("/{id}/approve-verification-review")
+    public ResponseEntity<Void> approveVerificationReview(@PathVariable Long id) {
+        tenantVerificationService.approveVerificationReview(id);
         return ResponseEntity.accepted().build();
     }
 
